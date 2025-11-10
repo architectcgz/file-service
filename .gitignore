@@ -1,0 +1,4 @@
+# Environment-specific configuration files
+backend/appsettings.Development.json
+backend/appsettings.Production.json
+
