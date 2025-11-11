@@ -155,27 +155,38 @@ public class RustFSUtil
     }
 
     /// <summary>
-    /// 删除文件
+    /// 删除文件（使用默认存储桶）
     /// </summary>
     /// <param name="key">文件Key</param>
     /// <returns>删除是否成功</returns>
     public async Task<bool> DeleteFileAsync(string key)
     {
+        return await DeleteFileAsync(key, _config.Bucket);
+    }
+
+    /// <summary>
+    /// 删除文件（指定存储桶）
+    /// </summary>
+    /// <param name="key">文件Key</param>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <returns>删除是否成功</returns>
+    public async Task<bool> DeleteFileAsync(string key, string bucketName)
+    {
         try
         {
             var deleteRequest = new DeleteObjectRequest
             {
-                BucketName = _config.Bucket,
+                BucketName = bucketName,
                 Key = key
             };
 
             await _s3Client.DeleteObjectAsync(deleteRequest);
-            _logger.LogInformation("文件删除成功: " + key);
+            _logger.LogInformation($"文件删除成功: {key}, 存储桶: {bucketName}");
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError("删除文件异常：" + ex.Message);
+            _logger.LogError($"删除文件异常：{ex.Message}, 存储桶: {bucketName}");
             return false;
         }
     }
@@ -494,6 +505,110 @@ public class RustFSUtil
             var type when type.Contains("zip") || type.Contains("rar") || type.Contains("7z") || type.Contains("tar") => GetProxyArchiveUrl(key),
             _ => GetProxyImageUrl(key) // 默认使用图片路径
         };
+    }
+
+    /// <summary>
+    /// 创建存储桶
+    /// </summary>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <returns>创建是否成功</returns>
+    public async Task<bool> CreateBucketAsync(string bucketName)
+    {
+        try
+        {
+            // 检查存储桶是否已存在
+            var bucketExists = await Amazon.S3.Util.AmazonS3Util.DoesS3BucketExistV2Async(_s3Client, bucketName);
+            if (bucketExists)
+            {
+                _logger.LogInformation($"存储桶已存在: {bucketName}");
+                return true;
+            }
+
+            // 创建存储桶
+            var request = new PutBucketRequest
+            {
+                BucketName = bucketName
+            };
+
+            await _s3Client.PutBucketAsync(request);
+            _logger.LogInformation($"存储桶创建成功: {bucketName}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"创建存储桶异常：{ex.Message}, 存储桶: {bucketName}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 删除存储桶
+    /// </summary>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <returns>删除是否成功</returns>
+    public async Task<bool> DeleteBucketAsync(string bucketName)
+    {
+        try
+        {
+            // 检查存储桶是否存在
+            var bucketExists = await Amazon.S3.Util.AmazonS3Util.DoesS3BucketExistV2Async(_s3Client, bucketName);
+            if (!bucketExists)
+            {
+                _logger.LogInformation($"存储桶不存在: {bucketName}");
+                return false;
+            }
+
+            // 删除存储桶
+            var request = new DeleteBucketRequest
+            {
+                BucketName = bucketName
+            };
+
+            await _s3Client.DeleteBucketAsync(request);
+            _logger.LogInformation($"存储桶删除成功: {bucketName}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"删除存储桶异常：{ex.Message}, 存储桶: {bucketName}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 检查存储桶是否存在
+    /// </summary>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <returns>存储桶是否存在</returns>
+    public async Task<bool> BucketExistsAsync(string bucketName)
+    {
+        try
+        {
+            return await Amazon.S3.Util.AmazonS3Util.DoesS3BucketExistV2Async(_s3Client, bucketName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"检查存储桶存在性异常：{ex.Message}, 存储桶: {bucketName}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 列出所有存储桶
+    /// </summary>
+    /// <returns>存储桶名称列表</returns>
+    public async Task<List<string>> ListBucketsAsync()
+    {
+        try
+        {
+            var response = await _s3Client.ListBucketsAsync();
+            return response.Buckets.Select(b => b.BucketName).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"列出存储桶异常：{ex.Message}");
+            return new List<string>();
+        }
     }
 }
 

@@ -2,3 +2,53 @@
 backend/appsettings.Development.json
 backend/appsettings.Production.json
 
+deploy/.env
+
+# .NET Build artifacts
+**/bin/
+**/obj/
+**/out/
+*.user
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+*.log
+
+# Node.js
+**/node_modules/
+**/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.pnpm-debug.log*
+
+# IDE and Editor
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS files
+Thumbs.db
+desktop.ini
+.DS_Store
+*.bak
+
+# Docker
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.env.local
+.env.*.local
+
+# Upload/Data directories (if needed)
+**/uploads/
+**/data/storage/

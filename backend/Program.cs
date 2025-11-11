@@ -72,6 +72,20 @@ builder.Services.AddOpenApi();
 // 内存缓存（用于RustFSUtil的本地缓存，必须在RustFSUtil之前注册）
 builder.Services.AddMemoryCache();
 
+// 添加Session支持（用于管理员登录）
+builder.Services.AddDistributedMemoryCache();
+var securityConfig = builder.Configuration.GetSection("FileServiceSecurity").Get<FileService.Config.FileServiceSecurityConfig>() 
+    ?? new FileService.Config.FileServiceSecurityConfig();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(securityConfig.AdminSessionTimeoutMinutes);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    options.Cookie.Name = "AdminSession";
+});
+
 // 注册服务
 builder.Services.AddScoped<IUploadService, UploadService>();
 
@@ -90,6 +104,9 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 
 // 路由中间件
 app.UseRouting();
+
+// Session中间件（必须在UseRouting之后，UseEndpoints之前）
+app.UseSession();
 
 // 开发环境配置
 if (app.Environment.IsDevelopment())

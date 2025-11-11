@@ -10,6 +10,11 @@
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
 
+# 配置阿里云 Debian 镜像源（加速包下载，如果需要）
+# 注意：mcr.microsoft.com/dotnet/aspnet:9.0 基于 Debian，可根据需要配置
+# RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources || \
+#     sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list || true
+
 # 安装 curl（用于健康检查）
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
