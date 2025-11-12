@@ -672,12 +672,14 @@ public class RustFSUtil
     }
     
     /// <summary>
-    /// 列出指定文件夹下的文件信息
+    /// 列出指定文件夹下的文件信息（支持分页）
     /// </summary>
     /// <param name="bucketName">存储桶名称</param>
     /// <param name="folder">文件夹路径（不含前后斜杠）</param>
-    /// <returns>文件信息列表</returns>
-    public async Task<List<S3ObjectInfo>> ListFilesInFolderAsync(string bucketName, string folder)
+    /// <param name="maxKeys">每页最大文件数，默认20</param>
+    /// <param name="continuationToken">分页令牌，用于获取下一页</param>
+    /// <returns>文件信息分页结果</returns>
+    public async Task<S3FilePageResult> ListFilesInFolderAsync(string bucketName, string folder, int maxKeys = 20, string? continuationToken = null)
     {
         try
         {
@@ -686,7 +688,9 @@ public class RustFSUtil
             {
                 BucketName = bucketName,
                 Prefix = prefix,
-                Delimiter = "/" // 只获取当前层级的文件
+                Delimiter = "/", // 只获取当前层级的文件
+                MaxKeys = maxKeys,
+                ContinuationToken = continuationToken
             };
             
             var response = await _s3Client.ListObjectsV2Async(request);
@@ -704,18 +708,26 @@ public class RustFSUtil
                 })
                 .ToList();
             
-            _logger.LogInformation($"从存储桶 '{bucketName}' 的文件夹 '{folder}' 列出 {files.Count} 个文件");
-            return files;
+            var result = new S3FilePageResult
+            {
+                Files = files,
+                IsTruncated = response.IsTruncated,
+                NextContinuationToken = response.NextContinuationToken,
+                KeyCount = response.KeyCount
+            };
+            
+            _logger.LogInformation($"从存储桶 '{bucketName}' 的文件夹 '{folder}' 列出 {files.Count} 个文件，是否有更多: {response.IsTruncated}");
+            return result;
         }
         catch (AmazonS3Exception ex)
         {
             _logger.LogError($"列出存储桶 '{bucketName}' 文件夹 '{folder}' 的文件失败：{ex.Message}");
-            return new List<S3ObjectInfo>();
+            return new S3FilePageResult { Files = new List<S3ObjectInfo>() };
         }
         catch (Exception ex)
         {
             _logger.LogError($"列出文件夹文件异常：{ex.Message}");
-            return new List<S3ObjectInfo>();
+            return new S3FilePageResult { Files = new List<S3ObjectInfo>() };
         }
     }
     
@@ -971,5 +983,13 @@ public class S3ObjectInfo
     public string? ETag { get; set; }
     public string? Url { get; set; }
     public string? DownloadUrl { get; set; }
+}
+
+public class S3FilePageResult
+{
+    public List<S3ObjectInfo> Files { get; set; } = new();
+    public bool IsTruncated { get; set; }
+    public string? NextContinuationToken { get; set; }
+    public int KeyCount { get; set; }
 }
 

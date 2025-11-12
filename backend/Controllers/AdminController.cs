@@ -507,13 +507,19 @@ public class AdminController(
     }
     
     /// <summary>
-    /// 列出指定文件夹下的文件
+    /// 列出指定文件夹下的文件（支持分页）
     /// </summary>
     /// <param name="bucketName">存储桶名称</param>
     /// <param name="folder">文件夹路径</param>
+    /// <param name="pageSize">每页大小，默认20</param>
+    /// <param name="continuationToken">分页令牌</param>
     [HttpGet("buckets/{bucketName}/folders/{folder}/files")]
     [AdminApiKey]
-    public async Task<IActionResult> ListFilesInFolder(string bucketName, string folder)
+    public async Task<IActionResult> ListFilesInFolder(
+        string bucketName, 
+        string folder,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? continuationToken = null)
     {
         try
         {
@@ -526,13 +532,18 @@ public class AdminController(
                 });
             }
             
-            var files = await _rustFSUtil.ListFilesInFolderAsync(bucketName, folder ?? "");
+            var result = await _rustFSUtil.ListFilesInFolderAsync(bucketName, folder ?? "", pageSize, continuationToken);
 
             return Ok(new AdminResponseDto
             {
                 Success = true,
                 Message = $"获取文件夹 '{folder}' 的文件列表成功",
-                Data = new { Files = files, Count = files.Count }
+                Data = new { 
+                    Files = result.Files, 
+                    Count = result.KeyCount,
+                    IsTruncated = result.IsTruncated,
+                    NextContinuationToken = result.NextContinuationToken
+                }
             });
         }
         catch (Exception ex)

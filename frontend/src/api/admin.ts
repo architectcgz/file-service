@@ -89,9 +89,19 @@ export const adminApi = {
     return api.get(`/buckets/${bucketName}/folders`)
   },
   
-  // 列出指定文件夹下的文件
-  listFilesInFolder(bucketName: string, folder: string): Promise<AdminResponseDto> {
-    return api.get(`/buckets/${bucketName}/folders/${encodeURIComponent(folder)}/files`)
+  // 列出指定文件夹下的文件（支持分页）
+  listFilesInFolder(
+    bucketName: string, 
+    folder: string, 
+    pageSize: number = 20, 
+    continuationToken?: string
+  ): Promise<AdminResponseDto> {
+    const params = new URLSearchParams()
+    params.append('pageSize', pageSize.toString())
+    if (continuationToken) {
+      params.append('continuationToken', continuationToken)
+    }
+    return api.get(`/buckets/${bucketName}/folders/${encodeURIComponent(folder)}/files?${params.toString()}`)
   },
 
   // 同步 RustFS 存储桶到数据库

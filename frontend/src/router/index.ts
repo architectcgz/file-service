@@ -14,8 +14,26 @@ const routes = [
   },
   {
     path: '/',
-    name: 'Dashboard',
-    component: () => import('@/views/Dashboard.vue'),
+    name: 'ServiceManagement',
+    component: () => import('@/views/ServiceManagement.vue'),
+    meta: { requiresAuth: true } as RouteMeta
+  },
+  {
+    path: '/services/:serviceName',
+    name: 'BucketList',
+    component: () => import('@/views/ServiceManagement.vue'),
+    meta: { requiresAuth: true } as RouteMeta
+  },
+  {
+    path: '/services/:serviceName/:bucketName',
+    name: 'FolderList',
+    component: () => import('@/views/ServiceManagement.vue'),
+    meta: { requiresAuth: true } as RouteMeta
+  },
+  {
+    path: '/services/:serviceName/:bucketName/:folderName',
+    name: 'FileList',
+    component: () => import('@/views/ServiceManagement.vue'),
     meta: { requiresAuth: true } as RouteMeta
   },
   {
@@ -25,9 +43,9 @@ const routes = [
     meta: { requiresAuth: true } as RouteMeta
   },
   {
-    path: '/services',
-    name: 'ServiceManagement',
-    component: () => import('@/views/ServiceManagement.vue'),
+    path: '/dashboard',
+    name: 'Dashboard',
+    component: () => import('@/views/Dashboard.vue'),
     meta: { requiresAuth: true } as RouteMeta
   }
 ]
