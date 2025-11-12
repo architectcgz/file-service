@@ -4,6 +4,7 @@ import type {
   LoginResponse,
   StatusResponse,
   BucketsListResponse,
+  ServicesListResponse,
   CreateTableRequest,
   CreateBucketRequest,
   DeleteFileRequest
@@ -83,9 +84,53 @@ export const adminApi = {
     return api.get('/buckets/list')
   },
 
+  // 列出指定存储桶中的文件夹
+  listFolders(bucketName: string): Promise<AdminResponseDto> {
+    return api.get(`/buckets/${bucketName}/folders`)
+  },
+  
+  // 列出指定文件夹下的文件
+  listFilesInFolder(bucketName: string, folder: string): Promise<AdminResponseDto> {
+    return api.get(`/buckets/${bucketName}/folders/${encodeURIComponent(folder)}/files`)
+  },
+
+  // 同步 RustFS 存储桶到数据库
+  syncBuckets(): Promise<AdminResponseDto> {
+    return api.post('/buckets/sync')
+  },
+
+  // 获取服务列表
+  listServices(): Promise<AdminResponseDto> {
+    return api.get('/services')
+  },
+
+  // 创建服务
+  createService(data: { name: string; description?: string }): Promise<AdminResponseDto> {
+    return api.post('/services/create', data)
+  },
+
+  // 创建存储桶
+  createBucketInService(serviceId: string, data: { bucketName: string; description?: string }): Promise<AdminResponseDto> {
+    return api.post(`/services/${serviceId}/buckets/create`, data)
+  },
+
+  // 获取服务下的存储桶列表
+  getBucketsByService(serviceId: string): Promise<AdminResponseDto> {
+    return api.get(`/services/${serviceId}/buckets`)
+  },
+
+  // 获取存储桶中的文件列表
+  getFilesByBucket(bucketId: string, page: number = 1, pageSize: number = 20): Promise<AdminResponseDto> {
+    return api.get(`/buckets/${bucketId}/files`, { params: { page, pageSize } })
+  },
+
+  // 列出服务
+  listServicesList(): Promise<ServicesListResponse> {
+    return api.get('/services/list')
+  },
+
   // 删除文件
   deleteFile(fileKey: string, bucketName: string | null = null): Promise<AdminResponseDto> {
     return api.post('/files/delete', { fileKey, bucketName } as DeleteFileRequest)
   }
 }
-

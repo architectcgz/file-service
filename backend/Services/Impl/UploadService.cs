@@ -18,6 +18,59 @@ public class UploadService(
     FileServiceDbContext dbContext) : IUploadService
 {
     private readonly Config.RustFSConfig _rustFSConfig = rustFSConfigOptions.Value;
+    
+    /// <summary>
+    /// 获取或创建服务
+    /// </summary>
+    private async Task<Service> GetOrCreateServiceAsync(string serviceName)
+    {
+        var sanitizedName = TableNameHelper.SanitizeServiceName(serviceName);
+        var service = await dbContext.Services.FirstOrDefaultAsync(s => s.Name == sanitizedName);
+        
+        if (service == null)
+        {
+            service = new Service
+            {
+                Id = Guid.NewGuid(),
+                Name = sanitizedName,
+                CreateTime = DateTimeOffset.UtcNow,
+                UpdateTime = DateTimeOffset.UtcNow,
+                IsEnabled = true
+            };
+            dbContext.Services.Add(service);
+            await dbContext.SaveChangesAsync();
+            logger.LogInformation($"创建新服务: {sanitizedName}, ID: {service.Id}");
+        }
+        
+        return service;
+    }
+    
+    /// <summary>
+    /// 获取或创建存储桶
+    /// </summary>
+    private async Task<Bucket> GetOrCreateBucketAsync(string bucketName, Guid serviceId)
+    {
+        var sanitizedName = TableNameHelper.SanitizeServiceName(bucketName);
+        var bucket = await dbContext.Buckets.FirstOrDefaultAsync(b => b.Name == sanitizedName && b.ServiceId == serviceId);
+        
+        if (bucket == null)
+        {
+            bucket = new Bucket
+            {
+                Id = Guid.NewGuid(),
+                Name = sanitizedName,
+                ServiceId = serviceId,
+                CreateTime = DateTimeOffset.UtcNow,
+                UpdateTime = DateTimeOffset.UtcNow,
+                IsEnabled = true
+            };
+            dbContext.Buckets.Add(bucket);
+            await dbContext.SaveChangesAsync();
+            logger.LogInformation($"创建新存储桶: {sanitizedName}, ID: {bucket.Id}, ServiceId: {serviceId}");
+        }
+        
+        return bucket;
+    }
     /// <summary>
     /// 计算文件的SHA256哈希值
     /// </summary>
@@ -89,7 +142,11 @@ public class UploadService(
             // 根据文件类型返回对应的代理URL
             var proxyFileUrl = rustFSUtil.GetProxyUrlByFileType(fileName, file.ContentType);
             
-            // 4. 保存文件记录到数据库
+            // 4. 获取或创建默认服务和存储桶
+            var service = await GetOrCreateServiceAsync("default");
+            var bucketEntity = await GetOrCreateBucketAsync(bucket, service.Id);
+            
+            // 5. 保存文件记录到数据库
             var uploadedFile = new UploadedFile
             {
                 Id = Guid.NewGuid(),
@@ -100,9 +157,10 @@ public class UploadService(
                 FileSize = file.Length,
                 ContentType = file.ContentType,
                 FileExtension = fileExtension,
-                BucketName = bucket,
+                ServiceId = service.Id,
+                BucketId = bucketEntity.Id,
                 ReferenceCount = 1,
-                UploaderId = uploaderId, // 记录上传者ID
+                UploaderId = uploaderId,
                 CreateTime = DateTimeOffset.UtcNow,
                 LastAccessTime = DateTimeOffset.UtcNow,
                 Deleted = false
@@ -193,8 +251,10 @@ public class UploadService(
                 logger.LogInformation($"直传去重未命中 - 哈希: {request.FileHash}, 需要上传新文件");
             }
 
-            // 根据文件类型获取对应的子目录
-            var folder = rustFSUtil.GetFolderByFileType(request.FileType);
+            // 根据文件类型获取对应的子目录（如果前端提供了文件夹，则使用前端的；否则根据文件类型自动判断）
+            var folder = !string.IsNullOrEmpty(request.Folder) 
+                ? request.Folder.Trim('/') 
+                : rustFSUtil.GetFolderByFileType(request.FileType);
             
             // 生成带有子目录的文件Key
             var fileExtension = Path.GetExtension(request.FileName);
@@ -242,6 +302,7 @@ public class UploadService(
                 Success = true,
                 NeedUpload = true,  // 需要上传
                 FileKey = key,
+                FileUrl = fullFileUrl,  // 返回文件访问URL
                 FileHash = request.FileHash,  // 返回哈希值供前端上传完成后使用
                 Signature = new DirectUploadSignatureDto
                 {
@@ -371,6 +432,10 @@ public class UploadService(
                 };
             }
             
+            // 获取或创建服务和存储桶
+            var serviceEntity = await GetOrCreateServiceAsync(service);
+            var bucketEntity = await GetOrCreateBucketAsync(request.BucketName ?? "default", serviceEntity.Id);
+            
             // 创建新的文件记录
             var uploadedFile = new UploadedFile
             {
@@ -382,17 +447,17 @@ public class UploadService(
                 FileSize = request.FileSize,
                 ContentType = request.ContentType,
                 FileExtension = Path.GetExtension(request.OriginalFileName),
-                BucketName = request.BucketName ?? string.Empty,
+                ServiceId = serviceEntity.Id,
+                BucketId = bucketEntity.Id,
                 ReferenceCount = 1,
-                UploaderId = uploaderId, // 记录上传者ID
-                Service = service, // 记录服务来源
+                UploaderId = uploaderId,
                 CreateTime = DateTimeOffset.UtcNow,
                 LastAccessTime = DateTimeOffset.UtcNow,
                 Deleted = false
             };
             
             // 使用分表插入
-            await dbContext.AddUploadedFileToServiceTableAsync(uploadedFile, service);
+            await dbContext.AddUploadedFileToServiceTableAsync(uploadedFile, service, request.BucketName ?? "default");
             
             logger.LogInformation($"直传文件记录成功 - ID: {uploadedFile.Id}, 哈希: {request.FileHash}");
             

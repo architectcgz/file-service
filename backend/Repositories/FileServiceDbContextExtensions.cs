@@ -17,6 +17,7 @@ public static class FileServiceDbContextExtensions
     /// <param name="service">服务名，如果为空则查询基础表</param>
     /// <returns>IQueryable&lt;UploadedFile&gt;</returns>
     [SuppressMessage("Security", "CA2100:Review SQL queries for security vulnerabilities", Justification = "Table name is sanitized by TableNameHelper")]
+    [SuppressMessage("Security", "EF1002:Risk of vulnerability to SQL injection", Justification = "Table name is validated by IsValidTableName method to contain only alphanumeric characters and underscores")]
     public static IQueryable<UploadedFile> GetUploadedFilesByService(this FileServiceDbContext context, string? service)
     {
         var tableName = TableNameHelper.GetTableName(service);
@@ -29,17 +30,19 @@ public static class FileServiceDbContextExtensions
     }
 
     /// <summary>
-    /// 根据服务名添加文件记录到对应的表（支持分表）
+    /// 根据服务名和存储桶名添加文件记录到对应的表（支持分表）
     /// </summary>
     /// <param name="context">数据库上下文</param>
     /// <param name="file">文件实体</param>
-    /// <param name="service">服务名，如果为空则使用基础表</param>
+    /// <param name="serviceName">服务名</param>
+    /// <param name="bucketName">存储桶名</param>
     public static async Task AddUploadedFileToServiceTableAsync(
         this FileServiceDbContext context, 
         UploadedFile file, 
-        string? service)
+        string serviceName,
+        string bucketName)
     {
-        var tableName = TableNameHelper.GetTableName(service);
+        var tableName = TableNameHelper.GetTableName(serviceName, bucketName);
         
         // 确保表存在（如果不存在则创建）
         await EnsureTableExistsAsync(context, tableName);
@@ -48,13 +51,13 @@ public static class FileServiceDbContextExtensions
         var sql = $@"
             INSERT INTO {tableName} (
                 id, file_hash, file_key, file_url, original_file_name, 
-                file_size, content_type, file_extension, bucket_name, 
-                reference_count, uploader_id, service, 
+                file_size, content_type, file_extension, service_id, bucket_id,
+                reference_count, uploader_id, 
                 create_time, last_access_time, deleted
             ) VALUES (
                 @p0, @p1, @p2, @p3, @p4, 
-                @p5, @p6, @p7, @p8, 
-                @p9, @p10, @p11, 
+                @p5, @p6, @p7, @p8, @p9,
+                @p10, @p11, 
                 @p12, @p13, @p14
             )";
         
@@ -68,10 +71,10 @@ public static class FileServiceDbContextExtensions
             new NpgsqlParameter("@p5", file.FileSize),
             new NpgsqlParameter("@p6", file.ContentType),
             new NpgsqlParameter("@p7", file.FileExtension),
-            new NpgsqlParameter("@p8", file.BucketName ?? (object)DBNull.Value),
-            new NpgsqlParameter("@p9", file.ReferenceCount),
-            new NpgsqlParameter("@p10", file.UploaderId ?? (object)DBNull.Value),
-            new NpgsqlParameter("@p11", file.Service),
+            new NpgsqlParameter("@p8", file.ServiceId),
+            new NpgsqlParameter("@p9", file.BucketId),
+            new NpgsqlParameter("@p10", file.ReferenceCount),
+            new NpgsqlParameter("@p11", file.UploaderId ?? (object)DBNull.Value),
             new NpgsqlParameter("@p12", file.CreateTime),
             new NpgsqlParameter("@p13", file.LastAccessTime),
             new NpgsqlParameter("@p14", file.Deleted)
@@ -81,7 +84,19 @@ public static class FileServiceDbContextExtensions
     }
 
     /// <summary>
-    /// 确保表存在，如果不存在则创建
+    /// 确保表存在，如果不存在则创建（public版本）
+    /// </summary>
+    /// <param name="context">数据库上下文</param>
+    /// <param name="serviceName">服务名</param>
+    /// <param name="bucketName">存储桶名</param>
+    public static async Task EnsureTableExistsAsync(this FileServiceDbContext context, string serviceName, string bucketName)
+    {
+        var tableName = TableNameHelper.GetTableName(serviceName, bucketName);
+        await EnsureTableExistsAsync(context, tableName);
+    }
+
+    /// <summary>
+    /// 确保表存在，如果不存在则创建（内部版本）
     /// </summary>
     private static async Task EnsureTableExistsAsync(FileServiceDbContext context, string tableName)
     {
@@ -127,7 +142,7 @@ public static class FileServiceDbContextExtensions
                 CREATE UNIQUE INDEX IF NOT EXISTS ix_{tableName}_file_hash ON {tableName} (file_hash) WHERE deleted = false;
                 CREATE INDEX IF NOT EXISTS ix_{tableName}_reference_count ON {tableName} (reference_count);
                 CREATE INDEX IF NOT EXISTS ix_{tableName}_uploader_id ON {tableName} (uploader_id);
-                CREATE INDEX IF NOT EXISTS ix_{tableName}_service ON {tableName} (service);
+                CREATE INDEX IF NOT EXISTS ix_{tableName}_service_id_bucket_id ON {tableName} (service_id, bucket_id);
                 CREATE INDEX IF NOT EXISTS ix_{tableName}_deleted_uploader_id ON {tableName} (deleted, uploader_id);
                 CREATE INDEX IF NOT EXISTS ix_{tableName}_content_type_create_time_id ON {tableName} (content_type, create_time DESC, id DESC);
                 CREATE INDEX IF NOT EXISTS ix_{tableName}_uploader_id_create_time_id ON {tableName} (uploader_id, create_time DESC, id DESC);

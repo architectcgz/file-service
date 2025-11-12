@@ -12,6 +12,22 @@ public class CreateTableRequestDto
 }
 
 /// <summary>
+/// 创建服务请求
+/// </summary>
+public class CreateServiceRequestDto
+{
+    /// <summary>
+    /// 服务名称
+    /// </summary>
+    public string Name { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// 服务描述
+    /// </summary>
+    public string? Description { get; set; }
+}
+
+/// <summary>
 /// 创建存储桶请求
 /// </summary>
 public class CreateBucketRequestDto
@@ -20,6 +36,46 @@ public class CreateBucketRequestDto
     /// 存储桶名称
     /// </summary>
     public string BucketName { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// 所属服务ID
+    /// </summary>
+    public Guid? ServiceId { get; set; }
+    
+    /// <summary>
+    /// 存储桶描述
+    /// </summary>
+    public string? Description { get; set; }
+}
+
+/// <summary>
+/// 服务响应DTO
+/// </summary>
+public class ServiceResponseDto
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public DateTimeOffset CreateTime { get; set; }
+    public DateTimeOffset UpdateTime { get; set; }
+    public bool IsEnabled { get; set; }
+    public int BucketCount { get; set; }
+}
+
+/// <summary>
+/// 存储桶响应DTO
+/// </summary>
+public class BucketResponseDto
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public Guid ServiceId { get; set; }
+    public string ServiceName { get; set; } = string.Empty;
+    public DateTimeOffset CreateTime { get; set; }
+    public DateTimeOffset UpdateTime { get; set; }
+    public bool IsEnabled { get; set; }
+    public int FileCount { get; set; }
 }
 
 /// <summary>

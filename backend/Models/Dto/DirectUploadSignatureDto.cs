@@ -34,6 +34,11 @@ public class DirectUploadSignatureRequestDto
     /// 服务来源标识（例如：blog, market, admin 等）
     /// </summary>
     public string? Service { get; set; }
+    
+    /// <summary>
+    /// 文件夹路径（可选，如果不提供则根据文件类型自动判断）
+    /// </summary>
+    public string? Folder { get; set; }
 }
 
 /// <summary>
@@ -75,6 +80,11 @@ public class DirectUploadSignatureResponseDto
     /// 文件哈希值（返回给前端用于记录）
     /// </summary>
     public string? FileHash { get; set; }
+    
+    /// <summary>
+    /// 文件访问URL
+    /// </summary>
+    public string? FileUrl { get; set; }
 }
 
 /// <summary>

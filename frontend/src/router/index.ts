@@ -17,6 +17,18 @@ const routes = [
     name: 'Dashboard',
     component: () => import('@/views/Dashboard.vue'),
     meta: { requiresAuth: true } as RouteMeta
+  },
+  {
+    path: '/test-upload',
+    name: 'TestUpload',
+    component: () => import('@/views/TestUpload.vue'),
+    meta: { requiresAuth: true } as RouteMeta
+  },
+  {
+    path: '/services',
+    name: 'ServiceManagement',
+    component: () => import('@/views/ServiceManagement.vue'),
+    meta: { requiresAuth: true } as RouteMeta
   }
 ]
 
@@ -27,7 +39,7 @@ const router = createRouter({
 
 router.beforeEach(async (
   to: RouteLocationNormalized,
-  from: RouteLocationNormalized,
+  _from: RouteLocationNormalized,
   next: NavigationGuardNext
 ) => {
   const authStore = useAuthStore()

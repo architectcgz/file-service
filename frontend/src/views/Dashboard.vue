@@ -8,6 +8,18 @@
             <h1 class="text-xl font-bold text-gray-800">文件服务管理后台</h1>
           </div>
           <div class="flex items-center space-x-4">
+            <router-link
+              to="/services"
+              class="px-4 py-2 text-sm font-medium text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition"
+            >
+              服务管理
+            </router-link>
+            <router-link
+              to="/test-upload"
+              class="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition"
+            >
+              测试上传
+            </router-link>
             <span class="text-sm text-gray-600">欢迎，{{ authStore.username }}</span>
             <button
               @click="handleLogout"

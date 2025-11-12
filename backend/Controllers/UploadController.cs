@@ -71,12 +71,8 @@ public class UploadController(IUploadService uploadService) : BaseController
     [HttpPost("direct-signature")]
     public async Task<IActionResult> GetDirectUploadSignature([FromBody] DirectUploadSignatureRequestDto request)
     {
-        // 验证请求来源（必须来自 blog-api）
-        if (!ValidateRequestSource())
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "请求来源验证失败" });
-        }
-
+        // 前端直传不需要验证SharedSecret，由nginx控制访问源
+        
         // 根据 MIME 类型自动判断文件类别和大小限制
         var (fileCategory, maxSizeBytes) = DetermineFileCategoryAndSize(request.FileType);
         
@@ -89,12 +85,8 @@ public class UploadController(IUploadService uploadService) : BaseController
     [HttpPost("direct-signature/document")]
     public async Task<IActionResult> GetDocumentDirectUploadSignature([FromBody] DirectUploadSignatureRequestDto request)
     {
-        // 验证请求来源（必须来自 blog-api）
-        if (!ValidateRequestSource())
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "请求来源验证失败" });
-        }
-
+        // 前端直传不需要验证SharedSecret，由nginx控制访问源
+        
         return await GetFileDirectUploadSignature(request, "document");
     }
 
@@ -104,12 +96,8 @@ public class UploadController(IUploadService uploadService) : BaseController
     [HttpPost("direct-signature/video")]
     public async Task<IActionResult> GetVideoDirectUploadSignature([FromBody] DirectUploadSignatureRequestDto request)
     {
-        // 验证请求来源（必须来自 blog-api）
-        if (!ValidateRequestSource())
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "请求来源验证失败" });
-        }
-
+        // 前端直传不需要验证SharedSecret，由nginx控制访问源
+        
         return await GetFileDirectUploadSignature(request, "video");
     }
 
@@ -119,12 +107,8 @@ public class UploadController(IUploadService uploadService) : BaseController
     [HttpPost("direct-signature/audio")]
     public async Task<IActionResult> GetAudioDirectUploadSignature([FromBody] DirectUploadSignatureRequestDto request)
     {
-        // 验证请求来源（必须来自 blog-api）
-        if (!ValidateRequestSource())
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "请求来源验证失败" });
-        }
-
+        // 前端直传不需要验证SharedSecret，由nginx控制访问源
+        
         return await GetFileDirectUploadSignature(request, "audio");
     }
 
@@ -134,12 +118,8 @@ public class UploadController(IUploadService uploadService) : BaseController
     [HttpPost("direct-signature/archive")]
     public async Task<IActionResult> GetArchiveDirectUploadSignature([FromBody] DirectUploadSignatureRequestDto request)
     {
-        // 验证请求来源（必须来自 blog-api）
-        if (!ValidateRequestSource())
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "请求来源验证失败" });
-        }
-
+        // 前端直传不需要验证SharedSecret，由nginx控制访问源
+        
         return await GetFileDirectUploadSignature(request, "archive");
     }
 
@@ -149,12 +129,8 @@ public class UploadController(IUploadService uploadService) : BaseController
     [HttpPost("direct-signature/large-file")]
     public async Task<IActionResult> GetLargeFileDirectUploadSignature([FromBody] DirectUploadSignatureRequestDto request)
     {
-        // 验证请求来源（必须来自 blog-api）
-        if (!ValidateRequestSource())
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "请求来源验证失败" });
-        }
-
+        // 前端直传不需要验证SharedSecret，由nginx控制访问源
+        
         return await GetFileDirectUploadSignature(request, "large", maxSizeBytes: 1073741824); // 1GB
     }
 
@@ -272,12 +248,8 @@ public class UploadController(IUploadService uploadService) : BaseController
     [HttpPost("record-direct-upload")]
     public async Task<IActionResult> RecordDirectUpload([FromBody] RecordDirectUploadRequestDto request)
     {
-        // 验证请求来源（必须来自 blog-api）
-        if (!ValidateRequestSource())
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "请求来源验证失败" });
-        }
-
+        // 前端直传不需要验证SharedSecret，由nginx控制访问源
+        
         // 从请求头获取用户ID（由 blog-api 传递）
         var userId = GetCurrentUserId();
         

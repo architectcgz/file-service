@@ -7,6 +7,7 @@ using FileService.Constants;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Net;
 
 namespace FileService.Utils;
 
@@ -95,13 +96,23 @@ public class RustFSUtil
             var key = Path.GetFileName(localFilePath);
             _logger.LogInformation("上传的key: " + key);
 
-            // 使用TransferUtility进行上传
-            using var transferUtility = new TransferUtility(_s3Client);
-            await transferUtility.UploadAsync(localFilePath, _config.Bucket, key);
+            // 获取文件的 Content-Type
+            var contentType = GetContentType(key);
+
+            // 使用 PutObjectRequest 以便设置元数据
+            var putRequest = new PutObjectRequest
+            {
+                BucketName = _config.Bucket,
+                Key = key,
+                FilePath = localFilePath,
+                ContentType = contentType
+            };
+
+            await _s3Client.PutObjectAsync(putRequest);
 
             // 构建文件URL
             var fileUrl = $"{(_config.UseHttps ? "https" : "http")}://{_config.Endpoint}/{_config.Bucket}/{key}";
-            _logger.LogInformation("上传成功，文件URL: " + fileUrl);
+            _logger.LogInformation($"上传成功，文件URL: {fileUrl}, ContentType: {contentType}");
             
             return fileUrl;
         }
@@ -139,11 +150,22 @@ public class RustFSUtil
             var key = fileName;
             _logger.LogInformation($"上传的key: {key}, 存储桶: {bucket}");
 
-            // 使用TransferUtility进行上传
-            using var transferUtility = new TransferUtility(_s3Client);
-            await transferUtility.UploadAsync(stream, bucket, key);
+            // 获取文件的 Content-Type
+            var contentType = GetContentType(fileName);
+            
+            // 使用 PutObjectRequest 以便设置元数据
+            var putRequest = new PutObjectRequest
+            {
+                BucketName = bucket,
+                Key = key,
+                InputStream = stream,
+                ContentType = contentType,
+                // 不设置 ContentDisposition，让预签名URL控制
+            };
 
-            _logger.LogInformation($"上传成功，文件Key: {key}, 存储桶: {bucket}");
+            await _s3Client.PutObjectAsync(putRequest);
+
+            _logger.LogInformation($"上传成功，文件Key: {key}, 存储桶: {bucket}, ContentType: {contentType}");
             return true;
         }
         catch (Exception ex)
@@ -610,5 +632,344 @@ public class RustFSUtil
             return new List<string>();
         }
     }
+    
+    /// <summary>
+    /// 列出指定存储桶中的所有文件夹（顶级前缀）
+    /// </summary>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <returns>文件夹名称列表</returns>
+    public async Task<List<string>> ListFoldersAsync(string bucketName)
+    {
+        try
+        {
+            var request = new ListObjectsV2Request
+            {
+                BucketName = bucketName,
+                Delimiter = "/" // 使用分隔符来获取文件夹（前缀）
+            };
+            
+            var response = await _s3Client.ListObjectsV2Async(request);
+            
+            // CommonPrefixes 包含所有文件夹（以 / 结尾的前缀）
+            var folders = response.CommonPrefixes
+                .Select(prefix => prefix.TrimEnd('/'))
+                .Where(folder => !string.IsNullOrEmpty(folder))
+                .ToList();
+            
+            _logger.LogInformation($"从存储桶 '{bucketName}' 列出 {folders.Count} 个文件夹");
+            return folders;
+        }
+        catch (AmazonS3Exception ex)
+        {
+            _logger.LogError($"列出存储桶 '{bucketName}' 的文件夹失败：{ex.Message}");
+            return new List<string>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"列出文件夹异常：{ex.Message}");
+            return new List<string>();
+        }
+    }
+    
+    /// <summary>
+    /// 列出指定文件夹下的文件信息
+    /// </summary>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <param name="folder">文件夹路径（不含前后斜杠）</param>
+    /// <returns>文件信息列表</returns>
+    public async Task<List<S3ObjectInfo>> ListFilesInFolderAsync(string bucketName, string folder)
+    {
+        try
+        {
+            var prefix = string.IsNullOrEmpty(folder) ? "" : folder.TrimEnd('/') + "/";
+            var request = new ListObjectsV2Request
+            {
+                BucketName = bucketName,
+                Prefix = prefix,
+                Delimiter = "/" // 只获取当前层级的文件
+            };
+            
+            var response = await _s3Client.ListObjectsV2Async(request);
+            
+            var files = response.S3Objects
+                .Where(obj => !obj.Key.EndsWith("/")) // 排除文件夹本身
+                .Select(obj => new S3ObjectInfo
+                {
+                    Key = obj.Key,
+                    Size = obj.Size,
+                    LastModified = obj.LastModified,
+                    ETag = obj.ETag?.Trim('"'),
+                    Url = GetPresignedUrl(bucketName, obj.Key, isDownload: false),
+                    DownloadUrl = GetPresignedUrl(bucketName, obj.Key, isDownload: true)
+                })
+                .ToList();
+            
+            _logger.LogInformation($"从存储桶 '{bucketName}' 的文件夹 '{folder}' 列出 {files.Count} 个文件");
+            return files;
+        }
+        catch (AmazonS3Exception ex)
+        {
+            _logger.LogError($"列出存储桶 '{bucketName}' 文件夹 '{folder}' 的文件失败：{ex.Message}");
+            return new List<S3ObjectInfo>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"列出文件夹文件异常：{ex.Message}");
+            return new List<S3ObjectInfo>();
+        }
+    }
+    
+    /// <summary>
+    /// 生成预签名URL用于文件访问
+    /// </summary>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <param name="key">文件key</param>
+    /// <param name="isDownload">是否为下载模式（true=下载，false=预览）</param>
+    /// <param name="expiresInMinutes">过期时间（分钟），默认60分钟</param>
+    /// <returns>预签名URL</returns>
+    public string GetPresignedUrl(string bucketName, string key, bool isDownload = false, int expiresInMinutes = 60)
+    {
+        try
+        {
+            var request = new GetPreSignedUrlRequest
+            {
+                BucketName = bucketName,
+                Key = key,
+                Expires = DateTime.UtcNow.AddMinutes(expiresInMinutes),
+                Protocol = _config.UseHttps ? Protocol.HTTPS : Protocol.HTTP
+            };
+            
+            // 获取文件MIME类型
+            var contentType = GetContentType(key);
+            
+            // 设置响应头
+            if (isDownload)
+            {
+                // 下载模式：强制下载
+                var fileName = Path.GetFileName(key);
+                // 使用 UTF-8 编码处理文件名，支持中文等特殊字符
+                var encodedFileName = WebUtility.UrlEncode(fileName);
+                request.ResponseHeaderOverrides.ContentDisposition = $"attachment; filename*=UTF-8''{encodedFileName}";
+                request.ResponseHeaderOverrides.ContentType = contentType;
+            }
+            else
+            {
+                // 预览模式：在浏览器中显示
+                request.ResponseHeaderOverrides.ContentDisposition = "inline";
+                request.ResponseHeaderOverrides.ContentType = contentType;
+            }
+            
+            var url = _s3Client.GetPreSignedURL(request);
+            return url;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"生成预签名URL失败: {ex.Message}");
+            return string.Empty;
+        }
+    }
+    
+    /// <summary>
+    /// 获取存储桶中的文件总数
+    /// </summary>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <returns>文件总数</returns>
+    public async Task<long> GetBucketFileCountAsync(string bucketName)
+    {
+        try
+        {
+            long totalCount = 0;
+            string? continuationToken = null;
+
+            do
+            {
+                var request = new ListObjectsV2Request
+                {
+                    BucketName = bucketName,
+                    ContinuationToken = continuationToken
+                };
+
+                var response = await _s3Client.ListObjectsV2Async(request);
+                
+                // 只计算文件，不计算文件夹
+                totalCount += response.S3Objects.Count(obj => !obj.Key.EndsWith("/"));
+                
+                continuationToken = response.NextContinuationToken;
+            } while (continuationToken != null);
+
+            _logger.LogInformation($"存储桶 '{bucketName}' 共有 {totalCount} 个文件");
+            return totalCount;
+        }
+        catch (AmazonS3Exception ex)
+        {
+            _logger.LogError($"获取存储桶 '{bucketName}' 文件数失败：{ex.Message}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"获取文件数异常：{ex.Message}");
+            return 0;
+        }
+    }
+    
+    /// <summary>
+    /// 修复已上传文件的Content-Type元数据
+    /// </summary>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <param name="key">文件Key</param>
+    /// <returns>是否成功</returns>
+    public async Task<bool> FixFileContentTypeAsync(string bucketName, string key)
+    {
+        try
+        {
+            // 获取正确的 Content-Type
+            var contentType = GetContentType(key);
+            
+            // 复制对象到自身，只更新元数据
+            var copyRequest = new CopyObjectRequest
+            {
+                SourceBucket = bucketName,
+                SourceKey = key,
+                DestinationBucket = bucketName,
+                DestinationKey = key,
+                ContentType = contentType,
+                MetadataDirective = S3MetadataDirective.REPLACE
+            };
+            
+            await _s3Client.CopyObjectAsync(copyRequest);
+            _logger.LogInformation($"修复文件Content-Type成功: {key}, ContentType: {contentType}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"修复文件Content-Type失败: {key}, 错误: {ex.Message}");
+            return false;
+        }
+    }
+    
+    /// <summary>
+    /// 根据文件扩展名获取Content-Type
+    /// </summary>
+    /// <param name="fileName">文件名或路径</param>
+    /// <returns>MIME类型</returns>
+    private string GetContentType(string fileName)
+    {
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        return extension switch
+        {
+            // 图片
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".gif" => "image/gif",
+            ".bmp" => "image/bmp",
+            ".webp" => "image/webp",
+            ".svg" => "image/svg+xml",
+            ".ico" => "image/x-icon",
+            ".tiff" or ".tif" => "image/tiff",
+            ".heic" => "image/heic",
+            ".heif" => "image/heif",
+            ".avif" => "image/avif",
+            
+            // 视频
+            ".mp4" => "video/mp4",
+            ".webm" => "video/webm",
+            ".ogv" => "video/ogg",
+            ".avi" => "video/x-msvideo",
+            ".mov" => "video/quicktime",
+            ".wmv" => "video/x-ms-wmv",
+            ".flv" => "video/x-flv",
+            ".mkv" => "video/x-matroska",
+            ".m4v" => "video/x-m4v",
+            ".3gp" => "video/3gpp",
+            ".ts" => "video/mp2t",
+            
+            // 音频
+            ".mp3" => "audio/mpeg",
+            ".wav" => "audio/wav",
+            ".oga" => "audio/ogg",
+            ".m4a" => "audio/mp4",
+            ".flac" => "audio/flac",
+            ".aac" => "audio/aac",
+            ".wma" => "audio/x-ms-wma",
+            ".opus" => "audio/opus",
+            
+            // 文档
+            ".pdf" => "application/pdf",
+            ".doc" => "application/msword",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".xls" => "application/vnd.ms-excel",
+            ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".ppt" => "application/vnd.ms-powerpoint",
+            ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ".odt" => "application/vnd.oasis.opendocument.text",
+            ".ods" => "application/vnd.oasis.opendocument.spreadsheet",
+            ".odp" => "application/vnd.oasis.opendocument.presentation",
+            ".txt" => "text/plain; charset=utf-8",
+            ".csv" => "text/csv; charset=utf-8",
+            ".rtf" => "application/rtf",
+            
+            // 代码和标记语言
+            ".html" or ".htm" => "text/html; charset=utf-8",
+            ".css" => "text/css; charset=utf-8",
+            ".js" or ".mjs" => "application/javascript; charset=utf-8",
+            ".json" => "application/json; charset=utf-8",
+            ".xml" => "application/xml; charset=utf-8",
+            ".md" or ".markdown" => "text/markdown; charset=utf-8",
+            ".yaml" or ".yml" => "text/yaml; charset=utf-8",
+            ".toml" => "application/toml; charset=utf-8",
+            ".sh" => "application/x-sh; charset=utf-8",
+            ".py" => "text/x-python; charset=utf-8",
+            ".java" => "text/x-java-source; charset=utf-8",
+            ".c" => "text/x-c; charset=utf-8",
+            ".cpp" or ".cc" => "text/x-c++; charset=utf-8",
+            ".cs" => "text/x-csharp; charset=utf-8",
+            ".go" => "text/x-go; charset=utf-8",
+            ".rs" => "text/x-rustsrc; charset=utf-8",
+            ".php" => "text/x-php; charset=utf-8",
+            ".rb" => "text/x-ruby; charset=utf-8",
+            
+            // 字体
+            ".woff" => "font/woff",
+            ".woff2" => "font/woff2",
+            ".ttf" => "font/ttf",
+            ".otf" => "font/otf",
+            ".eot" => "application/vnd.ms-fontobject",
+            
+            // 电子书
+            ".epub" => "application/epub+zip",
+            ".mobi" => "application/x-mobipocket-ebook",
+            
+            // 压缩文件
+            ".zip" => "application/zip",
+            ".rar" => "application/x-rar-compressed",
+            ".7z" => "application/x-7z-compressed",
+            ".tar" => "application/x-tar",
+            ".gz" => "application/gzip",
+            ".bz2" => "application/x-bzip2",
+            ".xz" => "application/x-xz",
+            
+            // 其他
+            ".apk" => "application/vnd.android.package-archive",
+            ".exe" => "application/x-msdownload",
+            ".dmg" => "application/x-apple-diskimage",
+            ".iso" => "application/x-iso9660-image",
+            
+            // 默认
+            _ => "application/octet-stream"
+        };
+    }
+}
+
+/// <summary>
+/// S3 对象信息
+/// </summary>
+public class S3ObjectInfo
+{
+    public string Key { get; set; } = string.Empty;
+    public long Size { get; set; }
+    public DateTime LastModified { get; set; }
+    public string? ETag { get; set; }
+    public string? Url { get; set; }
+    public string? DownloadUrl { get; set; }
 }
 

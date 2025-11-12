@@ -9,6 +9,7 @@ namespace FileService.Repositories.Entities;
 /// </summary>
 [Table("uploaded_files")]
 [Index(nameof(FileHash), IsUnique = true, Name = "IX_UploadedFiles_FileHash_Unique")]
+[Index(nameof(ServiceId), nameof(BucketId), Name = "IX_UploadedFiles_ServiceId_BucketId")]
 [Index(nameof(ContentType), Name = "IX_UploadedFiles_ContentType")]
 [Index(nameof(CreateTime), Name = "IX_UploadedFiles_CreateTime")]
 [Index(nameof(ReferenceCount), Name = "IX_UploadedFiles_ReferenceCount")]
@@ -79,11 +80,30 @@ public class UploadedFile
     public string FileExtension { get; set; } = string.Empty;
     
     /// <summary>
-    /// 存储桶名称
+    /// 所属服务ID（外键）
     /// </summary>
-    [MaxLength(100)]
-    [Comment("存储桶名称")]
-    public string BucketName { get; set; } = string.Empty;
+    [Required]
+    [Comment("所属服务ID")]
+    public Guid ServiceId { get; set; }
+    
+    /// <summary>
+    /// 所属服务（导航属性）
+    /// </summary>
+    [ForeignKey(nameof(ServiceId))]
+    public Service Service { get; set; } = null!;
+    
+    /// <summary>
+    /// 所属存储桶ID（外键）
+    /// </summary>
+    [Required]
+    [Comment("所属存储桶ID")]
+    public Guid BucketId { get; set; }
+    
+    /// <summary>
+    /// 所属存储桶（导航属性）
+    /// </summary>
+    [ForeignKey(nameof(BucketId))]
+    public Bucket Bucket { get; set; } = null!;
     
     /// <summary>
     /// 引用计数（有多少地方使用了这个文件）
@@ -97,14 +117,6 @@ public class UploadedFile
     [MaxLength(450)]
     [Comment("上传者用户ID")]
     public string? UploaderId { get; set; }
-    
-    /// <summary>
-    /// 服务来源（标识哪个服务上传的文件）
-    /// 例如：blog, market, admin 等，空字符串表示未指定服务
-    /// </summary>
-    [MaxLength(50)]
-    [Comment("服务来源标识")]
-    public string Service { get; set; } = string.Empty;
     
     /// <summary>
     /// 创建时间
