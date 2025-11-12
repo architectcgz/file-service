@@ -184,11 +184,21 @@
             ‹ 上一页
           </button>
           
-          <div class="pagination-info">
-            <span class="page-label">第</span>
-            <span class="current-page">{{ currentPage }}</span>
-            <span class="page-label">页</span>
-            <span v-if="hasMoreFiles" class="more-indicator">（还有更多）</span>
+          <!-- 页码按钮 -->
+          <div class="pagination-numbers">
+            <button
+              v-for="(page, index) in displayPages"
+              :key="index"
+              @click="page > 0 ? changePage(page) : null"
+              :class="[
+                'pagination-number',
+                { 'active': page === currentPage },
+                { 'ellipsis': page === -1 }
+              ]"
+              :disabled="page === -1"
+            >
+              {{ page === -1 ? '...' : page }}
+            </button>
           </div>
           
           <button 
@@ -198,6 +208,20 @@
           >
             下一页 ›
           </button>
+          
+          <!-- 跳转输入框 -->
+          <div class="pagination-jump">
+            <span class="jump-label">跳转到</span>
+            <input 
+              v-model.number="jumpToPage" 
+              type="number" 
+              min="1"
+              class="jump-input"
+              @keyup.enter="handleJumpToPage"
+              placeholder="页"
+            />
+            <button @click="handleJumpToPage" class="jump-btn">GO</button>
+          </div>
         </div>
       </div>
     </div>
@@ -308,6 +332,8 @@ const totalFiles = ref(0)
 const continuationToken = ref<string | undefined>(undefined)
 const hasMoreFiles = ref(false)
 const pageTokens = ref<Map<number, string>>(new Map()) // 存储每页的token
+const jumpToPage = ref<number | ''>('') // 跳转页码输入
+const maxKnownPage = ref(1) // 已知的最大页码
 
 const showCreateServiceDialog = ref(false)
 const showCreateBucketDialog = ref(false)
@@ -492,6 +518,7 @@ async function loadFilesInFolder(folder: string, page: number = 1) {
     currentPage.value = 1
     pageTokens.value.clear()
     continuationToken.value = undefined
+    maxKnownPage.value = 1
   }
   
   filesLoading.value = true
@@ -517,6 +544,11 @@ async function loadFilesInFolder(folder: string, page: number = 1) {
       
       currentPage.value = page
       
+      // 更新已知最大页码
+      if (page > maxKnownPage.value) {
+        maxKnownPage.value = page
+      }
+      
       // 估算总文件数（用于显示）
       if (hasMoreFiles.value) {
         totalFiles.value = page * pageSize.value + 1 // 至少还有1个
@@ -541,6 +573,73 @@ function changePage(page: number) {
 
 const canGoPrev = computed(() => currentPage.value > 1)
 const canGoNext = computed(() => hasMoreFiles.value)
+
+// 生成显示的页码数组
+const displayPages = computed(() => {
+  const pages: number[] = []
+  const current = currentPage.value
+  const max = hasMoreFiles.value ? maxKnownPage.value + 1 : maxKnownPage.value
+  
+  // 总是显示第1页
+  pages.push(1)
+  
+  // 计算显示范围
+  let start = Math.max(2, current - 2)
+  let end = Math.min(max, current + 2)
+  
+  // 如果当前页靠前，多显示后面的页码
+  if (current <= 3) {
+    end = Math.min(max, 7)
+  }
+  
+  // 如果当前页靠后，多显示前面的页码
+  if (current >= max - 2) {
+    start = Math.max(2, max - 6)
+  }
+  
+  // 添加省略号和中间页码
+  if (start > 2) {
+    pages.push(-1) // -1 表示省略号
+  }
+  
+  for (let i = start; i <= end; i++) {
+    if (i !== 1 && i <= max) {
+      pages.push(i)
+    }
+  }
+  
+  // 添加省略号和最后页码
+  if (end < max) {
+    if (end < max - 1) {
+      pages.push(-1) // 省略号
+    }
+    pages.push(max)
+  }
+  
+  return pages
+})
+
+function handleJumpToPage() {
+  const page = typeof jumpToPage.value === 'number' ? jumpToPage.value : parseInt(jumpToPage.value as string)
+  if (isNaN(page) || page < 1) {
+    alert('请输入有效的页码')
+    return
+  }
+  
+  // 检查是否可以跳转到该页
+  if (page > maxKnownPage.value && !hasMoreFiles.value) {
+    alert(`最多只有 ${maxKnownPage.value} 页`)
+    return
+  }
+  
+  if (page > maxKnownPage.value + 1 && hasMoreFiles.value) {
+    alert(`请先浏览到第 ${maxKnownPage.value + 1} 页`)
+    return
+  }
+  
+  changePage(page)
+  jumpToPage.value = ''
+}
 
 async function createService() {
   if (!newService.value.name.trim()) {
@@ -1067,6 +1166,7 @@ const handleLogout = async () => {
   gap: 12px;
   margin-top: 24px;
   padding: 20px 0;
+  flex-wrap: wrap;
 }
 
 .pagination-btn {
@@ -1092,43 +1192,122 @@ const handleLogout = async () => {
   cursor: not-allowed;
 }
 
-.pagination-info {
+.pagination-numbers {
+  display: flex;
+  gap: 6px;
+}
+
+.pagination-number {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  color: #475569;
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pagination-number:hover:not(:disabled):not(.active) {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.pagination-number.active {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border-color: #3b82f6;
+  color: white;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.pagination-number.ellipsis {
+  border: none;
+  background: transparent;
+  cursor: default;
+  color: #94a3b8;
+}
+
+.pagination-number:disabled {
+  cursor: default;
+}
+
+.pagination-jump {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 20px;
-  background: #f8fafc;
-  border-radius: 8px;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-.pagination-info .current-page {
-  color: #3b82f6;
-  font-size: 16px;
-}
-
-.pagination-info .separator {
-  color: #cbd5e1;
-  font-size: 14px;
-}
-
-.pagination-info .total-pages {
-  color: #64748b;
-  font-size: 14px;
-}
-
-.pagination-info .page-label {
-  color: #64748b;
-  font-size: 14px;
-  font-weight: 400;
-}
-
-.pagination-info .more-indicator {
-  color: #059669;
-  font-size: 12px;
-  font-weight: 500;
   margin-left: 8px;
+  padding-left: 16px;
+  border-left: 1px solid #e2e8f0;
+}
+
+.jump-label {
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.jump-input {
+  width: 60px;
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.jump-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.jump-input::placeholder {
+  color: #cbd5e1;
+}
+
+/* 移除number输入框的上下箭头 */
+.jump-input::-webkit-inner-spin-button,
+.jump-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.jump-input[type=number] {
+  -moz-appearance: textfield;
+}
+
+.jump-btn {
+  height: 36px;
+  padding: 0 16px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.jump-btn:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  transform: translateY(-1px);
+}
+
+.jump-btn:active {
+  transform: translateY(0);
 }
 
 .btn-primary, .btn-secondary, .btn-link, .btn-pagination {

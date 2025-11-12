@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace FileService.Models.Dto;
 
 /// <summary>
@@ -8,16 +10,19 @@ public class DirectUploadSignatureRequestDto
     /// <summary>
     /// 文件名
     /// </summary>
+    [Required(ErrorMessage = "文件名不能为空")]
     public string FileName { get; set; } = string.Empty;
     
     /// <summary>
     /// 文件类型
     /// </summary>
+    [Required(ErrorMessage = "文件类型不能为空")]
     public string FileType { get; set; } = string.Empty;
     
     /// <summary>
     /// 存储桶名称
     /// </summary>
+    [Required(ErrorMessage = "存储桶名称不能为空")]
     public string Bucket { get; set; } = string.Empty;
     
     /// <summary>
@@ -131,31 +136,38 @@ public class RecordDirectUploadRequestDto
     /// <summary>
     /// 文件SHA256哈希值
     /// </summary>
+    [Required(ErrorMessage = "文件哈希值不能为空")]
     public string FileHash { get; set; } = string.Empty;
     
     /// <summary>
     /// 文件Key（存储路径）
     /// </summary>
+    [Required(ErrorMessage = "文件Key不能为空")]
     public string FileKey { get; set; } = string.Empty;
     
     /// <summary>
     /// 文件URL
     /// </summary>
+    [Required(ErrorMessage = "文件URL不能为空")]
     public string FileUrl { get; set; } = string.Empty;
     
     /// <summary>
     /// 原始文件名
     /// </summary>
+    [Required(ErrorMessage = "原始文件名不能为空")]
     public string OriginalFileName { get; set; } = string.Empty;
     
     /// <summary>
     /// 文件大小（字节）
     /// </summary>
+    [Required(ErrorMessage = "文件大小不能为空")]
+    [Range(1, long.MaxValue, ErrorMessage = "文件大小必须大于0")]
     public long FileSize { get; set; }
     
     /// <summary>
     /// 文件MIME类型
     /// </summary>
+    [Required(ErrorMessage = "文件类型不能为空")]
     public string ContentType { get; set; } = string.Empty;
     
     /// <summary>
@@ -198,11 +210,13 @@ public class PresignedUrlRequestDto
     /// <summary>
     /// 文件Key
     /// </summary>
+    [Required(ErrorMessage = "文件Key不能为空")]
     public string FileKey { get; set; } = string.Empty;
     
     /// <summary>
     /// 过期时间（分钟），默认60分钟
     /// </summary>
+    [Range(1, 10080, ErrorMessage = "过期时间必须在1分钟到7天之间")]
     public int? ExpiresInMinutes { get; set; } = 60;
 }
 

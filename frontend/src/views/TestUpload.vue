@@ -13,8 +13,8 @@
           @change="onServiceChange"
         >
           <option value="">请选择服务</option>
-          <option v-for="service in services" :key="service" :value="service">
-            {{ service }}
+          <option v-for="service in services" :key="service.id" :value="service.name">
+            {{ service.name }}
           </option>
           <option value="custom">创建新服务</option>
         </select>
@@ -208,7 +208,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { uploadApi } from '@/api/upload'
 import { adminApi } from '@/api/admin'
 
@@ -227,7 +227,13 @@ interface LogItem {
 }
 
 // 状态
-const services = ref<string[]>([])
+interface ServiceInfo {
+  id: string
+  name: string
+  description?: string
+}
+
+const services = ref<ServiceInfo[]>([])
 const selectedService = ref<string>('')
 const customService = ref<string>('')
 const buckets = ref<string[]>([])
@@ -274,14 +280,10 @@ const loadServices = async () => {
   try {
     const response = await adminApi.listServices()
     if (response.success && response.data) {
-      // response.data 是服务对象数组，需要提取服务名称
+      // response.data 是服务对象数组，保存完整对象
       if (Array.isArray(response.data)) {
-        services.value = response.data.map((s: any) => s.name)
+        services.value = response.data
         addLog(`成功加载 ${response.data.length} 个服务`, 'success')
-      } else if (response.data.services) {
-        // 兼容旧格式
-        services.value = response.data.services
-        addLog(`成功加载 ${response.data.count} 个服务`, 'success')
       }
     }
   } catch (error: any) {
@@ -290,18 +292,44 @@ const loadServices = async () => {
   }
 }
 
-const loadBuckets = async () => {
+const loadBuckets = async (serviceId: string) => {
+  if (!serviceId) {
+    buckets.value = []
+    return
+  }
+  
   try {
-    const response = await adminApi.listBuckets()
+    addLog(`正在加载服务的存储桶...`, 'info')
+    const response = await adminApi.getBucketsByService(serviceId)
     if (response.success && response.data) {
-      buckets.value = response.data.buckets
-      addLog(`成功加载 ${response.data.count} 个存储桶`, 'success')
+      if (Array.isArray(response.data)) {
+        buckets.value = response.data.map((b: any) => b.name)
+        addLog(`成功加载 ${response.data.length} 个存储桶`, 'success')
+      }
     }
   } catch (error: any) {
     addLog(`加载存储桶列表失败: ${error.message}`, 'error')
     console.error('加载存储桶失败:', error)
+    buckets.value = []
   }
 }
+
+// 监听服务选择变化
+watch(selectedService, async (newService) => {
+  // 清空存储桶和文件夹
+  selectedBucket.value = ''
+  buckets.value = []
+  selectedFolder.value = ''
+  folders.value = []
+  
+  if (newService && newService !== 'custom') {
+    // 查找服务ID
+    const service = services.value.find(s => s.name === newService)
+    if (service) {
+      await loadBuckets(service.id)
+    }
+  }
+})
 
 const loadFolders = async (bucketName: string) => {
   try {
@@ -332,10 +360,15 @@ const syncBuckets = async () => {
         addLog(`成功同步 ${syncedCount} 个存储桶: ${syncedBuckets.join(', ')}`, 'success')
         addLog(`RustFS 总数: ${totalRustFSBuckets}, 数据库总数: ${totalDBBuckets}`, 'info')
         
-        // 重新加载存储桶列表
-        await loadBuckets()
+        // 如果已选择服务，重新加载该服务的存储桶
+        if (selectedService.value && selectedService.value !== 'custom') {
+          const service = services.value.find(s => s.name === selectedService.value)
+          if (service) {
+            await loadBuckets(service.id)
+          }
+        }
       } else {
-        addLog('所有存储桶已同步，无需操作', 'info')
+        addLog(`所有存储桶已同步，无需操作`, 'info')
       }
     }
   } catch (error: any) {
@@ -534,7 +567,6 @@ const isImageFile = (file: File | null): boolean => {
 // 初始化
 onMounted(() => {
   loadServices()
-  loadBuckets()
   addLog('页面初始化完成', 'info')
 })
 </script>

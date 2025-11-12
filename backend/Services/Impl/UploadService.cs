@@ -197,23 +197,7 @@ public class UploadService(
     {
         try
         {
-            if (string.IsNullOrEmpty(request.FileName))
-            {
-                return new DirectUploadSignatureResponseDto
-                {
-                    Success = false,
-                    Message = "文件名不能为空"
-                };
-            }
-
-            if (string.IsNullOrEmpty(request.FileType))
-            {
-                return new DirectUploadSignatureResponseDto
-                {
-                    Success = false,
-                    Message = "文件类型不能为空"
-                };
-            }
+            // 基本验证由 Data Annotations 自动处理，这里不需要重复验证
             
             //  去重检查：如果提供了文件哈希，先检查数据库中是否已存在
             // 注意：去重检查需要考虑服务名，不同服务的文件可以重复（但同一服务内不能重复）
@@ -260,11 +244,11 @@ public class UploadService(
             var fileExtension = Path.GetExtension(request.FileName);
             var key = $"{folder}/{Guid.NewGuid()}{fileExtension}";
             
-            // 记录日志
-            logger.LogInformation($"直传签名生成 - 文件类型: {request.FileType}, 子目录: {folder}, 生成的Key: {key}");
+            // 使用请求中的存储桶（已在DTO中验证为必填）
+            var bucket = request.Bucket;
             
-            // 获取统一存储桶
-            var bucket = rustFSUtil.GetBucketByFileType(request.FileType);
+            // 记录日志
+            logger.LogInformation($"直传签名生成 - 存储桶: {bucket}, 文件类型: {request.FileType}, 子目录: {folder}, 生成的Key: {key}");
             
             // 生成S3 POST策略签名
             var signature = rustFSUtil.GeneratePostPolicySignature(key, request.FileType, expiresInMinutes: 60, maxSizeBytes: maxSizeBytes);
