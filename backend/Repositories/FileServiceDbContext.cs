@@ -5,8 +5,6 @@ namespace FileService.Repositories;
 
 public class FileServiceDbContext(DbContextOptions<FileServiceDbContext> options) : DbContext(options)
 {
-    public DbSet<Service> Services { get; set; }
-    public DbSet<Bucket> Buckets { get; set; }
     public DbSet<UploadedFile> UploadedFiles { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
@@ -19,86 +17,7 @@ public class FileServiceDbContext(DbContextOptions<FileServiceDbContext> options
     {
         base.OnModelCreating(modelBuilder);
 
-        // 服务表配置
-        modelBuilder.Entity<Service>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id)
-                .HasColumnType("uuid")
-                .HasDefaultValueSql("gen_random_uuid()")
-                .ValueGeneratedOnAdd();
-            
-            entity.Property(e => e.Name)
-                .HasMaxLength(100)
-                .IsRequired();
-            
-            entity.Property(e => e.Description)
-                .HasMaxLength(500);
-            
-            entity.Property(e => e.CreateTime)
-                .HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'")
-                .ValueGeneratedOnAdd();
-            
-            entity.Property(e => e.UpdateTime)
-                .HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'")
-                .ValueGeneratedOnAdd();
-            
-            entity.Property(e => e.IsEnabled)
-                .HasDefaultValue(true);
-            
-            entity.HasIndex(e => e.Name)
-                .IsUnique()
-                .HasDatabaseName("IX_Services_Name_Unique");
-            
-            // 一对多关系：一个服务可以有多个存储桶
-            entity.HasMany(e => e.Buckets)
-                .WithOne(e => e.Service)
-                .HasForeignKey(e => e.ServiceId)
-                .OnDelete(DeleteBehavior.Restrict);
-        });
-        
-        // 存储桶表配置
-        modelBuilder.Entity<Bucket>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id)
-                .HasColumnType("uuid")
-                .HasDefaultValueSql("gen_random_uuid()")
-                .ValueGeneratedOnAdd();
-            
-            entity.Property(e => e.Name)
-                .HasMaxLength(100)
-                .IsRequired();
-            
-            entity.Property(e => e.Description)
-                .HasMaxLength(500);
-            
-            entity.Property(e => e.CreateTime)
-                .HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'")
-                .ValueGeneratedOnAdd();
-            
-            entity.Property(e => e.UpdateTime)
-                .HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'")
-                .ValueGeneratedOnAdd();
-            
-            entity.Property(e => e.IsEnabled)
-                .HasDefaultValue(true);
-            
-            entity.HasIndex(e => e.Name)
-                .IsUnique()
-                .HasDatabaseName("IX_Buckets_Name_Unique");
-            
-            entity.HasIndex(e => e.ServiceId)
-                .HasDatabaseName("IX_Buckets_ServiceId");
-            
-            // 一对多关系：一个存储桶可以有多个文件
-            entity.HasMany(e => e.UploadedFiles)
-                .WithOne(e => e.Bucket)
-                .HasForeignKey(e => e.BucketId)
-                .OnDelete(DeleteBehavior.Restrict);
-        });
-
-        // 上传文件记录配置
+        // 上传文件记录配置（简化版）
         modelBuilder.Entity<UploadedFile>(entity =>
         {
             // 配置ID生成策略 - 使用数据库自动生成 UUID
@@ -121,66 +40,33 @@ public class FileServiceDbContext(DbContextOptions<FileServiceDbContext> options
                 .HasMaxLength(1000)
                 .IsRequired();
                 
-            entity.Property(e => e.OriginalFileName)
-                .HasMaxLength(255);
-                
-            entity.Property(e => e.ContentType)
-                .HasMaxLength(100)
-                .IsRequired();
-                
-            entity.Property(e => e.FileExtension)
-                .HasMaxLength(20);
-                
             entity.Property(e => e.UploaderId)
                 .HasMaxLength(450);
-            
-            // 外键关系
-            entity.HasOne(e => e.Service)
-                .WithMany()
-                .HasForeignKey(e => e.ServiceId)
-                .OnDelete(DeleteBehavior.Restrict);
-            
-            entity.HasOne(e => e.Bucket)
-                .WithMany(e => e.UploadedFiles)
-                .HasForeignKey(e => e.BucketId)
-                .OnDelete(DeleteBehavior.Restrict);
             
             // 唯一索引 - 文件哈希唯一性检查，用于去重上传
             entity.HasIndex(e => e.FileHash)
                 .IsUnique()
-                .HasFilter("\"deleted\" = false") // 只对未删除的文件保证唯一性
+                .HasFilter("\"deleted\" = false")
                 .HasDatabaseName("IX_UploadedFiles_FileHash_Unique");
             
-            entity.HasIndex(e => e.ContentType)
-                .HasDatabaseName("IX_UploadedFiles_ContentType");
-                
-            entity.HasIndex(e => e.CreateTime)
-                .HasDatabaseName("IX_UploadedFiles_CreateTime");
-                
-            entity.HasIndex(e => e.ReferenceCount)
-                .HasDatabaseName("IX_UploadedFiles_ReferenceCount");
-                
+            // 核心索引
             entity.HasIndex(e => e.UploaderId)
                 .HasDatabaseName("IX_UploadedFiles_UploaderId");
+                
+            entity.HasIndex(e => e.UploadStatus)
+                .HasDatabaseName("IX_UploadedFiles_UploadStatus");
+                
+            entity.HasIndex(e => e.CreateTime)
+                .IsDescending()
+                .HasDatabaseName("IX_UploadedFiles_CreateTime");
             
-            entity.HasIndex(e => new { e.ServiceId, e.BucketId })
-                .HasDatabaseName("IX_UploadedFiles_ServiceId_BucketId");
-            
-            // 为逻辑删除字段建立索引
             entity.HasIndex(e => e.Deleted)
                 .HasDatabaseName("IX_UploadedFiles_Deleted");
                 
-            entity.HasIndex(e => new { e.Deleted, e.UploaderId })
-                .HasDatabaseName("IX_UploadedFiles_Deleted_UploaderId");
-            
-            // 配置索引优化查询
-            entity.HasIndex(e => new { e.ContentType, e.CreateTime, e.Id })
-                .IsDescending(false, true, true) // 时间、ID降序
-                .HasDatabaseName("IX_UploadedFiles_ContentType_CreateTime_Id_Desc");
-                
-            entity.HasIndex(e => new { e.UploaderId, e.CreateTime, e.Id })
-                .IsDescending(false, true, true) // 时间、ID降序
-                .HasDatabaseName("IX_UploadedFiles_UploaderId_CreateTime_Id_Desc");
+            // 组合索引 - 查询用户的文件列表
+            entity.HasIndex(e => new { e.UploaderId, e.Deleted, e.CreateTime })
+                .IsDescending(false, false, true)
+                .HasDatabaseName("IX_UploadedFiles_UploaderId_Deleted_CreateTime");
             
             // 时间戳默认值
             entity.Property(e => e.CreateTime)
@@ -197,6 +83,113 @@ public class FileServiceDbContext(DbContextOptions<FileServiceDbContext> options
             entity.Property(e => e.Deleted)
                 .HasDefaultValue(false);
         });
+    }
+    
+    /// <summary>
+    /// 根据文件哈希获取对应的分表查询
+    /// </summary>
+    /// <param name="fileHash">文件哈希值</param>
+    /// <returns>对应分表的查询</returns>
+    public IQueryable<UploadedFile> GetUploadedFilesByHash(string fileHash)
+    {
+        var tableName = ShardingHelper.GetTableNameByHash(fileHash);
+        return UploadedFiles.FromSqlRaw($"SELECT * FROM {tableName}");
+    }
+    
+    /// <summary>
+    /// 确保分表存在
+    /// </summary>
+    /// <param name="fileHash">文件哈希值</param>
+    public async Task EnsureShardTableExistsAsync(string fileHash)
+    {
+        if (!ShardingHelper.EnableSharding)
+        {
+            return;
+        }
+        
+        var tableName = ShardingHelper.GetTableNameByHash(fileHash);
+        var sql = ShardingHelper.GenerateCreateTableSql(tableName);
+        await Database.ExecuteSqlRawAsync(sql);
+    }
+    
+    /// <summary>
+    /// 添加文件记录到对应的分表
+    /// </summary>
+    /// <param name="file">文件实体</param>
+    public async Task AddToShardTableAsync(UploadedFile file)
+    {
+        await EnsureShardTableExistsAsync(file.FileHash);
+        
+        if (ShardingHelper.EnableSharding)
+        {
+            var tableName = ShardingHelper.GetTableNameByHash(file.FileHash);
+            var sql = $@"
+                INSERT INTO {tableName} 
+                (id, file_hash, file_key, file_url, reference_count, uploader_id, 
+                 create_time, last_access_time, upload_status, bucket_name, deleted)
+                VALUES 
+                (@Id, @FileHash, @FileKey, @FileUrl, @ReferenceCount, @UploaderId, 
+                 @CreateTime, @LastAccessTime, @UploadStatus, @BucketName, @Deleted)";
+            
+            await Database.ExecuteSqlRawAsync(sql,
+                file.Id, file.FileHash, file.FileKey, file.FileUrl, file.ReferenceCount, 
+                file.UploaderId, file.CreateTime, file.LastAccessTime, file.UploadStatus, file.BucketName, file.Deleted);
+        }
+        else
+        {
+            UploadedFiles.Add(file);
+            await SaveChangesAsync();
+        }
+    }
+    
+    /// <summary>
+    /// UPSERT文件记录到对应的分表（处理并发冲突）
+    /// 如果记录已存在，则更新引用计数和访问时间
+    /// </summary>
+    /// <param name="file">文件实体</param>
+    public async Task UpsertToShardTableAsync(UploadedFile file)
+    {
+        await EnsureShardTableExistsAsync(file.FileHash);
+        
+        if (ShardingHelper.EnableSharding)
+        {
+            var tableName = ShardingHelper.GetTableNameByHash(file.FileHash);
+            
+            // 使用 PostgreSQL 的 INSERT ... ON CONFLICT ... DO UPDATE 语法
+            // 注意：对于部分唯一索引（带 WHERE 条件），需要指定列名和 WHERE 条件
+            var sql = $@"
+                INSERT INTO {tableName} 
+                (id, file_hash, file_key, file_url, reference_count, uploader_id, 
+                 create_time, last_access_time, upload_status, bucket_name, deleted)
+                VALUES 
+                (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10)
+                ON CONFLICT (file_hash) WHERE deleted = false
+                DO UPDATE SET 
+                    reference_count = {tableName}.reference_count + 1,
+                    last_access_time = EXCLUDED.last_access_time";
+            
+            await Database.ExecuteSqlRawAsync(sql,
+                file.Id, file.FileHash, file.FileKey, file.FileUrl, file.ReferenceCount, 
+                file.UploaderId, file.CreateTime, file.LastAccessTime, file.UploadStatus, file.BucketName, file.Deleted);
+        }
+        else
+        {
+            // 非分表场景：使用原生 SQL 的 ON CONFLICT
+            var sql = @"
+                INSERT INTO uploaded_files 
+                (id, file_hash, file_key, file_url, reference_count, uploader_id, 
+                 create_time, last_access_time, upload_status, bucket_name, deleted)
+                VALUES 
+                (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10)
+                ON CONFLICT (file_hash) WHERE deleted = false
+                DO UPDATE SET 
+                    reference_count = uploaded_files.reference_count + 1,
+                    last_access_time = EXCLUDED.last_access_time";
+            
+            await Database.ExecuteSqlRawAsync(sql,
+                file.Id, file.FileHash, file.FileKey, file.FileUrl, file.ReferenceCount, 
+                file.UploaderId, file.CreateTime, file.LastAccessTime, file.UploadStatus, file.BucketName, file.Deleted);
+        }
     }
 }
 

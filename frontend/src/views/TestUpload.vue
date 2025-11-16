@@ -333,8 +333,14 @@ watch(selectedService, async (newService) => {
 
 const loadFolders = async (bucketName: string) => {
   try {
+    const serviceName = actualService.value
+    if (!serviceName) {
+      addLog('请先选择服务', 'error')
+      return
+    }
+    
     addLog(`正在加载存储桶 '${bucketName}' 的文件夹...`, 'info')
-    const response = await adminApi.listFolders(bucketName)
+    const response = await adminApi.listFolders(serviceName, bucketName)
     if (response.success && response.data) {
       folders.value = response.data.folders || []
       addLog(`成功加载 ${response.data.count} 个文件夹`, 'success')

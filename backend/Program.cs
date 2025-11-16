@@ -18,6 +18,18 @@ builder.Services.AddLogging(logging =>
     logging.AddDebug();
 });
 
+// 添加 CORS 支持
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:3000", "http://127.0.0.1:3000")
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
+
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -86,10 +98,32 @@ builder.Services.AddSession(options =>
     options.Cookie.Name = "AdminSession";
 });
 
-// 注册服务
-builder.Services.AddScoped<IUploadService, UploadService>();
+// 注册 AWS S3 客户端（用于 SyncService）
+builder.Services.AddSingleton<Amazon.S3.IAmazonS3>(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var rustFSConfig = configuration.GetSection("RustFSConfig").Get<FileService.Config.RustFSConfig>() 
+        ?? throw new InvalidOperationException("RustFSConfig 未配置");
+    
+    var serviceUrl = $"{(rustFSConfig.UseHttps ? "https" : "http")}://{rustFSConfig.Endpoint}";
+    var s3Config = new Amazon.S3.AmazonS3Config
+    {
+        ForcePathStyle = rustFSConfig.ForcePathStyle,
+        UseHttp = !rustFSConfig.UseHttps,
+        ServiceURL = serviceUrl,
+    };
+    
+    return new Amazon.S3.AmazonS3Client(rustFSConfig.AccessKey, rustFSConfig.SecretKey, s3Config);
+});
 
-// RustFSUtil 需要 IConfiguration 和 IMemoryCache（已注册）
+// 注册存储服务（抽象层 - 便于替换存储实现）
+builder.Services.AddSingleton<IStorageService, RustFSStorageService>();
+
+// 注册业务服务
+builder.Services.AddScoped<IUploadService, UploadService>();
+builder.Services.AddScoped<ISyncService, SyncService>();
+
+// RustFSUtil 保留用于向后兼容（如果直接引用的地方较多）
 builder.Services.AddSingleton<RustFSUtil>();
 
 var app = builder.Build();
@@ -101,6 +135,9 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 });
+
+// CORS 中间件（必须在 UseRouting 之后，UseAuthorization 之前）
+app.UseCors("AllowFrontend");
 
 // 路由中间件
 app.UseRouting();

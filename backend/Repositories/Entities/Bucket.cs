@@ -8,7 +8,7 @@ namespace FileService.Repositories.Entities;
 /// 存储桶表实体
 /// </summary>
 [Table("buckets")]
-[Index(nameof(Name), IsUnique = true, Name = "IX_Buckets_Name_Unique")]
+[Index(nameof(ServiceId), nameof(Name), IsUnique = true, Name = "IX_Buckets_ServiceId_Name_Unique")]
 [Index(nameof(ServiceId), Name = "IX_Buckets_ServiceId")]
 public class Bucket
 {

@@ -69,24 +69,42 @@
       <div v-else-if="services.length === 0" class="empty">
         暂无服务，请创建一个服务
       </div>
-      <div v-else class="grid-list">
-        <div 
-          v-for="service in services" 
-          :key="service.id" 
-          class="grid-item"
-          @click="selectService(service)"
-        >
-          <div class="item-icon">📦</div>
-          <div class="item-content">
-            <h3 class="item-title">{{ service.name }}</h3>
-            <p v-if="service.description" class="item-desc">{{ service.description }}</p>
-            <div class="item-meta">
-              <span class="meta-badge">{{ service.bucketCount }} 个存储桶</span>
-              <span class="meta-time">{{ formatDate(service.createTime) }}</span>
-            </div>
-          </div>
-          <div class="item-arrow">→</div>
-        </div>
+      <div v-else>
+        <table class="files-table">
+          <thead>
+            <tr>
+              <th>服务名称</th>
+              <th>描述</th>
+              <th>存储桶数量</th>
+              <th>创建时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="service in services" :key="service.id" @click="selectService(service)" class="clickable-row">
+              <td class="file-name">
+                <div class="name-with-icon">
+                  <span class="table-icon">📦</span>
+                  <span>{{ service.name }}</span>
+                </div>
+              </td>
+              <td class="description-cell">{{ service.description || '-' }}</td>
+              <td>{{ service.bucketCount }} 个</td>
+              <td>{{ formatDate(service.createTime) }}</td>
+              <td>
+                <div class="file-actions">
+                  <button 
+                    @click="deleteService(service, $event)" 
+                    class="btn-link btn-link-delete"
+                    title="删除服务"
+                  >
+                    删除
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -96,51 +114,136 @@
       <div v-else-if="buckets.length === 0" class="empty">
         该服务下暂无存储桶
       </div>
-      <div v-else class="grid-list">
-        <div 
-          v-for="bucket in buckets" 
-          :key="bucket.id" 
-          class="grid-item"
-          @click="selectBucket(bucket)"
-        >
-          <div class="item-icon">🗂️</div>
-          <div class="item-content">
-            <h3 class="item-title">{{ bucket.name }}</h3>
-            <p v-if="bucket.description" class="item-desc">{{ bucket.description }}</p>
-            <div class="item-meta">
-              <span class="meta-badge">{{ bucket.fileCount }} 个文件</span>
-              <span class="meta-time">{{ formatDate(bucket.createTime) }}</span>
-            </div>
-          </div>
-          <div class="item-arrow">→</div>
-        </div>
+      <div v-else>
+        <table class="files-table">
+          <thead>
+            <tr>
+              <th>存储桶名称</th>
+              <th>描述</th>
+              <th>文件数量</th>
+              <th>创建时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="bucket in buckets" :key="bucket.id" @click="selectBucket(bucket)" class="clickable-row">
+              <td class="file-name">
+                <div class="name-with-icon">
+                  <span class="table-icon">🗂️</span>
+                  <span>{{ bucket.name }}</span>
+                </div>
+              </td>
+              <td class="description-cell">{{ bucket.description || '-' }}</td>
+              <td>{{ bucket.fileCount }} 个</td>
+              <td>{{ formatDate(bucket.createTime) }}</td>
+              <td>
+                <div class="file-actions">
+                  <button 
+                    @click="deleteBucket(bucket, $event)" 
+                    class="btn-link btn-link-delete"
+                    title="删除存储桶"
+                  >
+                    删除
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
     <!-- 文件夹列表视图 -->
     <div v-if="currentView === 'folders'" class="view-container">
-      <div v-if="foldersLoading" class="loading">加载中...</div>
-      <div v-else-if="folders.length === 0" class="empty">
-        该存储桶中暂无文件夹
+      <!-- 操作按钮区 -->
+      <div class="action-bar">
+        <button @click="showCreateFolderDialog = true" class="btn-action">
+          <span class="icon">+</span>
+          新建目录
+        </button>
+        <button @click="showUploadDialog = true" class="btn-action btn-primary">
+          <span class="icon">↑</span>
+          上传文件
+        </button>
       </div>
-      <div v-else class="grid-list">
-        <div 
-          v-for="folder in folders" 
-          :key="folder" 
-          class="grid-item"
-          @click="selectFolder(folder)"
-        >
-          <div class="item-icon">📁</div>
-          <div class="item-content">
-            <h3 class="item-title">{{ folder }}</h3>
-          </div>
-          <div class="item-arrow">→</div>
-        </div>
+      
+      <div v-if="foldersLoading" class="loading">加载中...</div>
+      <div v-else-if="folders.length === 0 && rootFiles.length === 0" class="empty">
+        该存储桶中暂无内容
+      </div>
+      <div v-else>
+        <table class="files-table">
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>类型</th>
+              <th>大小</th>
+              <th>最后修改时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- 文件夹行 -->
+            <tr v-for="folder in folders" :key="'folder-' + folder" @click="selectFolder(folder)" class="clickable-row">
+              <td class="file-name">
+                <div class="name-with-icon">
+                  <span class="table-icon">📁</span>
+                  <span>{{ folder }}</span>
+                </div>
+              </td>
+              <td>文件夹</td>
+              <td>-</td>
+              <td>-</td>
+              <td>
+                <div class="file-actions">
+                  <button 
+                    @click="deleteFolder(folder, $event)" 
+                    class="btn-link btn-link-delete"
+                    title="删除文件夹"
+                  >
+                    删除
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <!-- 文件行 -->
+            <tr v-for="file in rootFiles" :key="'file-' + file.key">
+              <td class="file-name">
+                <div class="name-with-icon">
+                  <span class="table-icon">📄</span>
+                  <span>{{ getFileName(file.key) }}</span>
+                </div>
+              </td>
+              <td>文件</td>
+              <td>{{ formatFileSize(file.size) }}</td>
+              <td>{{ formatDate(file.lastModified) }}</td>
+              <td>
+                <div class="file-actions">
+                  <a v-if="file.url" :href="file.url" target="_blank" class="btn-link">预览</a>
+                  <a v-if="file.downloadUrl" :href="file.downloadUrl" class="btn-link" @click.stop>下载</a>
+                  <button @click="deleteRootFile(file, $event)" class="btn-link btn-link-delete" title="删除文件">删除</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
     <!-- 文件列表视图 -->
     <div v-if="currentView === 'files'" class="view-container">
+      <!-- 操作按钮区 -->
+      <div class="action-bar">
+        <button @click="showCreateFolderDialog = true" class="btn-action">
+          <span class="icon">+</span>
+          新建目录
+        </button>
+        <button @click="showUploadDialog = true" class="btn-action btn-primary">
+          <span class="icon">↑</span>
+          上传文件
+        </button>
+      </div>
+      
       <div v-if="filesLoading" class="loading">加载中...</div>
       <div v-else-if="files.length === 0" class="empty">
         该文件夹中暂无文件
@@ -167,6 +270,7 @@
                 <div class="file-actions">
                   <a v-if="file.url" :href="file.url" target="_blank" class="btn-link">预览</a>
                   <a v-if="file.downloadUrl" :href="file.downloadUrl" class="btn-link">下载</a>
+                  <button @click="deleteFile(file)" class="btn-link btn-link-delete" title="删除文件">删除</button>
                   <span v-if="!file.url && !file.downloadUrl" class="text-gray">无法访问</span>
                 </div>
               </td>
@@ -294,6 +398,77 @@
         </div>
       </div>
     </div>
+
+    <!-- 创建文件夹对话框 -->
+    <div v-if="showCreateFolderDialog" class="dialog-overlay">
+      <div class="dialog" @click.stop>
+        <div class="dialog-header">
+          <h3>新建目录</h3>
+          <button @click="showCreateFolderDialog = false" class="btn-close">×</button>
+        </div>
+        <div class="dialog-body">
+          <div class="form-group">
+            <label>目录名称 *</label>
+            <input 
+              v-model="newFolder" 
+              type="text" 
+              placeholder="例如: images, documents"
+              class="input"
+            />
+            <small class="form-hint">注意：在S3中，文件夹通过上传文件自动创建</small>
+          </div>
+        </div>
+        <div class="dialog-footer">
+          <button @click="showCreateFolderDialog = false" class="btn-secondary">取消</button>
+          <button @click="createFolder" :disabled="!newFolder" class="btn-primary">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 上传文件对话框 -->
+    <div v-if="showUploadDialog" class="dialog-overlay" @click="showUploadDialog = false">
+      <div class="dialog" @click.stop>
+        <div class="dialog-header">
+          <h3>上传文件</h3>
+          <button @click="showUploadDialog = false" class="btn-close">×</button>
+        </div>
+        <div class="dialog-body">
+          <div class="upload-info">
+            <div><strong>服务：</strong>{{ selectedService?.name }}</div>
+            <div><strong>存储桶：</strong>{{ selectedBucket?.name }}</div>
+          </div>
+          
+          <div class="file-upload-area">
+            <input 
+              type="file" 
+              multiple 
+              @change="handleFileSelect" 
+              id="fileInput"
+              style="display: none"
+            />
+            <label for="fileInput" class="upload-label">
+              <div class="upload-icon">📁</div>
+              <div class="upload-text">点击选择文件或拖拽文件到这里</div>
+              <div class="upload-hint">支持批量上传</div>
+            </label>
+          </div>
+          
+          <div v-if="uploadingFiles.length > 0" class="file-list">
+            <h4>待上传文件 ({{ uploadingFiles.length }})</h4>
+            <div v-for="file in uploadingFiles" :key="file.name" class="file-item">
+              <span class="file-name">{{ file.name }}</span>
+              <span class="file-size">{{ formatFileSize(file.size) }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="dialog-footer">
+          <button @click="showUploadDialog = false" class="btn-secondary">取消</button>
+          <button @click="startUpload" :disabled="uploadingFiles.length === 0" class="btn-primary">
+            上传 {{ uploadingFiles.length > 0 ? `(${uploadingFiles.length}个文件)` : '' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -322,6 +497,7 @@ const buckets = ref<Bucket[]>([])
 const selectedBucket = ref<Bucket | null>(null)
 
 const folders = ref<string[]>([])
+const rootFiles = ref<any[]>([])
 const selectedFolder = ref<string | null>(null)
 const foldersLoading = ref(false)
 
@@ -337,6 +513,8 @@ const maxKnownPage = ref(1) // 已知的最大页码
 
 const showCreateServiceDialog = ref(false)
 const showCreateBucketDialog = ref(false)
+const showCreateFolderDialog = ref(false)
+const showUploadDialog = ref(false)
 
 const newService = ref({
   name: '',
@@ -347,6 +525,11 @@ const newBucket = ref({
   name: '',
   description: ''
 })
+
+const newFolder = ref('')
+const uploadingFiles = ref<File[]>([])
+const uploadProgress = ref<{ [key: string]: number }>({})
+const uploadingCount = ref(0)
 
 onMounted(async () => {
   await loadServices()
@@ -464,23 +647,25 @@ async function selectBucket(bucket: Bucket) {
 }
 
 async function loadFolders(bucket: Bucket) {
-  if (!bucket) return
+  if (!bucket || !selectedService.value) return
   
   foldersLoading.value = true
   try {
-    const response = await adminApi.listFolders(bucket.name)
+    const response = await adminApi.listFolders(selectedService.value.name, bucket.name)
     console.log('loadFolders response:', response)
     console.log('currentView:', currentView.value)
     if (response.success && response.data) {
       folders.value = response.data.folders || []
+      rootFiles.value = response.data.files || []
       console.log('folders.value 已更新:', folders.value)
+      console.log('rootFiles.value 已更新:', rootFiles.value)
     }
   } catch (error: any) {
     console.error('加载文件夹列表失败:', error)
     alert('加载文件夹列表失败: ' + (error.response?.data?.message || error.message))
   } finally {
     foldersLoading.value = false
-    console.log('foldersLoading 设置为 false, folders:', folders.value, 'currentView:', currentView.value)
+    console.log('foldersLoading 设置为 false, folders:', folders.value, 'rootFiles:', rootFiles.value, 'currentView:', currentView.value)
   }
 }
 
@@ -511,7 +696,7 @@ function goToFolders() {
 }
 
 async function loadFilesInFolder(folder: string, page: number = 1) {
-  if (!selectedBucket.value) return
+  if (!selectedBucket.value || !selectedService.value) return
   
   // 如果是第一页，重置分页状态
   if (page === 1) {
@@ -527,6 +712,7 @@ async function loadFilesInFolder(folder: string, page: number = 1) {
     const token = page > 1 ? pageTokens.value.get(page) : undefined
     
     const response = await adminApi.listFilesInFolder(
+      selectedService.value.name,
       selectedBucket.value.name, 
       folder, 
       pageSize.value,
@@ -652,9 +838,9 @@ async function createService() {
       name: newService.value.name.trim(),
       description: newService.value.description.trim() || undefined
     })
-    
+
     if (response.success) {
-      alert('服务创建成功')
+      console.log('服务创建成功:', newService.value.name)
       showCreateServiceDialog.value = false
       newService.value = { name: '', description: '' }
       await loadServices()
@@ -678,9 +864,9 @@ async function createBucket() {
       bucketName: newBucket.value.name.trim(),
       description: newBucket.value.description.trim() || undefined
     })
-    
+
     if (response.success) {
-      alert('存储桶创建成功')
+      console.log('存储桶创建成功:', newBucket.value.name)
       showCreateBucketDialog.value = false
       newBucket.value = { name: '', description: '' }
       await loadBuckets(selectedService.value.id)
@@ -715,6 +901,358 @@ function formatFileSize(bytes: number): string {
 function getFileName(key: string): string {
   const parts = key.split('/')
   return parts[parts.length - 1]
+}
+
+async function createFolder() {
+  if (!newFolder.value.trim()) {
+    alert('请输入文件夹名称')
+    return
+  }
+
+  if (!selectedBucket.value || !selectedService.value) {
+    alert('请先选择存储桶')
+    return
+  }
+
+  try {
+    // 创建一个包含少量内容的占位文件，避免空文件导致的UnexpectedContent错误
+    const content = '# This is a placeholder file to create the folder structure\n'
+    const blob = new Blob([content], { type: 'text/plain' })
+    const file = new File([blob], '.keep', { type: 'text/plain' })
+    
+    const { uploadApi } = await import('@/api/upload')
+    const folderName = newFolder.value.trim()
+    
+    console.log('创建文件夹:', folderName, '在存储桶:', selectedBucket.value.name)
+    
+    // 计算文件哈希
+    const fileHash = await calculateFileHash(file)
+    
+    // 1. 获取上传签名
+    const signatureResponse = await uploadApi.getDirectUploadSignature({
+      fileName: '.keep',
+      fileType: 'text/plain',
+      bucket: selectedBucket.value.name,
+      folder: folderName,
+      service: selectedService.value.name,
+      fileHash: fileHash,
+      fileSize: file.size
+    })
+    
+    if (!signatureResponse.success) {
+      throw new Error(signatureResponse.message || '获取上传签名失败')
+    }
+    
+    // 2. 根据needUpload决定是否上传
+    if (signatureResponse.needUpload && signatureResponse.signature) {
+      // 需要上传新文件
+      await uploadApi.uploadFileWithSignature(file, signatureResponse.signature)
+      
+      // 3. 记录上传
+      await uploadApi.recordDirectUpload({
+        fileHash: signatureResponse.fileHash || fileHash,
+        fileKey: signatureResponse.fileKey || '',
+        fileUrl: signatureResponse.fileUrl || '',
+        originalFileName: '.keep',
+        fileSize: file.size,
+        contentType: 'text/plain',
+        bucketName: selectedBucket.value.name,
+        service: selectedService.value.name
+      })
+      console.log('文件夹创建成功 - 新建占位文件')
+    } else {
+      // 文件已存在，文件夹已经存在
+      console.log('文件夹已存在 - 使用现有占位文件')
+      // 可以选择显示提示信息，但不是错误
+      if (signatureResponse.message) {
+        console.info('提示:', signatureResponse.message)
+      }
+    }
+    showCreateFolderDialog.value = false
+    newFolder.value = ''
+    
+    // 重新加载文件夹列表
+    if (selectedBucket.value) {
+      await loadFolders(selectedBucket.value)
+    }
+  } catch (error: any) {
+    console.error('创建文件夹失败:', error)
+    alert('创建文件夹失败: ' + (error.response?.data?.message || error.message))
+  }
+}
+
+function handleFileSelect(event: Event) {
+  const target = event.target as HTMLInputElement
+  if (target.files && target.files.length > 0) {
+    uploadingFiles.value = Array.from(target.files)
+  }
+}
+
+// 计算文件SHA256哈希值
+async function calculateFileHash(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = async (event) => {
+      try {
+        const arrayBuffer = event.target?.result as ArrayBuffer
+        const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer)
+        const hashArray = Array.from(new Uint8Array(hashBuffer))
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+        resolve(hashHex)
+      } catch (error) {
+        reject(error)
+      }
+    }
+    reader.onerror = () => reject(new Error('读取文件失败'))
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+async function startUpload() {
+  if (!selectedService.value || !selectedBucket.value || uploadingFiles.value.length === 0) {
+    alert('请选择要上传的文件')
+    return
+  }
+  
+  uploadingCount.value = uploadingFiles.value.length
+  const { uploadApi } = await import('@/api/upload')
+  
+  let successCount = 0
+  let existingCount = 0
+  
+  for (const file of uploadingFiles.value) {
+    try {
+      console.log('上传文件:', file.name)
+      
+      // 1. 计算文件哈希值
+      const fileHash = await calculateFileHash(file)
+      console.log('文件哈希值:', fileHash)
+      
+      // 2. 获取上传签名
+      // 如果在文件列表视图中，使用当前文件夹；否则上传到根目录
+      const targetFolder = currentView.value === 'files' && selectedFolder.value ? selectedFolder.value : ''
+      const signatureResponse = await uploadApi.getDirectUploadSignature({
+        fileName: file.name,
+        fileType: file.type,
+        bucket: selectedBucket.value.name,
+        folder: targetFolder,
+        service: selectedService.value.name,
+        fileHash: fileHash,
+        fileSize: file.size
+      })
+      
+      if (!signatureResponse.success) {
+        throw new Error(signatureResponse.message || '获取上传签名失败')
+      }
+      
+      // 3. 上传文件
+      if (signatureResponse.needUpload && signatureResponse.signature) {
+        await uploadApi.uploadFileWithSignature(file, signatureResponse.signature)
+        
+        // 4. 记录上传
+        await uploadApi.recordDirectUpload({
+          fileHash: signatureResponse.fileHash || '',
+          fileKey: signatureResponse.fileKey || '',
+          fileUrl: signatureResponse.fileUrl || '',
+          originalFileName: file.name,
+          fileSize: file.size,
+          contentType: file.type,
+          bucketName: selectedBucket.value.name,
+          service: selectedService.value.name
+        })
+        
+        console.log('文件上传成功:', file.name)
+        uploadProgress.value[file.name] = 100
+        successCount++
+      } else if (!signatureResponse.needUpload) {
+        // 文件已存在，无需上传
+        console.log('文件已存在，无需上传:', file.name)
+        uploadProgress.value[file.name] = 100
+        
+        // 记录文件已存在的信息，但不立即显示提示
+        const message = signatureResponse.message || '文件已存在，无需重复上传'
+        console.log(`${file.name}: ${message}`)
+        
+        existingCount++
+      }
+    } catch (error: any) {
+      console.error('上传失败:', file.name, error)
+      alert(`上传 ${file.name} 失败: ` + (error.response?.data?.message || error.message))
+    }
+  }
+  
+  // 上传完成，关闭对话框并刷新
+  setTimeout(() => {
+    const totalProcessed = successCount + existingCount
+    if (totalProcessed > 0) {
+      let message = ''
+      if (successCount > 0 && existingCount > 0) {
+        message = `处理完成！新上传 ${successCount} 个文件，${existingCount} 个文件已存在`
+      } else if (successCount > 0) {
+        message = `成功上传 ${successCount} 个文件`
+      } else if (existingCount > 0) {
+        message = `${existingCount} 个文件已存在，无需重复上传`
+      }
+      alert(message)
+    }
+    
+    showUploadDialog.value = false
+    uploadingFiles.value = []
+    uploadProgress.value = {}
+    uploadingCount.value = 0
+    
+    // 根据当前视图刷新对应的列表
+    if (currentView.value === 'files' && selectedFolder.value) {
+      // 如果在文件列表视图中，刷新当前文件夹的文件列表
+      loadFilesInFolder(selectedFolder.value, currentPage.value)
+    } else if (currentView.value === 'folders' && selectedBucket.value) {
+      // 如果在文件夹视图中，刷新文件夹列表（包括根目录文件）
+      loadFolders(selectedBucket.value)
+    }
+  }, 500)
+}
+
+// 删除服务
+async function deleteService(service: Service, event: Event) {
+  event.stopPropagation()
+  
+  if (!confirm(`确定要删除服务 "${service.name}" 吗？\n\n注意：只有服务下没有存储桶时才能删除。`)) {
+    return
+  }
+  
+  try {
+    const { adminApi } = await import('@/api/admin')
+    const response = await adminApi.deleteService(service.id)
+    
+    if (response.success) {
+      alert(response.message)
+      await loadServices()
+    } else {
+      alert(response.message)
+    }
+  } catch (error: any) {
+    console.error('删除服务失败:', error)
+    alert('删除服务失败: ' + (error.response?.data?.message || error.message))
+  }
+}
+
+// 删除存储桶
+async function deleteBucket(bucket: Bucket, event: Event) {
+  event.stopPropagation()
+  
+  if (!confirm(`确定要删除存储桶 "${bucket.name}" 吗？\n\n注意：只有存储桶下没有文件时才能删除。`)) {
+    return
+  }
+  
+  try {
+    const { adminApi } = await import('@/api/admin')
+    const response = await adminApi.deleteBucket(bucket.id)
+    
+    if (response.success) {
+      alert(response.message)
+      if (selectedService.value) {
+        await loadBuckets(selectedService.value.id)
+      }
+    } else {
+      alert(response.message)
+    }
+  } catch (error: any) {
+    console.error('删除存储桶失败:', error)
+    alert('删除存储桶失败: ' + (error.response?.data?.message || error.message))
+  }
+}
+
+// 删除文件夹
+async function deleteFolder(folderName: string, event: Event) {
+  event.stopPropagation()
+  
+  if (!confirm(`确定要删除文件夹 "${folderName}" 吗？\n\n注意：只有文件夹下没有文件时才能删除。`)) {
+    return
+  }
+  
+  try {
+    if (!selectedBucket.value) {
+      alert('请先选择存储桶')
+      return
+    }
+    
+    const { adminApi } = await import('@/api/admin')
+    const response = await adminApi.deleteFolder(selectedBucket.value.id, folderName)
+    
+    if (response.success) {
+      alert(response.message)
+      if (selectedBucket.value) {
+        await loadFolders(selectedBucket.value)
+      }
+    } else {
+      alert(response.message)
+    }
+  } catch (error: any) {
+    console.error('删除文件夹失败:', error)
+    alert('删除文件夹失败: ' + (error.response?.data?.message || error.message))
+  }
+}
+
+// 删除文件
+async function deleteFile(file: any) {
+  if (!confirm(`确定要删除文件 "${getFileName(file.key)}" 吗？\n\n此操作不可恢复！`)) {
+    return
+  }
+  
+  try {
+    if (!selectedBucket.value) {
+      alert('请先选择存储桶')
+      return
+    }
+    
+    const { adminApi } = await import('@/api/admin')
+    const response = await adminApi.deleteFile(file.key, selectedBucket.value.name)
+    
+    if (response.success) {
+      alert(response.message || '文件删除成功')
+      // 重新加载当前文件夹的文件列表
+      if (selectedFolder.value) {
+        await loadFilesInFolder(selectedFolder.value, currentPage.value)
+      }
+    } else {
+      alert(response.message)
+    }
+  } catch (error: any) {
+    console.error('删除文件失败:', error)
+    alert('删除文件失败: ' + (error.response?.data?.message || error.message))
+  }
+}
+
+// 删除根目录文件
+async function deleteRootFile(file: any, event: Event) {
+  event.stopPropagation()
+  
+  if (!confirm(`确定要删除文件 "${getFileName(file.key)}" 吗？\n\n此操作不可恢复！`)) {
+    return
+  }
+  
+  try {
+    if (!selectedBucket.value) {
+      alert('请先选择存储桶')
+      return
+    }
+    
+    const { adminApi } = await import('@/api/admin')
+    const response = await adminApi.deleteFile(file.key, selectedBucket.value.name)
+    
+    if (response.success) {
+      alert(response.message || '文件删除成功')
+      // 重新加载文件夹列表（包含根目录文件）
+      if (selectedBucket.value) {
+        await loadFolders(selectedBucket.value)
+      }
+    } else {
+      alert(response.message)
+    }
+  } catch (error: any) {
+    console.error('删除文件失败:', error)
+    alert('删除文件失败: ' + (error.response?.data?.message || error.message))
+  }
 }
 
 const handleLogout = async () => {
@@ -866,14 +1404,52 @@ const handleLogout = async () => {
   color: #1a1a1a;
 }
 
+.action-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.btn-action {
+  padding: 10px 20px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #475569;
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-action:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.btn-action.btn-primary {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border-color: #3b82f6;
+  color: white;
+}
+
+.btn-action.btn-primary:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
 .view-container {
   margin-top: 20px;
 }
 
 .grid-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
+  align-items: stretch;
 }
 
 .grid-item {
@@ -889,6 +1465,9 @@ const handleLogout = async () => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   position: relative;
   overflow: hidden;
+  flex: 0 0 auto;
+  min-width: 260px;
+  max-width: 320px;
 }
 
 .grid-item::before {
@@ -983,6 +1562,42 @@ const handleLogout = async () => {
   color: #9ca3af;
 }
 
+.item-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-right: 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 10;
+}
+
+.grid-item:hover .item-actions {
+  opacity: 1;
+}
+
+.btn-delete {
+  padding: 6px 10px;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #dc2626;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.btn-delete:hover {
+  background: #fecaca;
+  border-color: #fca5a5;
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.2);
+}
+
 .item-arrow {
   font-size: 20px;
   color: #cbd5e1;
@@ -993,6 +1608,54 @@ const handleLogout = async () => {
 .grid-item:hover .item-arrow {
   color: #3b82f6;
   transform: translateX(3px);
+}
+
+/* 文件项样式 */
+.grid-item.file-item {
+  cursor: default;
+}
+
+.grid-item.file-item:hover {
+  transform: translateY(-1px) scale(1.005);
+}
+
+.grid-item.file-item .item-actions {
+  opacity: 1;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-link {
+  padding: 4px 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  color: #3b82f6;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  font-weight: 500;
+}
+
+.btn-link:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  transform: scale(1.05);
+}
+
+.btn-link-delete {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.btn-link-delete:hover {
+  background: #fecaca;
+  border-color: #fca5a5;
 }
 
 .bucket-item {
@@ -1101,6 +1764,19 @@ const handleLogout = async () => {
   margin-bottom: 16px;
 }
 
+.root-files-section {
+  margin-top: 24px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
 .breadcrumb {
   display: flex;
   align-items: center;
@@ -1146,6 +1822,43 @@ const handleLogout = async () => {
 .files-table td {
   padding: 12px;
   border-bottom: 1px solid #e5e7eb;
+}
+
+.files-table tbody tr {
+  transition: all 0.2s;
+}
+
+.files-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:hover {
+  background: #eff6ff !important;
+}
+
+.name-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.table-icon {
+  font-size: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.description-cell {
+  color: #6b7280;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-name {
@@ -1352,6 +2065,16 @@ const handleLogout = async () => {
   color: #2563eb;
 }
 
+.btn-link-delete {
+  color: #ef4444;
+  border: none;
+}
+
+.btn-link-delete:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
 .btn-pagination {
   background: #f3f4f6;
   color: #374151;
@@ -1501,11 +2224,119 @@ const handleLogout = async () => {
 }
 
 .dialog-footer {
+  padding: 16px 24px;
+  background: #f9fafb;
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  padding: 16px 24px;
   border-top: 1px solid #e5e7eb;
+}
+
+.form-hint {
+  display: block;
+  margin-top: 8px;
+  color: #6b7280;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.dialog-message {
+  margin-bottom: 16px;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.upload-info {
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border-left: 3px solid #3b82f6;
+}
+
+.upload-info div {
+  margin: 8px 0;
+  color: #1e293b;
+}
+
+.file-upload-area {
+  margin: 20px 0;
+}
+
+.upload-label {
+  display: block;
+  padding: 40px 20px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.upload-label:hover {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.upload-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.upload-text {
+  font-size: 16px;
+  font-weight: 500;
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+
+.upload-hint {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.file-list {
+  margin-top: 20px;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.file-list h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.file-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: white;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.file-item:last-child {
+  margin-bottom: 0;
+}
+
+.file-item .file-name {
+  flex: 1;
+  font-size: 14px;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-item .file-size {
+  font-size: 12px;
+  color: #64748b;
+  margin-left: 12px;
 }
 
 .time {

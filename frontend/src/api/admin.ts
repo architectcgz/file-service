@@ -74,9 +74,19 @@ export const adminApi = {
     return api.post('/buckets/create', { bucketName } as CreateBucketRequest)
   },
 
+  // 删除服务
+  deleteService(serviceId: string): Promise<AdminResponseDto> {
+    return api.delete(`/services/${serviceId}`)
+  },
+
   // 删除存储桶
-  deleteBucket(bucketName: string): Promise<AdminResponseDto> {
-    return api.post('/buckets/delete', { bucketName } as CreateBucketRequest)
+  deleteBucket(bucketId: string): Promise<AdminResponseDto> {
+    return api.delete(`/buckets/${bucketId}`)
+  },
+  
+  // 删除文件夹
+  deleteFolder(bucketId: string, folderName: string): Promise<AdminResponseDto> {
+    return api.delete(`/buckets/${bucketId}/folders`, { params: { folderName } })
   },
 
   // 列出存储桶
@@ -85,12 +95,13 @@ export const adminApi = {
   },
 
   // 列出指定存储桶中的文件夹
-  listFolders(bucketName: string): Promise<AdminResponseDto> {
-    return api.get(`/buckets/${bucketName}/folders`)
+  listFolders(serviceName: string, bucketName: string): Promise<AdminResponseDto> {
+    return api.get(`/services/${serviceName}/buckets/${bucketName}/folders`)
   },
   
   // 列出指定文件夹下的文件（支持分页）
   listFilesInFolder(
+    serviceName: string,
     bucketName: string, 
     folder: string, 
     pageSize: number = 20, 
@@ -101,7 +112,7 @@ export const adminApi = {
     if (continuationToken) {
       params.append('continuationToken', continuationToken)
     }
-    return api.get(`/buckets/${bucketName}/folders/${encodeURIComponent(folder)}/files?${params.toString()}`)
+    return api.get(`/services/${serviceName}/buckets/${bucketName}/folders/${encodeURIComponent(folder)}/files?${params.toString()}`)
   },
 
   // 同步 RustFS 存储桶到数据库

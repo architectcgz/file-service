@@ -111,6 +111,38 @@ public class AdminLoginRequestDto
 }
 
 /// <summary>
+/// 创建目录请求DTO
+/// </summary>
+public class CreateDirectoryRequestDto
+{
+    /// <summary>
+    /// 目录名称
+    /// </summary>
+    public string DirectoryName { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// 存储桶ID
+    /// </summary>
+    public Guid BucketId { get; set; }
+    
+    /// <summary>
+    /// 父目录路径（可选，如果不提供则在根目录创建）
+    /// </summary>
+    public string? ParentPath { get; set; }
+}
+
+/// <summary>
+/// 目录响应DTO
+/// </summary>
+public class DirectoryResponseDto
+{
+    public string Name { get; set; } = string.Empty;
+    public string FullPath { get; set; } = string.Empty;
+    public DateTimeOffset CreateTime { get; set; }
+    public int FileCount { get; set; }
+}
+
+/// <summary>
 /// 通用响应DTO
 /// </summary>
 public class AdminResponseDto

@@ -8,10 +8,12 @@ using FileService.Repositories.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
+using UploadStatus = FileService.Repositories.Entities.UploadStatus;
 
 namespace FileService.Services.Impl;
 
 public class UploadService(
+    IStorageService storageService,
     RustFSUtil rustFSUtil, 
     ILogger<UploadService> logger, 
     IOptions<Config.RustFSConfig> rustFSConfigOptions,
@@ -19,58 +21,6 @@ public class UploadService(
 {
     private readonly Config.RustFSConfig _rustFSConfig = rustFSConfigOptions.Value;
     
-    /// <summary>
-    /// 获取或创建服务
-    /// </summary>
-    private async Task<Service> GetOrCreateServiceAsync(string serviceName)
-    {
-        var sanitizedName = TableNameHelper.SanitizeServiceName(serviceName);
-        var service = await dbContext.Services.FirstOrDefaultAsync(s => s.Name == sanitizedName);
-        
-        if (service == null)
-        {
-            service = new Service
-            {
-                Id = Guid.NewGuid(),
-                Name = sanitizedName,
-                CreateTime = DateTimeOffset.UtcNow,
-                UpdateTime = DateTimeOffset.UtcNow,
-                IsEnabled = true
-            };
-            dbContext.Services.Add(service);
-            await dbContext.SaveChangesAsync();
-            logger.LogInformation($"创建新服务: {sanitizedName}, ID: {service.Id}");
-        }
-        
-        return service;
-    }
-    
-    /// <summary>
-    /// 获取或创建存储桶
-    /// </summary>
-    private async Task<Bucket> GetOrCreateBucketAsync(string bucketName, Guid serviceId)
-    {
-        var sanitizedName = TableNameHelper.SanitizeServiceName(bucketName);
-        var bucket = await dbContext.Buckets.FirstOrDefaultAsync(b => b.Name == sanitizedName && b.ServiceId == serviceId);
-        
-        if (bucket == null)
-        {
-            bucket = new Bucket
-            {
-                Id = Guid.NewGuid(),
-                Name = sanitizedName,
-                ServiceId = serviceId,
-                CreateTime = DateTimeOffset.UtcNow,
-                UpdateTime = DateTimeOffset.UtcNow,
-                IsEnabled = true
-            };
-            dbContext.Buckets.Add(bucket);
-            await dbContext.SaveChangesAsync();
-            logger.LogInformation($"创建新存储桶: {sanitizedName}, ID: {bucket.Id}, ServiceId: {serviceId}");
-        }
-        
-        return bucket;
-    }
     /// <summary>
     /// 计算文件的SHA256哈希值
     /// </summary>
@@ -107,67 +57,166 @@ public class UploadService(
             var fileHash = await ComputeFileHashAsync(memoryStream);
             logger.LogInformation($"文件哈希值: {fileHash}, 文件名: {file.FileName}, 大小: {file.Length} 字节");
             
-            // 2. 检查数据库中是否已存在相同哈希的文件
-            var existingFile = await dbContext.UploadedFiles
+            // 2. 检查数据库中是否已存在相同哈希的文件（支持分表）
+            var existingFile = await dbContext.GetUploadedFilesByHash(fileHash)
                 .AsTracking() // 需要修改实体，必须跟踪
                 .FirstOrDefaultAsync(f => f.FileHash == fileHash && !f.Deleted);
             
             if (existingFile != null)
             {
-                // 文件已存在，更新引用计数和最后访问时间
-                existingFile.ReferenceCount++;
-                existingFile.LastAccessTime = DateTimeOffset.UtcNow;
-                await dbContext.SaveChangesAsync();
-                
-                logger.LogInformation($"文件已存在（去重），哈希: {fileHash}, 引用计数: {existingFile.ReferenceCount}, 返回URL: {existingFile.FileUrl}");
-                return existingFile.FileUrl;
+                // 检查上传状态
+                if (existingFile.UploadStatus == (int)UploadStatus.Success)
+                {
+                    // 文件已成功上传，更新引用计数
+                    existingFile.ReferenceCount++;
+                    existingFile.LastAccessTime = DateTimeOffset.UtcNow;
+                    await dbContext.SaveChangesAsync();
+                    
+                    logger.LogInformation($"文件已存在（去重），哈希: {fileHash}, 引用计数: {existingFile.ReferenceCount}, 返回URL: {existingFile.FileUrl}");
+                    return existingFile.FileUrl;
+                }
+                else if (existingFile.UploadStatus == (int)UploadStatus.Failed)
+                {
+                    // 上次上传失败，删除旧记录，重新上传
+                    logger.LogWarning($"检测到上次上传失败的记录，删除并重试: {fileHash}");
+                    dbContext.UploadedFiles.Remove(existingFile);
+                    await dbContext.SaveChangesAsync();
+                    // 继续执行后续上传逻辑
+                }
+                else if (existingFile.UploadStatus == (int)UploadStatus.Uploading)
+                {
+                    // 正在上传中（可能是并发请求或上次未完成）
+                    var uploadingDuration = DateTimeOffset.UtcNow - existingFile.CreateTime;
+                    if (uploadingDuration.TotalMinutes > 5)
+                    {
+                        // 超过5分钟仍在上传中，认为已失败，删除并重试
+                        logger.LogWarning($"检测到超时的上传记录，删除并重试: {fileHash}");
+                        dbContext.UploadedFiles.Remove(existingFile);
+                        await dbContext.SaveChangesAsync();
+                    }
+                    else
+                    {
+                        // 并发上传：等待第一个上传完成（最多等待30秒）
+                        logger.LogInformation($"检测到并发上传，等待第一个上传完成: {fileHash}");
+                        
+                        var maxWaitSeconds = 30;
+                        var pollIntervalMs = 500; // 每500ms轮询一次
+                        var elapsedSeconds = 0;
+                        
+                        while (elapsedSeconds < maxWaitSeconds)
+                        {
+                            await Task.Delay(pollIntervalMs);
+                            elapsedSeconds += pollIntervalMs / 1000;
+                            
+                            // 重新查询状态
+                            var currentFile = await dbContext.GetUploadedFilesByHash(fileHash)
+                                .AsNoTracking()
+                                .FirstOrDefaultAsync(f => f.FileHash == fileHash && !f.Deleted);
+                            
+                            if (currentFile == null)
+                            {
+                                // 记录被删除了，可以重新上传
+                                logger.LogInformation($"原上传记录已删除，允许重新上传: {fileHash}");
+                                break;
+                            }
+                            else if (currentFile.UploadStatus == (int)UploadStatus.Success)
+                            {
+                                // 第一个上传成功了，直接返回
+                                logger.LogInformation($"并发上传等待成功，第一个上传已完成: {fileHash}");
+                                return currentFile.FileUrl;
+                            }
+                            else if (currentFile.UploadStatus == (int)UploadStatus.Failed)
+                            {
+                                // 第一个上传失败了，可以重新上传
+                                logger.LogWarning($"第一个上传失败，允许重新上传: {fileHash}");
+                                var fileToDelete = await dbContext.GetUploadedFilesByHash(fileHash)
+                                    .FirstOrDefaultAsync(f => f.Id == currentFile.Id);
+                                if (fileToDelete != null)
+                                {
+                                    dbContext.UploadedFiles.Remove(fileToDelete);
+                                    await dbContext.SaveChangesAsync();
+                                }
+                                break;
+                            }
+                            // 否则继续等待
+                        }
+                        
+                        // 超时仍在上传中
+                        if (elapsedSeconds >= maxWaitSeconds)
+                        {
+                            throw new BusinessException(BusinessError.UploadError.Code, 
+                                $"文件正在上传中，已等待{maxWaitSeconds}秒，请稍后重试");
+                        }
+                    }
+                }
             }
             
-            // 3. 文件不存在，执行上传
+            // 3. 文件不存在，准备上传
             // 根据文件类型获取对应的子目录
             var folder = rustFSUtil.GetFolderByFileType(file.ContentType);
             
             // 生成带有子目录的文件名（使用哈希值的前16位+扩展名，更易识别）
             var fileExtension = Path.GetExtension(file.FileName);
-            var fileName = $"{folder}/{fileHash[..16]}_{Guid.NewGuid():N}{fileExtension}";
-            logger.LogInformation($"上传新文件: {fileName}");
+            var fileName = string.IsNullOrEmpty(folder) 
+                ? $"{fileHash[..16]}_{Guid.NewGuid():N}{fileExtension}"
+                : $"{folder}/{fileHash[..16]}_{Guid.NewGuid():N}{fileExtension}";
             
             // 获取统一存储桶
             var bucket = rustFSUtil.GetBucketByFileType(file.ContentType);
+            var proxyFileUrl = rustFSUtil.GetProxyUrlByFileType(fileName, file.ContentType, bucket);
             
-            // 上传到统一存储桶的对应子目录
-            memoryStream.Position = 0;
-            await rustFSUtil.UploadStreamAsync(memoryStream, fileName, bucket);
-            
-            // 根据文件类型返回对应的代理URL
-            var proxyFileUrl = rustFSUtil.GetProxyUrlByFileType(fileName, file.ContentType);
-            
-            // 4. 获取或创建默认服务和存储桶
-            var service = await GetOrCreateServiceAsync("default");
-            var bucketEntity = await GetOrCreateBucketAsync(bucket, service.Id);
-            
-            // 5. 保存文件记录到数据库
+            // 4. 先保存文件记录到数据库（支持分表）- 极简化版本
             var uploadedFile = new UploadedFile
             {
                 Id = Guid.NewGuid(),
                 FileHash = fileHash,
                 FileKey = fileName,
                 FileUrl = proxyFileUrl,
-                OriginalFileName = file.FileName,
-                FileSize = file.Length,
-                ContentType = file.ContentType,
-                FileExtension = fileExtension,
-                ServiceId = service.Id,
-                BucketId = bucketEntity.Id,
+                BucketName = bucket,  // 记录 bucket 信息
                 ReferenceCount = 1,
                 UploaderId = uploaderId,
                 CreateTime = DateTimeOffset.UtcNow,
                 LastAccessTime = DateTimeOffset.UtcNow,
+                UploadStatus = (int)UploadStatus.Uploading,
                 Deleted = false
             };
             
-            dbContext.UploadedFiles.Add(uploadedFile);
-            await dbContext.SaveChangesAsync();
+            await dbContext.AddToShardTableAsync(uploadedFile);
+            logger.LogInformation($"数据库记录创建成功（状态: Uploading），准备上传文件: {fileName}");
+            
+            // 5. 再上传到 RustFS
+            try
+            {
+                memoryStream.Position = 0;
+                await rustFSUtil.UploadStreamAsync(memoryStream, fileName, bucket);
+                
+                // 上传成功，更新状态
+                var uploadedFileToUpdate = await dbContext.GetUploadedFilesByHash(fileHash)
+                    .FirstOrDefaultAsync(f => f.Id == uploadedFile.Id);
+                if (uploadedFileToUpdate != null)
+                {
+                    uploadedFileToUpdate.UploadStatus = (int)UploadStatus.Success;
+                    await dbContext.SaveChangesAsync();
+                }
+                
+                logger.LogInformation($"文件上传成功，状态已更新: {fileName}");
+            }
+            catch (Exception uploadEx)
+            {
+                // RustFS 上传失败，标记为失败状态
+                logger.LogError($"RustFS上传失败，标记为失败状态: {uploadEx.Message}");
+                
+                var fileToMarkFailed = await dbContext.GetUploadedFilesByHash(fileHash)
+                    .FirstOrDefaultAsync(f => f.Id == uploadedFile.Id);
+                if (fileToMarkFailed != null)
+                {
+                    fileToMarkFailed.UploadStatus = (int)UploadStatus.Failed;
+                    await dbContext.SaveChangesAsync();
+                    logger.LogInformation($"已标记为失败状态: {fileHash}");
+                }
+                
+                throw new BusinessException(BusinessError.UploadError.Code, $"文件上传失败: {uploadEx.Message}");
+            }
             
             logger.LogInformation($"上传成功，代理文件URL: {proxyFileUrl}, 文件记录ID: {uploadedFile.Id}");
             return proxyFileUrl;
@@ -199,32 +248,29 @@ public class UploadService(
         {
             // 基本验证由 Data Annotations 自动处理，这里不需要重复验证
             
-            //  去重检查：如果提供了文件哈希，先检查数据库中是否已存在
-            // 注意：去重检查需要考虑服务名，不同服务的文件可以重复（但同一服务内不能重复）
+            //  去重检查：如果提供了文件哈希，先检查数据库中是否已存在（支持分表）
             if (!string.IsNullOrEmpty(request.FileHash))
             {
-                var service = request.Service ?? string.Empty;
-                logger.LogInformation($"直传去重检查 - 文件哈希: {request.FileHash}, 文件名: {request.FileName}, 服务: {service}");
+                logger.LogInformation($"直传去重检查 - 文件哈希: {request.FileHash}, 文件名: {request.FileName}");
                 
-                // 使用分表查询
-                var existingFile = await dbContext
-                    .GetUploadedFilesByService(service)
+                // 使用分表查询（根据哈希值）
+                var existingFile = await dbContext.GetUploadedFilesByHash(request.FileHash)
                     .AsTracking()
                     .FirstOrDefaultAsync(f => f.FileHash == request.FileHash && !f.Deleted);
                 
                 if (existingFile != null)
                 {
-                    // 文件已存在，更新引用计数并返回已有URL
+                    // 更新引用计数
                     existingFile.ReferenceCount++;
                     existingFile.LastAccessTime = DateTimeOffset.UtcNow;
                     await dbContext.SaveChangesAsync();
                     
                     logger.LogInformation($"直传去重命中 - 哈希: {request.FileHash}, 引用计数: {existingFile.ReferenceCount}, 返回URL: {existingFile.FileUrl}");
-                    
+
                     return new DirectUploadSignatureResponseDto
                     {
                         Success = true,
-                        NeedUpload = false,  //告诉前端无需上传
+                        NeedUpload = false,
                         ExistingFileUrl = existingFile.FileUrl,
                         FileKey = existingFile.FileKey,
                         FileHash = existingFile.FileHash,
@@ -235,42 +281,41 @@ public class UploadService(
                 logger.LogInformation($"直传去重未命中 - 哈希: {request.FileHash}, 需要上传新文件");
             }
 
-            // 根据文件类型获取对应的子目录（如果前端提供了文件夹，则使用前端的；否则根据文件类型自动判断）
-            var folder = !string.IsNullOrEmpty(request.Folder) 
-                ? request.Folder.Trim('/') 
-                : rustFSUtil.GetFolderByFileType(request.FileType);
-            
-            // 生成带有子目录的文件Key
+            // 根据前端提供的文件夹路径生成文件Key
             var fileExtension = Path.GetExtension(request.FileName);
-            var key = $"{folder}/{Guid.NewGuid()}{fileExtension}";
+            string key;
             
-            // 使用请求中的存储桶（已在DTO中验证为必填）
-            var bucket = request.Bucket;
-            
-            // 记录日志
-            logger.LogInformation($"直传签名生成 - 存储桶: {bucket}, 文件类型: {request.FileType}, 子目录: {folder}, 生成的Key: {key}");
-            
-            // 生成S3 POST策略签名
-            var signature = rustFSUtil.GeneratePostPolicySignature(key, request.FileType, expiresInMinutes: 60, maxSizeBytes: maxSizeBytes);
-            
-            // 构建上传URL
-            // 生产环境：使用 Nginx 代理路径（避免直接暴露 MinIO 端口）
-            // 格式：https://www.archi0v0.top/upload/blog-files
-            string uploadUrl;
-            
-            if (!string.IsNullOrEmpty(_rustFSConfig.ProxyPath) && _rustFSConfig.ProxyPath.Contains("/api/files"))
+            if (!string.IsNullOrEmpty(request.Folder))
             {
-                // 使用代理路径（去掉 /api/files，改为 /upload）
-                var baseUrl = _rustFSConfig.ProxyPath.Replace("/api/files", "/upload");
-                uploadUrl = $"{baseUrl}/{bucket}";
-                logger.LogInformation($"使用 Nginx 代理上传 URL: {uploadUrl}");
+                // 如果前端提供了文件夹，使用指定的文件夹
+                var folder = request.Folder.Trim('/');
+                key = $"{folder}/{Guid.NewGuid()}{fileExtension}";
             }
             else
             {
-                // 开发环境或无代理：直接使用 MinIO 端点
-                uploadUrl = $"{(_rustFSConfig.UseHttps ? "https" : "http")}://{_rustFSConfig.Endpoint}/{bucket}";
-                logger.LogInformation($"使用直接 MinIO 端点: {uploadUrl}");
+                // 如果没有提供文件夹，直接放在存储桶根目录
+                key = $"{Guid.NewGuid()}{fileExtension}";
             }
+            
+            // 使用配置的统一 Bucket（或根据 service 动态选择）
+            var serviceName = request.Service ?? "default";
+            var rustfsBucketName = _rustFSConfig.Bucket;  // 使用配置的 bucket
+            
+            // 如果需要多 bucket，可以根据 service 映射
+            // 例如: rustfsBucketName = serviceName == "blog" ? "blog-files" : "default-files";
+            
+            // 记录日志
+            var folderInfo = !string.IsNullOrEmpty(request.Folder) ? request.Folder.Trim('/') : "根目录";
+            logger.LogInformation($"直传签名生成 - 服务: {serviceName}, Bucket: {rustfsBucketName}, 文件类型: {request.FileType}, 目标位置: {folderInfo}, 生成的Key: {key}");
+            
+            // 使用存储服务生成上传签名（抽象接口，便于替换存储实现）
+            var signature = storageService.GenerateUploadSignature(
+                key, request.FileType, rustfsBucketName, 
+                expiresInMinutes: 60, maxSizeBytes: maxSizeBytes);
+            
+            // 获取上传URL（通过存储服务抽象）
+            var uploadUrl = storageService.GetUploadUrl(rustfsBucketName);
+            logger.LogInformation($"使用上传 URL: {uploadUrl}");
 
             // 生成AWS4签名所需的字段
             var currentDate = DateTime.UtcNow;
@@ -278,8 +323,8 @@ public class UploadService(
             var dateTimeString = currentDate.ToString("yyyyMMddTHHmmssZ");
             var credential = $"{_rustFSConfig.AccessKey}/{dateString}/{_rustFSConfig.Region}/s3/aws4_request";
 
-            // 根据文件类型构建对应的代理URL
-            var fullFileUrl = rustFSUtil.GetProxyUrlByFileType(key, request.FileType);
+            // 根据文件类型构建对应的代理URL（包含bucket）- 使用存储服务抽象
+            var fullFileUrl = storageService.GetProxyUrlByFileType(key, request.FileType, rustfsBucketName);
             
             return new DirectUploadSignatureResponseDto
             {
@@ -288,6 +333,7 @@ public class UploadService(
                 FileKey = key,
                 FileUrl = fullFileUrl,  // 返回文件访问URL
                 FileHash = request.FileHash,  // 返回哈希值供前端上传完成后使用
+                BucketName = rustfsBucketName,  // 返回bucket名称供前端记录时使用
                 Signature = new DirectUploadSignatureDto
                 {
                     Url = uploadUrl,
@@ -389,67 +435,40 @@ public class UploadService(
                 };
             }
             
-            var service = request.Service ?? string.Empty;
-            logger.LogInformation($"记录直传文件 - 哈希: {request.FileHash}, Key: {request.FileKey}, 服务: {service}");
+            var serviceName = request.Service ?? "default";
+            var bucketName = request.BucketName ?? "default";
+            logger.LogInformation($"记录直传文件 - 哈希: {request.FileHash}, Key: {request.FileKey}, 服务: {serviceName}, 存储桶: {bucketName}");
             
-            // 检查是否已存在相同哈希的文件（理论上不应该存在，因为前面已检查过）
-            // 注意：去重检查需要考虑服务名，不同服务的文件可以重复（但同一服务内不能重复）
-            // 使用分表查询
-            var existingFile = await dbContext
-                .GetUploadedFilesByService(service)
-                .AsTracking()
-                .FirstOrDefaultAsync(f => f.FileHash == request.FileHash && !f.Deleted);
-            
-            if (existingFile != null)
-            {
-                // 如果已存在（可能是并发上传），只更新引用计数
-                logger.LogWarning($"文件已存在但仍被上传 - 哈希: {request.FileHash}, 可能是并发上传");
-                existingFile.ReferenceCount++;
-                existingFile.LastAccessTime = DateTimeOffset.UtcNow;
-                await dbContext.SaveChangesAsync();
-                
-                return new RecordDirectUploadResponseDto
-                {
-                    Success = true,
-                    Message = "文件已存在，已更新引用计数",
-                    FileId = existingFile.Id
-                };
-            }
-            
-            // 获取或创建服务和存储桶
-            var serviceEntity = await GetOrCreateServiceAsync(service);
-            var bucketEntity = await GetOrCreateBucketAsync(request.BucketName ?? "default", serviceEntity.Id);
-            
-            // 创建新的文件记录
+            // 创建文件记录（使用 UPSERT 避免并发冲突）
             var uploadedFile = new UploadedFile
             {
                 Id = Guid.NewGuid(),
                 FileHash = request.FileHash,
                 FileKey = request.FileKey,
                 FileUrl = request.FileUrl,
-                OriginalFileName = request.OriginalFileName,
-                FileSize = request.FileSize,
-                ContentType = request.ContentType,
-                FileExtension = Path.GetExtension(request.OriginalFileName),
-                ServiceId = serviceEntity.Id,
-                BucketId = bucketEntity.Id,
+                BucketName = request.BucketName ?? _rustFSConfig.Bucket,  // 使用请求中的bucket或配置的默认bucket
                 ReferenceCount = 1,
                 UploaderId = uploaderId,
                 CreateTime = DateTimeOffset.UtcNow,
                 LastAccessTime = DateTimeOffset.UtcNow,
+                UploadStatus = (int)UploadStatus.Success, // 直传完成后直接标记为成功
                 Deleted = false
             };
             
-            // 使用分表插入
-            await dbContext.AddUploadedFileToServiceTableAsync(uploadedFile, service, request.BucketName ?? "default");
+            // 使用 UPSERT：原子性地插入或更新，自动处理并发冲突
+            await dbContext.UpsertToShardTableAsync(uploadedFile);
             
-            logger.LogInformation($"直传文件记录成功 - ID: {uploadedFile.Id}, 哈希: {request.FileHash}");
+            // 查询最终的记录以获取正确的ID和引用计数
+            var finalFile = await dbContext.GetUploadedFilesByHash(request.FileHash)
+                .FirstOrDefaultAsync(f => f.FileHash == request.FileHash && !f.Deleted);
+            
+            logger.LogInformation($"直传文件记录成功 - 哈希: {request.FileHash}, 引用计数: {finalFile?.ReferenceCount ?? 1}");
             
             return new RecordDirectUploadResponseDto
             {
                 Success = true,
                 Message = "文件记录成功",
-                FileId = uploadedFile.Id
+                FileId = finalFile?.Id ?? uploadedFile.Id
             };
         }
         catch (Exception ex)
@@ -463,6 +482,21 @@ public class UploadService(
                 Message = $"记录文件失败: {ex.Message}"
             };
         }
+    }
+
+    /// <summary>
+    /// 创建目录（已废弃 - 前端不再需要）
+    /// </summary>
+    /// <param name="request">创建目录请求</param>
+    /// <returns>创建结果</returns>
+    public Task<AdminResponseDto> CreateDirectoryAsync(CreateDirectoryRequestDto request)
+    {
+        // 功能已废弃 - 前端不再需要，直接在 RustFS 控制台管理目录
+        return Task.FromResult(new AdminResponseDto
+        {
+            Success = false,
+            Message = "此功能已废弃，请直接在 RustFS 控制台管理目录"
+        });
     }
 }
 

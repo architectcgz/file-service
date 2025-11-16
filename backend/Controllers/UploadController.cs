@@ -37,13 +37,10 @@ public class UploadController(IUploadService uploadService) : BaseController
                 });
             }
 
-            // 获取RustFS工具类并构建图片代理URL
-            var rustFSUtil = HttpContext.RequestServices.GetRequiredService<RustFSUtil>();
-            var fullImageUrl = rustFSUtil.GetProxyImageUrl(Path.GetFileName(result));
-
+            // result 已经是完整的 URL，直接返回
             return Ok(new UploadResponseDto
             {
-                Url = fullImageUrl,
+                Url = result,  // UploadFileAsync 返回的已经是完整的代理 URL
                 Key = Path.GetFileName(result),
                 Success = true,
                 Message = "上传成功"
@@ -225,18 +222,16 @@ public class UploadController(IUploadService uploadService) : BaseController
             });
         }
 
-        // 文件不存在，需要上传，返回签名
-        var rustFSUtil = HttpContext.RequestServices.GetRequiredService<RustFSUtil>();
-        var fullFileUrl = rustFSUtil.GetProxyUrlByFileType(result.Signature!.Key, request.FileType);
-        
+        // 文件不存在，需要上传，返回签名（FileUrl 已在 UploadService 中生成）
         return Ok(new
         {
             success = true,
             needUpload = true,  // 需要上传
             signature = result.Signature,
-            fileUrl = fullFileUrl,  // 返回对应类型的文件URL
+            fileUrl = result.FileUrl,  // 使用 UploadService 返回的完整 URL（包含 bucket）
             fileKey = result.FileKey,
             fileHash = result.FileHash,
+            bucketName = result.BucketName,  // 返回 bucket 名称
             fileCategory = fileCategory,  // 返回文件分类
             maxSizeBytes = maxSizeBytes  // 返回最大文件大小限制
         });

@@ -31,18 +31,37 @@ export const uploadApi = {
       throw new Error('签名信息不存在')
     }
 
+    console.log('上传签名信息:', signature)
+    console.log('文件信息:', { name: file.name, size: file.size, type: file.type })
+
     const formData = new FormData()
     
-    // 按照S3 POST策略的要求，先添加所有字段
+    // 按照S3 POST策略的要求，严格按照签名中的字段顺序添加
+    // 首先添加key字段（必需）
     formData.append('key', signature.key)
+    
+    // 添加其他策略字段
+    if (signature.fields) {
+      Object.entries(signature.fields).forEach(([key, value]) => {
+        // 避免重复添加key字段
+        if (key !== 'key') {
+          formData.append(key, value)
+        }
+      })
+    }
+    
+    // 添加策略和签名
     formData.append('policy', signature.policy)
-    formData.append('x-amz-algorithm', signature.fields['x-amz-algorithm'])
-    formData.append('x-amz-credential', signature.fields['x-amz-credential'])
-    formData.append('x-amz-date', signature.fields['x-amz-date'])
     formData.append('x-amz-signature', signature.signature)
     
-    // 最后添加文件
+    // 最后添加文件（必须是最后一个字段）
     formData.append('file', file)
+
+    // 调试：打印FormData内容
+    console.log('FormData字段:')
+    for (const [key, value] of formData.entries()) {
+      console.log(`${key}:`, value)
+    }
 
     // 直接上传到S3兼容的存储
     await axios.post(signature.url, formData, {

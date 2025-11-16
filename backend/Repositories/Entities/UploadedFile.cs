@@ -5,19 +5,15 @@ using Microsoft.EntityFrameworkCore;
 namespace FileService.Repositories.Entities;
 
 /// <summary>
-/// 上传文件记录实体，用于文件去重和管理
+/// 上传文件记录实体，用于文件去重和管理（极简版）
 /// </summary>
 [Table("uploaded_files")]
 [Index(nameof(FileHash), IsUnique = true, Name = "IX_UploadedFiles_FileHash_Unique")]
-[Index(nameof(ServiceId), nameof(BucketId), Name = "IX_UploadedFiles_ServiceId_BucketId")]
-[Index(nameof(ContentType), Name = "IX_UploadedFiles_ContentType")]
-[Index(nameof(CreateTime), Name = "IX_UploadedFiles_CreateTime")]
-[Index(nameof(ReferenceCount), Name = "IX_UploadedFiles_ReferenceCount")]
 [Index(nameof(UploaderId), Name = "IX_UploadedFiles_UploaderId")]
+[Index(nameof(UploadStatus), Name = "IX_UploadedFiles_UploadStatus")]
+[Index(nameof(CreateTime), Name = "IX_UploadedFiles_CreateTime")]
 [Index(nameof(Deleted), Name = "IX_UploadedFiles_Deleted")]
-[Index(nameof(Deleted), nameof(UploaderId), Name = "IX_UploadedFiles_Deleted_UploaderId")]
-[Index(nameof(ContentType), nameof(CreateTime), nameof(Id), Name = "IX_UploadedFiles_ContentType_CreateTime_Id_Desc")]
-[Index(nameof(UploaderId), nameof(CreateTime), nameof(Id), Name = "IX_UploadedFiles_UploaderId_CreateTime_Id_Desc")]
+[Index(nameof(UploaderId), nameof(Deleted), nameof(CreateTime), Name = "IX_UploadedFiles_UploaderId_Deleted_CreateTime")]
 public class UploadedFile
 {
     /// <summary>
@@ -52,60 +48,6 @@ public class UploadedFile
     public string FileUrl { get; set; } = string.Empty;
     
     /// <summary>
-    /// 原始文件名称
-    /// </summary>
-    [MaxLength(255)]
-    [Comment("原始文件名称")]
-    public string OriginalFileName { get; set; } = string.Empty;
-    
-    /// <summary>
-    /// 文件大小（字节）
-    /// </summary>
-    [Comment("文件大小（字节）")]
-    public long FileSize { get; set; }
-    
-    /// <summary>
-    /// 文件MIME类型
-    /// </summary>
-    [Required]
-    [MaxLength(100)]
-    [Comment("文件MIME类型")]
-    public string ContentType { get; set; } = string.Empty;
-    
-    /// <summary>
-    /// 文件扩展名
-    /// </summary>
-    [MaxLength(20)]
-    [Comment("文件扩展名")]
-    public string FileExtension { get; set; } = string.Empty;
-    
-    /// <summary>
-    /// 所属服务ID（外键）
-    /// </summary>
-    [Required]
-    [Comment("所属服务ID")]
-    public Guid ServiceId { get; set; }
-    
-    /// <summary>
-    /// 所属服务（导航属性）
-    /// </summary>
-    [ForeignKey(nameof(ServiceId))]
-    public Service Service { get; set; } = null!;
-    
-    /// <summary>
-    /// 所属存储桶ID（外键）
-    /// </summary>
-    [Required]
-    [Comment("所属存储桶ID")]
-    public Guid BucketId { get; set; }
-    
-    /// <summary>
-    /// 所属存储桶（导航属性）
-    /// </summary>
-    [ForeignKey(nameof(BucketId))]
-    public Bucket Bucket { get; set; } = null!;
-    
-    /// <summary>
     /// 引用计数（有多少地方使用了这个文件）
     /// </summary>
     [Comment("文件引用计数")]
@@ -129,6 +71,20 @@ public class UploadedFile
     /// </summary>
     [Comment("最后访问时间")]
     public DateTimeOffset LastAccessTime { get; set; }
+    
+    /// <summary>
+    /// 上传状态：0-上传中，1-上传成功，2-上传失败
+    /// </summary>
+    [Comment("上传状态")]
+    public int UploadStatus { get; set; } = 0;
+    
+    /// <summary>
+    /// 存储桶名称（用于多bucket场景的内部路由）
+    /// </summary>
+    [Required]
+    [MaxLength(100)]
+    [Comment("存储桶名称")]
+    public string BucketName { get; set; } = string.Empty;
     
     /// <summary>
     /// 是否已删除（逻辑删除标志）

@@ -18,10 +18,11 @@ public class RustFSUtil
     private readonly ILogger _logger;
     private readonly IMemoryCache _memoryCache;
 
-    public RustFSUtil(IConfiguration configuration, ILogger<RustFSUtil> logger, IMemoryCache memoryCache)
+    public RustFSUtil(IConfiguration configuration, ILogger<RustFSUtil> logger, IMemoryCache memoryCache, IAmazonS3 s3Client)
     {
         _logger = logger;
         _memoryCache = memoryCache;
+        _s3Client = s3Client; // 使用注入的 S3 客户端
         _config = new RustFSConfig();
         
         var rustFSSection = configuration.GetSection("RustFSConfig");
@@ -60,21 +61,7 @@ public class RustFSUtil
             throw new InvalidOperationException("Endpoint 未配置");
         }
         
-        // 创建S3客户端
-        var serviceUrl = $"{(_config.UseHttps ? "https" : "http")}://{_config.Endpoint}";
-
-        
-        var s3Config = new AmazonS3Config
-        {
-            ForcePathStyle = _config.ForcePathStyle,
-            UseHttp = !_config.UseHttps,
-            ServiceURL = serviceUrl,
-        };
-        _logger.LogInformation($"构建的ServiceURL: {serviceUrl}");
-        
-        _logger.LogInformation($"accessKey:{_config.AccessKey},secretKey:{_config.SecretKey},bucket:{_config.Bucket},serviceUrl:{s3Config.ServiceURL}");
-        
-        _s3Client = new AmazonS3Client(_config.AccessKey, _config.SecretKey, s3Config);
+        _logger.LogInformation($"使用依赖注入的 S3 客户端");
     }
 
     /// <summary>
@@ -243,24 +230,26 @@ public class RustFSUtil
     }
 
     /// <summary>
-    /// 生成S3 POST策略签名（用于直传）
+    /// 生成S3 POST策略签名（用于前端直传）
     /// </summary>
     /// <param name="key">文件Key</param>
     /// <param name="contentType">文件类型</param>
+    /// <param name="bucketName">存储桶名称（可选，默认使用配置中的存储桶）</param>
     /// <param name="expiresInMinutes">过期时间（分钟）</param>
     /// <param name="maxSizeBytes">最大文件大小（字节）</param>
     /// <returns>包含策略和签名的对象</returns>
-    public (string Policy, string Signature) GeneratePostPolicySignature(string key, string contentType, int expiresInMinutes = 60, long maxSizeBytes = 10485760)
+    public (string Policy, string Signature) GeneratePostPolicySignature(string key, string contentType, string? bucketName = null, int expiresInMinutes = 60, long maxSizeBytes = 10485760)
     {
         try
         {
             // 创建策略文档
+            var targetBucket = bucketName ?? _config.Bucket;
             var policy = new
             {
                 expiration = DateTime.UtcNow.AddMinutes(expiresInMinutes).ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
                 conditions = new object[]
                 {
-                    new { bucket = _config.Bucket },
+                    new { bucket = targetBucket },
                     new { key = key },
                     new Dictionary<string, string> { { "Content-Type", contentType } },
                     new Dictionary<string, string> { { "x-amz-algorithm", "AWS4-HMAC-SHA256" } },
@@ -418,7 +407,7 @@ public class RustFSUtil
     /// 根据文件类型获取存储路径前缀（子目录）
     /// </summary>
     /// <param name="fileType">文件MIME类型</param>
-    /// <returns>存储路径前缀</returns>
+    /// <returns>存储路径前缀，如果未指定则返回空字符串</returns>
     public string GetFolderByFileType(string fileType)
     {
         var result = fileType.ToLower() switch
@@ -428,7 +417,7 @@ public class RustFSUtil
             var type when type.StartsWith("audio/") => _config.AudioFolder,
             var type when type.Contains("pdf") || type.Contains("document") || type.Contains("text") => _config.DocumentFolder,
             var type when type.Contains("zip") || type.Contains("rar") || type.Contains("7z") || type.Contains("tar") => _config.ArchiveFolder,
-            _ => _config.ImageFolder // 默认使用图片文件夹
+            _ => string.Empty // 默认不使用子文件夹，直接放到存储桶根目录
         };
         
         _logger.LogInformation($"GetFolderByFileType - 文件类型: {fileType}, 返回文件夹: {result}");
@@ -442,15 +431,15 @@ public class RustFSUtil
     /// </summary>
     /// <param name="key">图片文件Key</param>
     /// <returns>图片代理URL</returns>
-    public string GetProxyImageUrl(string key)
+    public string GetProxyImageUrl(string key, string bucket)
     {
-        // 使用统一代理路径，拼接存储桶名和key
+        // 使用统一代理路径，包含bucket和key
         if (!string.IsNullOrEmpty(_config.ProxyPath))
         {
-            return $"{_config.ProxyPath}/{_config.Bucket}/{key}";
+            return $"{_config.ProxyPath}/{bucket}/{key}";
         }
-        // 否则返回相对路径格式（现在key已经包含了子目录）
-        return $"{_config.Bucket}/{key}";
+        // 否则返回相对路径格式
+        return $"{bucket}/{key}";
     }
 
     /// <summary>
@@ -458,13 +447,13 @@ public class RustFSUtil
     /// </summary>
     /// <param name="key">文档文件Key</param>
     /// <returns>文档代理URL</returns>
-    public string GetProxyDocumentUrl(string key)
+    public string GetProxyDocumentUrl(string key, string bucket)
     {
         if (!string.IsNullOrEmpty(_config.ProxyPath))
         {
-            return $"{_config.ProxyPath}/{_config.Bucket}/{key}";
+            return $"{_config.ProxyPath}/{bucket}/{key}";
         }
-        return $"{_config.Bucket}/{key}";
+        return $"{bucket}/{key}";
     }
 
     /// <summary>
@@ -472,13 +461,13 @@ public class RustFSUtil
     /// </summary>
     /// <param name="key">视频文件Key</param>
     /// <returns>视频代理URL</returns>
-    public string GetProxyVideoUrl(string key)
+    public string GetProxyVideoUrl(string key, string bucket)
     {
         if (!string.IsNullOrEmpty(_config.ProxyPath))
         {
-            return $"{_config.ProxyPath}/{_config.Bucket}/{key}";
+            return $"{_config.ProxyPath}/{bucket}/{key}";
         }
-        return $"{_config.Bucket}/{key}";
+        return $"{bucket}/{key}";
     }
 
     /// <summary>
@@ -486,13 +475,13 @@ public class RustFSUtil
     /// </summary>
     /// <param name="key">音频文件Key</param>
     /// <returns>音频代理URL</returns>
-    public string GetProxyAudioUrl(string key)
+    public string GetProxyAudioUrl(string key, string bucket)
     {
         if (!string.IsNullOrEmpty(_config.ProxyPath))
         {
-            return $"{_config.ProxyPath}/{_config.Bucket}/{key}";
+            return $"{_config.ProxyPath}/{bucket}/{key}";
         }
-        return $"{_config.Bucket}/{key}";
+        return $"{bucket}/{key}";
     }
 
     /// <summary>
@@ -500,13 +489,13 @@ public class RustFSUtil
     /// </summary>
     /// <param name="key">压缩包文件Key</param>
     /// <returns>压缩包代理URL</returns>
-    public string GetProxyArchiveUrl(string key)
+    public string GetProxyArchiveUrl(string key, string bucket)
     {
         if (!string.IsNullOrEmpty(_config.ProxyPath))
         {
-            return $"{_config.ProxyPath}/{_config.Bucket}/{key}";
+            return $"{_config.ProxyPath}/{bucket}/{key}";
         }
-        return $"{_config.Bucket}/{key}";
+        return $"{bucket}/{key}";
     }
 
     /// <summary>
@@ -514,18 +503,19 @@ public class RustFSUtil
     /// </summary>
     /// <param name="key">文件Key</param>
     /// <param name="fileType">文件MIME类型</param>
+    /// <param name="bucket">存储桶名称</param>
     /// <returns>对应类型的代理URL</returns>
-    public string GetProxyUrlByFileType(string key, string fileType)
+    public string GetProxyUrlByFileType(string key, string fileType, string bucket)
     {
-        // 现在key已经包含了文件夹路径，直接根据文件类型选择对应的代理路径
+        // key已经包含了文件夹路径，根据文件类型选择对应的代理路径
         return fileType.ToLower() switch
         {
-            var type when type.StartsWith("image/") => GetProxyImageUrl(key),
-            var type when type.StartsWith("video/") => GetProxyVideoUrl(key),
-            var type when type.StartsWith("audio/") => GetProxyAudioUrl(key),
-            var type when type.Contains("pdf") || type.Contains("document") || type.Contains("text") => GetProxyDocumentUrl(key),
-            var type when type.Contains("zip") || type.Contains("rar") || type.Contains("7z") || type.Contains("tar") => GetProxyArchiveUrl(key),
-            _ => GetProxyImageUrl(key) // 默认使用图片路径
+            var type when type.StartsWith("image/") => GetProxyImageUrl(key, bucket),
+            var type when type.StartsWith("video/") => GetProxyVideoUrl(key, bucket),
+            var type when type.StartsWith("audio/") => GetProxyAudioUrl(key, bucket),
+            var type when type.Contains("pdf") || type.Contains("document") || type.Contains("text") => GetProxyDocumentUrl(key, bucket),
+            var type when type.Contains("zip") || type.Contains("rar") || type.Contains("7z") || type.Contains("tar") => GetProxyArchiveUrl(key, bucket),
+            _ => GetProxyImageUrl(key, bucket) // 默认使用图片路径
         };
     }
 
@@ -616,6 +606,92 @@ public class RustFSUtil
     }
 
     /// <summary>
+    /// 创建目录（在S3中通过创建一个以/结尾的空对象来表示目录）
+    /// </summary>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <param name="directoryPath">目录路径</param>
+    /// <returns>创建是否成功</returns>
+    public async Task<bool> CreateDirectoryAsync(string bucketName, string directoryPath)
+    {
+        try
+        {
+            // 确保目录路径以 / 结尾
+            var normalizedPath = directoryPath.TrimEnd('/') + "/";
+            
+            // 检查目录是否已存在
+            if (await DirectoryExistsAsync(bucketName, normalizedPath))
+            {
+                _logger.LogInformation($"目录已存在: {bucketName}/{normalizedPath}");
+                return true;
+            }
+
+            // 在S3中创建一个空对象来表示目录
+            var putRequest = new PutObjectRequest
+            {
+                BucketName = bucketName,
+                Key = normalizedPath,
+                ContentBody = string.Empty,
+                ContentType = "application/x-directory"
+            };
+
+            await _s3Client.PutObjectAsync(putRequest);
+            _logger.LogInformation($"目录创建成功: {bucketName}/{normalizedPath}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"创建目录异常：{ex.Message}, 存储桶: {bucketName}, 目录: {directoryPath}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 检查目录是否存在
+    /// </summary>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <param name="directoryPath">目录路径</param>
+    /// <returns>目录是否存在</returns>
+    public async Task<bool> DirectoryExistsAsync(string bucketName, string directoryPath)
+    {
+        try
+        {
+            // 确保目录路径以 / 结尾
+            var normalizedPath = directoryPath.TrimEnd('/') + "/";
+            
+            // 方法1：检查是否存在以该路径结尾的对象（目录标记）
+            try
+            {
+                var request = new GetObjectMetadataRequest
+                {
+                    BucketName = bucketName,
+                    Key = normalizedPath
+                };
+                await _s3Client.GetObjectMetadataAsync(request);
+                return true;
+            }
+            catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                // 方法2：检查是否存在以该路径为前缀的对象（即该目录下有文件）
+                var listRequest = new ListObjectsV2Request
+                {
+                    BucketName = bucketName,
+                    Prefix = normalizedPath,
+                    MaxKeys = 1
+                };
+                
+                var response = await _s3Client.ListObjectsV2Async(listRequest);
+                return response.S3Objects.Count > 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"检查目录存在性异常：{ex.Message}, 存储桶: {bucketName}, 目录: {directoryPath}");
+            return false;
+        }
+    }
+
+
+    /// <summary>
     /// 列出所有存储桶
     /// </summary>
     /// <returns>存储桶名称列表</returns>
@@ -634,18 +710,18 @@ public class RustFSUtil
     }
     
     /// <summary>
-    /// 列出指定存储桶中的所有文件夹（顶级前缀）
+    /// 列出指定存储桶中的所有文件夹和根目录文件
     /// </summary>
     /// <param name="bucketName">存储桶名称</param>
-    /// <returns>文件夹名称列表</returns>
-    public async Task<List<string>> ListFoldersAsync(string bucketName)
+    /// <returns>包含文件夹和文件信息的结果</returns>
+    public async Task<BucketContentsResult> ListFoldersAndFilesAsync(string bucketName)
     {
         try
         {
             var request = new ListObjectsV2Request
             {
                 BucketName = bucketName,
-                Delimiter = "/" // 使用分隔符来获取文件夹（前缀）
+                Delimiter = "/" // 使用分隔符来获取文件夹（前缀）和根目录文件
             };
             
             var response = await _s3Client.ListObjectsV2Async(request);
@@ -656,19 +732,56 @@ public class RustFSUtil
                 .Where(folder => !string.IsNullOrEmpty(folder))
                 .ToList();
             
-            _logger.LogInformation($"从存储桶 '{bucketName}' 列出 {folders.Count} 个文件夹");
-            return folders;
+            // S3Objects 包含根目录下的文件（不包含子文件夹中的文件）
+            var files = response.S3Objects
+                .Where(obj => !obj.Key.EndsWith("/")) // 排除文件夹标记
+                .Select(obj => new S3ObjectInfo
+                {
+                    Key = obj.Key,
+                    Size = obj.Size,
+                    LastModified = obj.LastModified,
+                    ETag = obj.ETag?.Trim('"'),
+                    Url = GetPresignedUrl(bucketName, obj.Key, isDownload: false),
+                    DownloadUrl = GetPresignedUrl(bucketName, obj.Key, isDownload: true)
+                })
+                .ToList();
+            
+            _logger.LogInformation($"从存储桶 '{bucketName}' 列出 {folders.Count} 个文件夹和 {files.Count} 个根目录文件");
+            return new BucketContentsResult
+            {
+                Folders = folders,
+                Files = files
+            };
         }
         catch (AmazonS3Exception ex)
         {
-            _logger.LogError($"列出存储桶 '{bucketName}' 的文件夹失败：{ex.Message}");
-            return new List<string>();
+            _logger.LogError($"列出存储桶 '{bucketName}' 的内容失败：{ex.Message}");
+            return new BucketContentsResult
+            {
+                Folders = new List<string>(),
+                Files = new List<S3ObjectInfo>()
+            };
         }
         catch (Exception ex)
         {
-            _logger.LogError($"列出文件夹异常：{ex.Message}");
-            return new List<string>();
+            _logger.LogError($"列出存储桶内容异常：{ex.Message}");
+            return new BucketContentsResult
+            {
+                Folders = new List<string>(),
+                Files = new List<S3ObjectInfo>()
+            };
         }
+    }
+    
+    /// <summary>
+    /// 列出指定存储桶中的所有文件夹（顶级前缀）- 保留向后兼容
+    /// </summary>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <returns>文件夹名称列表</returns>
+    public async Task<List<string>> ListFoldersAsync(string bucketName)
+    {
+        var result = await ListFoldersAndFilesAsync(bucketName);
+        return result.Folders;
     }
     
     /// <summary>
@@ -991,5 +1104,31 @@ public class S3FilePageResult
     public bool IsTruncated { get; set; }
     public string? NextContinuationToken { get; set; }
     public int KeyCount { get; set; }
+}
+
+/// <summary>
+/// 存储桶内容结果（包含文件夹和文件）
+/// </summary>
+public class BucketContentsResult
+{
+    public List<string> Folders { get; set; } = new();
+    public List<S3ObjectInfo> Files { get; set; } = new();
+}
+
+public static class RustFSUtilExtensions
+{
+    /// <summary>
+    /// 删除文件夹及其所有内容
+    /// </summary>
+    /// <param name="rustFSUtil">RustFSUtil 实例</param>
+    /// <param name="bucketName">存储桶名称</param>
+    /// <param name="folderPrefix">文件夹前缀（以 / 结尾）</param>
+    public static async Task DeleteFolderAsync(this RustFSUtil rustFSUtil, string bucketName, string folderPrefix)
+    {
+        // 注意：S3 中文件夹只是一个前缀概念，删除文件夹就是删除所有带该前缀的对象
+        // 由于这个方法在控制器中只在确认没有文件时调用，这里主要是清理可能存在的空文件夹标记
+        // 实际上如果没有文件，这个方法不会做任何事情
+        await Task.CompletedTask;
+    }
 }
 

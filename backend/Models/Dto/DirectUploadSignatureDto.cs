@@ -90,6 +90,11 @@ public class DirectUploadSignatureResponseDto
     /// 文件访问URL
     /// </summary>
     public string? FileUrl { get; set; }
+    
+    /// <summary>
+    /// 存储桶名称（用于前端记录时传回）
+    /// </summary>
+    public string? BucketName { get; set; }
 }
 
 /// <summary>

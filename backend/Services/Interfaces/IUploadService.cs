@@ -31,5 +31,12 @@ public interface IUploadService
     /// <param name="uploaderId">上传者用户ID（可选）</param>
     /// <returns>记录结果</returns>
     Task<RecordDirectUploadResponseDto> RecordDirectUploadAsync(RecordDirectUploadRequestDto request, string? uploaderId = null);
+    
+    /// <summary>
+    /// 创建目录
+    /// </summary>
+    /// <param name="request">创建目录请求</param>
+    /// <returns>创建结果</returns>
+    Task<AdminResponseDto> CreateDirectoryAsync(CreateDirectoryRequestDto request);
 }
 
