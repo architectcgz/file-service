@@ -1,39 +1,13 @@
 <template>
-  <div class="min-h-screen bg-gray-50">
-    <!-- 顶部导航栏 -->
-    <nav class="bg-white shadow-sm border-b">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center h-16">
-          <div class="flex items-center">
-            <h1 class="text-xl font-bold text-gray-800">文件服务管理后台</h1>
-          </div>
-          <div class="flex items-center space-x-4">
-            <router-link
-              to="/services"
-              class="px-4 py-2 text-sm font-medium text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition"
-            >
-              服务管理
-            </router-link>
-            <router-link
-              to="/test-upload"
-              class="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition"
-            >
-              测试上传
-            </router-link>
-            <span class="text-sm text-gray-600">欢迎，{{ authStore.username }}</span>
-            <button
-              @click="handleLogout"
-              class="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition"
-            >
-              登出
-            </button>
-          </div>
-        </div>
-      </div>
-    </nav>
+  <div class="p-6 bg-gray-50 min-h-full">
+    <!-- 页面标题 -->
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-gray-800">仪表盘</h1>
+      <p class="text-gray-600 mt-1">管理存储桶、表和文件</p>
+    </div>
 
     <!-- 主内容区 -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div>
       <!-- 标签页导航 -->
       <div class="mb-6">
         <div class="border-b border-gray-200">
@@ -402,12 +376,6 @@ const handleDeleteFile = async (): Promise<void> => {
   } finally {
     fileLoading.value = false
   }
-}
-
-// 登出
-const handleLogout = async (): Promise<void> => {
-  await authStore.logout()
-  router.push('/login')
 }
 
 onMounted(async () => {

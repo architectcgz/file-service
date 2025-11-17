@@ -1,27 +1,13 @@
 <template>
-  <div class="min-h-screen bg-gray-50">
-    <!-- 顶部导航栏 -->
-    <nav class="bg-white shadow-sm border-b">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between h-16">
-          <div class="flex items-center">
-            <h1 class="text-2xl font-bold text-gray-900">签名管理系统</h1>
-          </div>
-          <div class="flex items-center space-x-4">
-            <span class="text-sm text-gray-600">欢迎，{{ username }}</span>
-            <button
-              @click="handleLogout"
-              class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition"
-            >
-              登出
-            </button>
-          </div>
-        </div>
-      </div>
-    </nav>
+  <div class="p-6 bg-gray-50 min-h-full">
+    <!-- 页面标题 -->
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-gray-800">签名管理</h1>
+      <p class="text-gray-600 mt-1">管理和查看服务签名信息</p>
+    </div>
 
     <!-- 主内容区 -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div>
       <!-- 标签导航 -->
       <div class="bg-white rounded-lg shadow-sm mb-6">
         <div class="border-b border-gray-200">
@@ -120,18 +106,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { ref, onMounted } from 'vue'
 import { adminApi } from '@/api/admin'
 import StatCard from '@/components/StatCard.vue'
 import SignatureList from '@/components/SignatureList.vue'
 import IssueSignature from '@/components/IssueSignature.vue'
-
-const router = useRouter()
-const authStore = useAuthStore()
-
-const username = computed(() => authStore.username)
 
 const activeTab = ref('dashboard')
 const tabs = [
@@ -158,11 +137,6 @@ const loadStatistics = async () => {
   } catch (error) {
     console.error('加载统计信息失败:', error)
   }
-}
-
-const handleLogout = async () => {
-  await authStore.logout()
-  router.push('/login')
 }
 
 const handleSignatureIssued = () => {

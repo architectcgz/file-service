@@ -1,24 +1,13 @@
 <template>
   <div class="page-container">
-    <!-- 顶部导航栏 -->
-    <nav class="top-nav">
-      <div class="nav-content">
-        <div class="nav-left">
-          <h1 class="nav-title">文件服务管理后台</h1>
-        </div>
-        <div class="nav-right">
-          <router-link to="/test-upload" class="nav-link">
-            测试上传
-          </router-link>
-          <button @click="handleLogout" class="btn-logout">
-            登出
-          </button>
-        </div>
-      </div>
-    </nav>
+    <!-- 页面标题 -->
+    <div class="mb-6 px-6 pt-6">
+      <h1 class="text-2xl font-bold text-gray-800">服务管理</h1>
+      <p class="text-gray-600 mt-1">管理文件存储服务、存储桶、文件夹和文件</p>
+    </div>
 
     <!-- 主内容区 -->
-    <div class="service-management">
+    <div class="service-management px-6">
       <!-- 面包屑导航 -->
       <div v-if="currentView !== 'services'" class="breadcrumb">
         <button @click="goToServices" class="breadcrumb-item">服务列表</button>
@@ -475,13 +464,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
 import { adminApi } from '@/api/admin'
 import type { Service, Bucket } from '@/types/api'
 
 const router = useRouter()
 const route = useRoute()
-const authStore = useAuthStore()
 
 const loading = ref(false)
 const bucketsLoading = ref(false)
@@ -1253,11 +1240,6 @@ async function deleteRootFile(file: any, event: Event) {
     console.error('删除文件失败:', error)
     alert('删除文件失败: ' + (error.response?.data?.message || error.message))
   }
-}
-
-const handleLogout = async () => {
-  await authStore.logout()
-  router.push('/login')
 }
 </script>
 
