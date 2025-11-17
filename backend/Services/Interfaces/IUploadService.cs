@@ -5,7 +5,7 @@ namespace FileService.Services.Interfaces;
 
 public interface IUploadService
 {
-    Task<string> UploadFileAsync(IFormFile file, string? uploaderId = null);
+    Task<string> UploadFileAsync(IFormFile file, string bucket, string? uploaderId = null, string? folder = null);
     Task<string> GetUploadToken();
     
     /// <summary>

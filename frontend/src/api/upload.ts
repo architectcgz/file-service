@@ -76,5 +76,33 @@ export const uploadApi = {
     request: RecordDirectUploadRequest
   ): Promise<RecordDirectUploadResponse> {
     return api.post('/record-direct-upload', request).then(res => res.data)
+  },
+
+  // 通过后端 API 直接上传文件（非直传签名方式）
+  async uploadFileViaApi(
+    file: File,
+    onProgress?: (progress: number) => void
+  ): Promise<{
+    success: boolean
+    url?: string
+    key?: string
+    message?: string
+  }> {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await api.post('/rustfs', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      },
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total && onProgress) {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          onProgress(progress)
+        }
+      }
+    })
+
+    return response.data
   }
 }

@@ -1,12 +1,20 @@
 {
   "Version": 1,
-  "Hash": "GS2ci5923agQjrpJBbgFc4JHlcolKDQU+7fZe0Hd354=",
+  "Hash": "SNHmBllqzPDIMtBg4wGcg/rL3DqH6fIhWCyh8md4zlI=",
   "Source": "FileService",
   "BasePath": "_content/FileService",
   "Mode": "Default",
   "ManifestType": "Build",
   "ReferencedProjectsConfiguration": [],
-  "DiscoveryPatterns": [],
+  "DiscoveryPatterns": [
+    {
+      "Name": "FileService\\wwwroot",
+      "Source": "FileService",
+      "ContentRoot": "E:\\learn\\file-service\\backend\\wwwroot\\",
+      "BasePath": "_content/FileService",
+      "Pattern": "**"
+    }
+  ],
   "Assets": [],
   "Endpoints": []
 }

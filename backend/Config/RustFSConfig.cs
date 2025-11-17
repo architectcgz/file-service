@@ -1,5 +1,9 @@
 namespace FileService.Config;
 
+/// <summary>
+/// RustFS 存储服务配置
+/// 注意：Bucket和Folder参数已移除，应由调用方在请求中提供
+/// </summary>
 public class RustFSConfig
 {
     public string AccessKey { get; set; } = string.Empty;
@@ -9,17 +13,10 @@ public class RustFSConfig
     public bool UseHttps { get; set; } = true;
     public bool ForcePathStyle { get; set; } = true;
     
-    // 统一存储桶配置
-    public string Bucket { get; set; } = "blog-files";  // 统一存储桶
-    
-    // 各种文件类型的子目录路径
-    public string ImageFolder { get; set; } = "images";      // 图片子目录
-    public string DocumentFolder { get; set; } = "documents"; // 文档子目录
-    public string VideoFolder { get; set; } = "videos";      // 视频子目录
-    public string AudioFolder { get; set; } = "audios";      // 音频子目录
-    public string ArchiveFolder { get; set; } = "archives";  // 压缩包子目录
-    
-    // 统一代理路径配置
-    public string ProxyPath { get; set; } = string.Empty;  // 统一代理路径，如：http://www.archi0v0.top/api/files
+    /// <summary>
+    /// 统一代理路径配置
+    /// 用于生成文件访问URL，例如：https://www.archi0v0.top/api/files
+    /// </summary>
+    public string ProxyPath { get; set; } = string.Empty;
 }
 

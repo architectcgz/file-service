@@ -20,9 +20,12 @@ public class DirectUploadSignatureRequestDto
     public string FileType { get; set; } = string.Empty;
     
     /// <summary>
-    /// 存储桶名称
+    /// 存储桶名称（由调用方提供，不使用配置文件中的测试bucket）
     /// </summary>
     [Required(ErrorMessage = "存储桶名称不能为空")]
+    [MinLength(3, ErrorMessage = "存储桶名称至少3个字符")]
+    [MaxLength(63, ErrorMessage = "存储桶名称最多63个字符")]
+    [RegularExpression(@"^[a-z0-9][a-z0-9\-]*[a-z0-9]$", ErrorMessage = "存储桶名称格式不正确，只能包含小写字母、数字和连字符，且不能以连字符开头或结尾")]
     public string Bucket { get; set; } = string.Empty;
     
     /// <summary>
@@ -33,6 +36,7 @@ public class DirectUploadSignatureRequestDto
     /// <summary>
     /// 文件大小（字节）
     /// </summary>
+    [Range(1, 10737418240, ErrorMessage = "文件大小必须在1字节到10GB之间")]  // 最大10GB
     public long? FileSize { get; set; }
     
     /// <summary>
@@ -217,6 +221,14 @@ public class PresignedUrlRequestDto
     /// </summary>
     [Required(ErrorMessage = "文件Key不能为空")]
     public string FileKey { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// 存储桶名称
+    /// </summary>
+    [Required(ErrorMessage = "存储桶名称不能为空")]
+    [MinLength(3, ErrorMessage = "存储桶名称至少3个字符")]
+    [MaxLength(63, ErrorMessage = "存储桶名称最多63个字符")]
+    public string Bucket { get; set; } = string.Empty;
     
     /// <summary>
     /// 过期时间（分钟），默认60分钟

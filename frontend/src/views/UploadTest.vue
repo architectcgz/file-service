@@ -1,6 +1,83 @@
 <template>
   <div class="upload-test-container">
-    <h1>文件上传测试</h1>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <h1 style="margin: 0;">文件上传测试（直传签名）</h1>
+      <div style="display: flex; gap: 10px;">
+        <router-link 
+          to="/api-upload-test" 
+          style="padding: 10px 20px; background: #4F46E5; color: white; text-decoration: none; border-radius: 6px; display: flex; align-items: center; gap: 8px;"
+        >
+          <span>API上传测试</span>
+          <svg style="width: 20px; height: 20px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          </svg>
+        </router-link>
+        <router-link 
+          to="/admin" 
+          style="padding: 10px 20px; background: #059669; color: white; text-decoration: none; border-radius: 6px; display: flex; align-items: center; gap: 8px;"
+        >
+          <span>🔐 管理后台</span>
+        </router-link>
+      </div>
+    </div>
+
+    <!-- 配置区域 -->
+    <div class="config-section" style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+      <!-- 签名Token配置 -->
+      <div style="margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+          <h3 style="margin: 0; font-size: 16px;">🔐 API 签名配置</h3>
+          <span style="font-size: 12px; color: #6c757d;">(可选，用于测试签名验证功能)</span>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <input 
+            v-model="signatureToken" 
+            type="text" 
+            placeholder="输入签名Token（从管理后台颁发获取）"
+            style="flex: 1; padding: 10px; border: 1px solid #ced4da; border-radius: 6px; font-family: monospace; font-size: 13px;"
+          />
+          <button 
+            @click="clearSignatureToken"
+            style="padding: 10px 20px; background: #dc3545; color: white; border: none; border-radius: 6px; cursor: pointer;"
+          >
+            清除
+          </button>
+        </div>
+        <div style="margin-top: 10px; font-size: 12px; color: #6c757d;">
+          <span v-if="signatureToken">✅ 已配置签名Token，将在请求头中携带</span>
+          <span v-else>ℹ️ 未配置签名Token，将使用传统方式（可能需要共享密钥）</span>
+        </div>
+      </div>
+
+      <!-- 存储桶配置 -->
+      <div>
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+          <h3 style="margin: 0; font-size: 16px;">🪣 存储桶配置</h3>
+          <span style="font-size: 12px; color: #6c757d;">(必需，指定文件上传的目标存储桶)</span>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <input 
+            v-model="bucketName" 
+            type="text" 
+            placeholder="例如: test-default, my-production-bucket"
+            style="flex: 1; padding: 10px; border: 1px solid #ced4da; border-radius: 6px; font-size: 13px;"
+          />
+          <button 
+            @click="resetBucket"
+            style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 6px; cursor: pointer;"
+          >
+            重置
+          </button>
+        </div>
+        <div style="margin-top: 10px; font-size: 12px; color: #6c757d;">
+          <span v-if="bucketName">✅ 当前存储桶: <strong>{{ bucketName }}</strong></span>
+          <span v-else style="color: #dc3545;">⚠️ 请配置存储桶名称</span>
+        </div>
+        <div style="margin-top: 8px; font-size: 11px; color: #868e96;">
+          ℹ️ 存储桶命名规则：3-63个字符，仅小写字母、数字和连字符，不能以连字符开头或结尾
+        </div>
+      </div>
+    </div>
 
     <!-- 测试场景选择 -->
     <div class="test-scenarios">
@@ -261,7 +338,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import CryptoJS from 'crypto-js'
 import axios from 'axios'
 
@@ -277,6 +354,12 @@ const failedHash = ref(null)
 const logs = ref([])
 const fileInput = ref(null)
 
+// 签名Token配置
+const signatureToken = ref(localStorage.getItem('signatureToken') || '')
+
+// 存储桶配置
+const bucketName = ref(localStorage.getItem('bucketName') || 'test-default')
+
 // 同步相关
 const syncBucket = ref('test-default')
 const syncing = ref(false)
@@ -291,6 +374,44 @@ const api = axios.create({
     'Content-Type': 'application/json'
   }
 })
+
+// 添加请求拦截器，自动携带签名Token
+api.interceptors.request.use(config => {
+  if (signatureToken.value) {
+    config.headers['X-Signature-Token'] = signatureToken.value
+    console.log('🔐 携带签名Token:', signatureToken.value.substring(0, 20) + '...')
+  }
+  return config
+})
+
+// 清除签名Token
+function clearSignatureToken() {
+  signatureToken.value = ''
+  localStorage.removeItem('signatureToken')
+  addLog('已清除签名Token', 'info')
+}
+
+// 监听signatureToken变化，自动保存到localStorage
+watch(signatureToken, (newVal) => {
+  if (newVal) {
+    localStorage.setItem('signatureToken', newVal)
+    addLog('已保存签名Token', 'success')
+  }
+})
+
+// 监听bucketName变化，自动保存到localStorage
+watch(bucketName, (newVal) => {
+  if (newVal) {
+    localStorage.setItem('bucketName', newVal)
+    addLog(`已保存存储桶配置: ${newVal}`, 'success')
+  }
+})
+
+// 重置存储桶为默认值
+function resetBucket() {
+  bucketName.value = 'test-default'
+  addLog('已重置存储桶为默认值: test-default', 'info')
+}
 
 // 添加日志
 function addLog(message, type = 'info') {
@@ -347,7 +468,7 @@ async function uploadFile() {
       fileName: selectedFile.value.name,
       fileType: selectedFile.value.type,
       fileHash: fileHash,
-      bucket: 'default',
+      bucket: bucketName.value,
       service: 'test',
       folder: 'test-uploads'
     })
@@ -463,7 +584,7 @@ async function performUpload(index, fileHash) {
       fileName: selectedFile.value.name,
       fileType: selectedFile.value.type,
       fileHash: fileHash,
-      bucket: 'default',
+      bucket: bucketName.value,
       service: 'test',
       folder: 'concurrent-test'
     })
@@ -557,7 +678,7 @@ async function performFullUpload(fileHash) {
     fileName: selectedFile.value.name,
     fileType: selectedFile.value.type,
     fileHash: fileHash,
-    bucket: 'default',
+    bucket: bucketName.value,
     service: 'test',
     folder: 'dedup-test'
   })
@@ -623,7 +744,7 @@ async function testFailedUpload() {
       fileName: selectedFile.value.name,
       fileType: selectedFile.value.type,
       fileHash: fileHash,
-      bucket: 'default',
+      bucket: bucketName.value,
       service: 'test',
       folder: 'retry-test'
     })

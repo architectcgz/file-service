@@ -6,13 +6,15 @@ namespace FileService.Config;
 public class FileServiceSecurityConfig
 {
     /// <summary>
-    /// 允许的调用方共享密钥（用于验证请求来源）
+    /// [已废弃] 允许的调用方共享密钥（已被签名管理系统取代）
     /// </summary>
+    [Obsolete("共享密钥验证已废弃，请使用签名管理系统（SignatureToken）进行认证")]
     public string? SharedSecret { get; set; }
 
     /// <summary>
-    /// 是否启用共享密钥验证
+    /// [已废弃] 是否启用共享密钥验证（已被签名管理系统取代）
     /// </summary>
+    [Obsolete("共享密钥验证已废弃，请使用签名管理系统（SignatureToken）进行认证")]
     public bool EnableSharedSecretValidation { get; set; } = true;
 
     /// <summary>
@@ -36,9 +38,14 @@ public class FileServiceSecurityConfig
     public string? AdminUsername { get; set; }
 
     /// <summary>
-    /// 管理员密码（用于登录）
+    /// 管理员密码哈希（SHA256）
     /// </summary>
-    public string? AdminPassword { get; set; }
+    public string? AdminPasswordHash { get; set; }
+
+    /// <summary>
+    /// 管理员Token（用于API调用）
+    /// </summary>
+    public string? AdminToken { get; set; }
 
     /// <summary>
     /// Session过期时间（分钟），默认30分钟

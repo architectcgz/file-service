@@ -278,3 +278,4 @@ E:\learn\file-service\backend\obj\Debug\net9.0\refint\FileService.dll
 E:\learn\file-service\backend\obj\Debug\net9.0\FileService.pdb
 E:\learn\file-service\backend\obj\Debug\net9.0\FileService.genruntimeconfig.cache
 E:\learn\file-service\backend\obj\Debug\net9.0\ref\FileService.dll
+E:\learn\file-service\backend\bin\Debug\net9.0\FileService.staticwebassets.runtime.json

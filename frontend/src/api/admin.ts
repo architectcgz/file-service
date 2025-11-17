@@ -153,5 +153,47 @@ export const adminApi = {
   // 删除文件
   deleteFile(fileKey: string, bucketName: string | null = null): Promise<AdminResponseDto> {
     return api.post('/files/delete', { fileKey, bucketName } as DeleteFileRequest)
+  },
+
+  // ==================== 签名管理 API ====================
+  
+  // 颁发签名
+  issueSignature(data: any): Promise<any> {
+    return api.post('/signatures/issue', data)
+  },
+
+  // 获取签名列表
+  getSignatures(params: any): Promise<any> {
+    return api.get('/signatures', { params })
+  },
+
+  // 获取签名详情
+  getSignature(signatureToken: string): Promise<any> {
+    return api.get(`/signatures/${signatureToken}`)
+  },
+
+  // 撤销签名
+  revokeSignature(signatureToken: string, reason: string): Promise<any> {
+    return api.post(`/signatures/${signatureToken}/revoke`, { reason })
+  },
+
+  // 批量撤销签名
+  batchRevokeSignatures(signatureTokens: string[], reason: string): Promise<any> {
+    return api.post('/signatures/batch-revoke', { signatureTokens, reason })
+  },
+
+  // 更新签名过期时间
+  updateSignatureExpiry(signatureToken: string, newExpiryTime: string): Promise<any> {
+    return api.put(`/signatures/${signatureToken}/expiry`, { newExpiryTime })
+  },
+
+  // 清理过期签名
+  cleanExpiredSignatures(): Promise<any> {
+    return api.post('/signatures/clean-expired')
+  },
+
+  // 获取签名统计
+  getSignatureStatistics(): Promise<any> {
+    return api.get('/signatures/statistics')
   }
 }

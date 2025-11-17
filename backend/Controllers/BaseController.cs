@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
-using FileService.Config;
+using FileService.Services.Interfaces;
+using FileService.Models.Dto;
 
 namespace FileService.Controllers;
 
@@ -24,41 +24,56 @@ public abstract class BaseController : ControllerBase
     }
 
     /// <summary>
-    /// 验证请求来源（通过共享密钥）
+    /// 验证API签名（用于签名管理系统）
     /// </summary>
-    /// <returns>如果验证通过返回true，否则返回false（已设置403响应）</returns>
-    protected bool ValidateRequestSource()
+    /// <param name="requiredOperation">需要的操作类型（如 upload, download）</param>
+    /// <param name="fileType">文件类型（可选）</param>
+    /// <returns>验证结果，如果失败已设置响应</returns>
+    protected async Task<SignatureValidationResultDto?> ValidateSignatureAsync(string requiredOperation, string? fileType = null)
     {
-        var securityConfig = HttpContext.RequestServices.GetRequiredService<IOptions<FileServiceSecurityConfig>>().Value;
-        
-        // 如果未启用共享密钥验证，直接通过
-        if (!securityConfig.EnableSharedSecretValidation)
-        {
-            return true;
-        }
-
-        // 检查共享密钥
-        if (string.IsNullOrWhiteSpace(securityConfig.SharedSecret))
+        var signatureService = HttpContext.RequestServices.GetService<ISignatureService>();
+        if (signatureService == null)
         {
             Response.StatusCode = StatusCodes.Status500InternalServerError;
-            return false;
+            return null;
         }
 
-        // 从请求头获取共享密钥
-        if (!Request.Headers.TryGetValue("X-Service-Secret", out var secretHeader))
+        // 从请求头获取签名Token
+        if (!Request.Headers.TryGetValue("X-Signature-Token", out var tokenHeader))
+        {
+            Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return null;
+        }
+
+        var signatureToken = tokenHeader.ToString();
+        if (string.IsNullOrWhiteSpace(signatureToken))
+        {
+            Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return null;
+        }
+
+        // 验证签名
+        var validationResult = await signatureService.ValidateSignatureAsync(signatureToken, requiredOperation, fileType);
+        
+        if (!validationResult.IsValid)
         {
             Response.StatusCode = StatusCodes.Status403Forbidden;
-            return false;
+            return null;
         }
 
-        var providedSecret = secretHeader.ToString();
-        if (providedSecret != securityConfig.SharedSecret)
+        // 记录签名使用（直接await，不使用Task.Run避免DbContext并发问题）
+        try
         {
-            Response.StatusCode = StatusCodes.Status403Forbidden;
-            return false;
+            await signatureService.RecordSignatureUsageAsync(signatureToken);
+        }
+        catch (Exception ex)
+        {
+            // 记录失败不影响主流程，只记录日志
+            var logger = HttpContext.RequestServices.GetService<ILogger<BaseController>>();
+            logger?.LogWarning(ex, "记录签名使用失败 - Token: {Token}", signatureToken);
         }
 
-        return true;
+        return validationResult;
     }
 }
 

@@ -1,7 +1,6 @@
 using FileService.Constants;
 using FileService.Exceptions;
 using FileService.Services.Interfaces;
-using FileService.Utils;
 using FileService.Models.Dto;
 using FileService.Repositories;
 using FileService.Repositories.Entities;
@@ -14,7 +13,6 @@ namespace FileService.Services.Impl;
 
 public class UploadService(
     IStorageService storageService,
-    RustFSUtil rustFSUtil, 
     ILogger<UploadService> logger, 
     IOptions<Config.RustFSConfig> rustFSConfigOptions,
     FileServiceDbContext dbContext) : IUploadService
@@ -35,12 +33,14 @@ public class UploadService(
     }
 
     /// <summary>
-    /// 异步上传 IFormFile 到RustFS（带文件去重）
+    /// 上传文件到 RustFS（支持去重和并发控制）
     /// </summary>
     /// <param name="file">前端上传的文件</param>
+    /// <param name="bucket">目标存储桶（必需）</param>
     /// <param name="uploaderId">上传者用户ID（可选）</param>
+    /// <param name="folder">目标文件夹（可选，默认根据文件类型自动判断）</param>
     /// <returns>上传成功返回文件的 URL，失败返回 null</returns>
-    public async Task<string> UploadFileAsync(IFormFile file, string? uploaderId = null)
+    public async Task<string> UploadFileAsync(IFormFile file, string bucket, string? uploaderId = null, string? folder = null)
     {
         if (file.Length == 0)
         {
@@ -152,18 +152,29 @@ public class UploadService(
             }
             
             // 3. 文件不存在，准备上传
-            // 根据文件类型获取对应的子目录
-            var folder = rustFSUtil.GetFolderByFileType(file.ContentType);
+            // bucket参数已通过方法签名保证非空
+            var targetBucket = bucket;
+            
+            // 验证bucket是否存在
+            var bucketExists = await storageService.BucketExistsAsync(targetBucket);
+            if (!bucketExists)
+            {
+                logger.LogWarning($"存储桶不存在 - Bucket: {targetBucket}");
+                throw new BusinessException(BusinessError.UploadError.Code, $"存储桶 '{targetBucket}' 不存在，请先创建存储桶");
+            }
+            
+            // 使用传入的folder参数，如果未提供则根据文件类型自动判断
+            var targetFolder = string.IsNullOrWhiteSpace(folder) 
+                ? GetDefaultFolderByFileType(file.ContentType) 
+                : folder;
             
             // 生成带有子目录的文件名（使用哈希值的前16位+扩展名，更易识别）
             var fileExtension = Path.GetExtension(file.FileName);
-            var fileName = string.IsNullOrEmpty(folder) 
+            var fileName = string.IsNullOrEmpty(targetFolder) 
                 ? $"{fileHash[..16]}_{Guid.NewGuid():N}{fileExtension}"
-                : $"{folder}/{fileHash[..16]}_{Guid.NewGuid():N}{fileExtension}";
+                : $"{targetFolder}/{fileHash[..16]}_{Guid.NewGuid():N}{fileExtension}";
             
-            // 获取统一存储桶
-            var bucket = rustFSUtil.GetBucketByFileType(file.ContentType);
-            var proxyFileUrl = rustFSUtil.GetProxyUrlByFileType(fileName, file.ContentType, bucket);
+            var proxyFileUrl = storageService.GetProxyUrlByFileType(fileName, file.ContentType, targetBucket);
             
             // 4. 先保存文件记录到数据库（支持分表）- 极简化版本
             var uploadedFile = new UploadedFile
@@ -172,7 +183,7 @@ public class UploadService(
                 FileHash = fileHash,
                 FileKey = fileName,
                 FileUrl = proxyFileUrl,
-                BucketName = bucket,  // 记录 bucket 信息
+                BucketName = targetBucket,  // 记录 bucket 信息
                 ReferenceCount = 1,
                 UploaderId = uploaderId,
                 CreateTime = DateTimeOffset.UtcNow,
@@ -184,11 +195,11 @@ public class UploadService(
             await dbContext.AddToShardTableAsync(uploadedFile);
             logger.LogInformation($"数据库记录创建成功（状态: Uploading），准备上传文件: {fileName}");
             
-            // 5. 再上传到 RustFS
+            // 5. 再上传到存储服务
             try
             {
                 memoryStream.Position = 0;
-                await rustFSUtil.UploadStreamAsync(memoryStream, fileName, bucket);
+                await storageService.UploadStreamAsync(memoryStream, fileName, targetBucket);
                 
                 // 上传成功，更新状态
                 var uploadedFileToUpdate = await dbContext.GetUploadedFilesByHash(fileHash)
@@ -248,6 +259,18 @@ public class UploadService(
         {
             // 基本验证由 Data Annotations 自动处理，这里不需要重复验证
             
+            // 验证bucket是否存在
+            var bucketExists = await storageService.BucketExistsAsync(request.Bucket);
+            if (!bucketExists)
+            {
+                logger.LogWarning($"存储桶不存在 - Bucket: {request.Bucket}");
+                return new DirectUploadSignatureResponseDto
+                {
+                    Success = false,
+                    Message = $"存储桶 '{request.Bucket}' 不存在，请先创建存储桶"
+                };
+            }
+            
             //  去重检查：如果提供了文件哈希，先检查数据库中是否已存在（支持分表）
             if (!string.IsNullOrEmpty(request.FileHash))
             {
@@ -297,12 +320,10 @@ public class UploadService(
                 key = $"{Guid.NewGuid()}{fileExtension}";
             }
             
-            // 使用配置的统一 Bucket（或根据 service 动态选择）
+            // 使用调用方提供的 Bucket（而不是配置文件中的测试bucket）
+            // Bucket参数验证由 Data Annotations 自动处理
             var serviceName = request.Service ?? "default";
-            var rustfsBucketName = _rustFSConfig.Bucket;  // 使用配置的 bucket
-            
-            // 如果需要多 bucket，可以根据 service 映射
-            // 例如: rustfsBucketName = serviceName == "blog" ? "blog-files" : "default-files";
+            var rustfsBucketName = request.Bucket;  // 使用调用方携带的 bucket 参数
             
             // 记录日志
             var folderInfo = !string.IsNullOrEmpty(request.Folder) ? request.Folder.Trim('/') : "根目录";
@@ -370,39 +391,44 @@ public class UploadService(
     /// </summary>
     /// <param name="request">预签名URL请求</param>
     /// <returns>预签名URL响应</returns>
-    public Task<PresignedUrlResponseDto> GetPresignedUrlAsync(PresignedUrlRequestDto request)
+    public async Task<PresignedUrlResponseDto> GetPresignedUrlAsync(PresignedUrlRequestDto request)
     {
         try
         {
-            if (string.IsNullOrEmpty(request.FileKey))
+            // FileKey和Bucket验证由Data Annotations自动处理
+            
+            // 验证bucket是否存在
+            var bucketExists = await storageService.BucketExistsAsync(request.Bucket);
+            if (!bucketExists)
             {
-                return Task.FromResult(new PresignedUrlResponseDto
+                logger.LogWarning($"存储桶不存在 - Bucket: {request.Bucket}");
+                return new PresignedUrlResponseDto
                 {
                     Success = false,
-                    Message = "文件Key不能为空"
-                });
+                    Message = $"存储桶 '{request.Bucket}' 不存在"
+                };
             }
             
             // 生成预签名URL（用于GET请求访问文件）
-            var presignedUrl = rustFSUtil.GetPresignedUrl(request.FileKey, request.ExpiresInMinutes ?? 60);
+            var presignedUrl = storageService.GetPresignedUrl(request.Bucket, request.FileKey, false, request.ExpiresInMinutes ?? 60);
 
-            return Task.FromResult(new PresignedUrlResponseDto
+            return new PresignedUrlResponseDto
             {
                 Success = true,
                 PresignedUrl = presignedUrl,
                 ExpiresInMinutes = request.ExpiresInMinutes ?? 60
-            });
+            };
         }
         catch (Exception ex)
         {
             logger.LogError($"生成预签名URL失败: {ex.Message}");
             logger.LogError($"异常详情: {ex}");
 
-            return Task.FromResult(new PresignedUrlResponseDto
+            return new PresignedUrlResponseDto
             {
                 Success = false,
                 Message = $"生成预签名URL失败: {ex.Message}"
-            });
+            };
         }
     }
     
@@ -446,7 +472,7 @@ public class UploadService(
                 FileHash = request.FileHash,
                 FileKey = request.FileKey,
                 FileUrl = request.FileUrl,
-                BucketName = request.BucketName ?? _rustFSConfig.Bucket,  // 使用请求中的bucket或配置的默认bucket
+                BucketName = request.BucketName ?? "unknown",  // 使用请求中的bucket，如果未提供则标记为unknown
                 ReferenceCount = 1,
                 UploaderId = uploaderId,
                 CreateTime = DateTimeOffset.UtcNow,
@@ -497,6 +523,22 @@ public class UploadService(
             Success = false,
             Message = "此功能已废弃，请直接在 RustFS 控制台管理目录"
         });
+    }
+
+    /// <summary>
+    /// 根据文件类型获取默认文件夹（仅用于直接上传接口的向后兼容）
+    /// </summary>
+    private static string GetDefaultFolderByFileType(string fileType)
+    {
+        return fileType.ToLower() switch
+        {
+            var type when type.StartsWith("image/") => "images",
+            var type when type.StartsWith("video/") => "videos",
+            var type when type.StartsWith("audio/") => "audios",
+            var type when type.Contains("pdf") || type.Contains("document") || type.Contains("text") => "documents",
+            var type when type.Contains("zip") || type.Contains("rar") || type.Contains("7z") || type.Contains("tar") => "archives",
+            _ => string.Empty
+        };
     }
 }
 

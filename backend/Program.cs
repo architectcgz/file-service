@@ -8,7 +8,6 @@ using Scalar.AspNetCore;
 using FileService.Repositories;
 using FileService.Services.Impl;
 using FileService.Services.Interfaces;
-using FileService.Utils;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -81,7 +80,7 @@ builder.Services.AddDbContext<FileServiceDbContext>(options =>
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-// 内存缓存（用于RustFSUtil的本地缓存，必须在RustFSUtil之前注册）
+// 内存缓存（用于存储服务的预签名URL缓存等）
 builder.Services.AddMemoryCache();
 
 // 添加Session支持（用于管理员登录）
@@ -122,9 +121,7 @@ builder.Services.AddSingleton<IStorageService, RustFSStorageService>();
 // 注册业务服务
 builder.Services.AddScoped<IUploadService, UploadService>();
 builder.Services.AddScoped<ISyncService, SyncService>();
-
-// RustFSUtil 保留用于向后兼容（如果直接引用的地方较多）
-builder.Services.AddSingleton<RustFSUtil>();
+builder.Services.AddScoped<ISignatureService, SignatureService>();
 
 var app = builder.Build();
 

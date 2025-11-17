@@ -6,6 +6,7 @@ namespace FileService.Repositories;
 public class FileServiceDbContext(DbContextOptions<FileServiceDbContext> options) : DbContext(options)
 {
     public DbSet<UploadedFile> UploadedFiles { get; set; }
+    public DbSet<ApiSignature> ApiSignatures { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -82,6 +83,46 @@ public class FileServiceDbContext(DbContextOptions<FileServiceDbContext> options
                 
             entity.Property(e => e.Deleted)
                 .HasDefaultValue(false);
+        });
+
+        // API签名配置
+        modelBuilder.Entity<ApiSignature>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id)
+                .ValueGeneratedOnAdd();
+
+            // 唯一索引 - 签名Token
+            entity.HasIndex(e => e.SignatureToken)
+                .IsUnique()
+                .HasDatabaseName("IX_ApiSignatures_SignatureToken_Unique");
+
+            // 状态和过期时间组合索引 - 用于清理过期签名
+            entity.HasIndex(e => new { e.Status, e.ExpiresAt })
+                .HasDatabaseName("IX_ApiSignatures_Status_ExpiresAt");
+
+            // 调用方服务索引
+            entity.HasIndex(e => e.CallerService)
+                .HasDatabaseName("IX_ApiSignatures_CallerService");
+
+            // 创建时间索引
+            entity.HasIndex(e => e.CreatedAt)
+                .IsDescending()
+                .HasDatabaseName("IX_ApiSignatures_CreatedAt");
+
+            // 时间戳默认值
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'")
+                .ValueGeneratedOnAdd();
+
+            entity.Property(e => e.Status)
+                .HasDefaultValue("active");
+
+            entity.Property(e => e.UsageCount)
+                .HasDefaultValue(0);
+
+            entity.Property(e => e.MaxUsageCount)
+                .HasDefaultValue(0);
         });
     }
     
