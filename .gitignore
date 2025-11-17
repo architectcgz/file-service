@@ -2,7 +2,9 @@
 backend/appsettings.Development.json
 backend/appsettings.Production.json
 
+# Deploy environment files
 deploy/.env
+deploy/**/.env
 
 # .NET Build artifacts
 **/bin/
