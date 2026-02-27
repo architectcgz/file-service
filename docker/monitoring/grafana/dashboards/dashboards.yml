@@ -1,0 +1,17 @@
+# Grafana Dashboard 自动加载配置
+# 用于自动导入 Bitmap 监控仪表板
+
+apiVersion: 1
+
+providers:
+  # Bitmap 监控仪表板
+  - name: 'Bitmap Monitoring'
+    orgId: 1
+    folder: 'File Service'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

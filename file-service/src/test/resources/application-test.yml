@@ -1,0 +1,36 @@
+# 测试环境配置
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+  # Redis 配置（集成测试使用 Testcontainers）
+  data:
+    redis:
+      password:  # 空密码，Testcontainers Redis 不需要密码
+  # 禁用 Redisson 自动配置（使用 local storage 的测试不需要 Redis）
+  autoconfigure:
+    exclude: org.redisson.spring.starter.RedissonAutoConfigurationV2
+
+# MyBatis 配置
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.architectcgz.file.infrastructure.repository.po
+  type-handlers-package: com.architectcgz.file.infrastructure.mybatis
+  configuration:
+    map-underscore-to-camel-case: true
+    default-statement-timeout: 30
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# Bitmap 配置（集成测试启用）
+storage:
+  multipart:
+    bitmap:
+      enabled: true
+      sync-batch-size: 10
+      expire-hours: 24
+      max-parts: 10000
+
+# 日志配置 - 调试 MyBatis
+logging:
+  level:
+    com.architectcgz.file.infrastructure.repository.mapper: DEBUG
+    org.mybatis: DEBUG

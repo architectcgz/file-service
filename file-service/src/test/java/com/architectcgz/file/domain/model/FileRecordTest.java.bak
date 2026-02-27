@@ -1,0 +1,383 @@
+package com.architectcgz.file.domain.model;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import java.time.LocalDateTime;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * FileRecord 领域模型单元测试
+ * 
+ * 测试 FileRecord 的业务方法，特别是 appId 相关的隔离逻辑
+ */
+@DisplayName("FileRecord 领域模型测试")
+class FileRecordTest {
+    
+    private FileRecord fileRecord;
+    
+    @BeforeEach
+    void setUp() {
+        fileRecord = FileRecord.builder()
+                .id("file-001")
+                .appId("blog")
+                .userId(123L)
+                .storageObjectId("storage-001")
+                .originalFilename("test.jpg")
+                .storagePath("blog/2026/01/19/123/images/test.jpg")
+                .fileSize(1024L)
+                .contentType("image/jpeg")
+                .fileHash("abc123")
+                .hashAlgorithm("MD5")
+                .status(FileStatus.COMPLETED)
+                .accessLevel(AccessLevel.PUBLIC)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+    }
+    
+    @Nested
+    @DisplayName("belongsToApp() 方法测试")
+    class BelongsToAppTests {
+        
+        @Test
+        @DisplayName("应该返回 true 当 appId 匹配时")
+        void shouldReturnTrueWhenAppIdMatches() {
+            // When
+            boolean result = fileRecord.belongsToApp("blog");
+            
+            // Then
+            assertTrue(result);
+        }
+        
+        @Test
+        @DisplayName("应该返回 false 当 appId 不匹配时")
+        void shouldReturnFalseWhenAppIdDoesNotMatch() {
+            // When
+            boolean result = fileRecord.belongsToApp("im");
+            
+            // Then
+            assertFalse(result);
+        }
+        
+        @Test
+        @DisplayName("应该返回 false 当文件的 appId 为 null 时")
+        void shouldReturnFalseWhenFileAppIdIsNull() {
+            // Given
+            fileRecord.setAppId(null);
+            
+            // When
+            boolean result = fileRecord.belongsToApp("blog");
+            
+            // Then
+            assertFalse(result);
+        }
+        
+        @Test
+        @DisplayName("应该返回 false 当传入的 appId 为 null 时")
+        void shouldReturnFalseWhenInputAppIdIsNull() {
+            // When
+            boolean result = fileRecord.belongsToApp(null);
+            
+            // Then
+            assertFalse(result);
+        }
+        
+        @Test
+        @DisplayName("应该返回 false 当两个 appId 都为 null 时")
+        void shouldReturnFalseWhenBothAppIdsAreNull() {
+            // Given
+            fileRecord.setAppId(null);
+            
+            // When
+            boolean result = fileRecord.belongsToApp(null);
+            
+            // Then
+            assertFalse(result);
+        }
+        
+        @Test
+        @DisplayName("应该区分大小写")
+        void shouldBeCaseSensitive() {
+            // When
+            boolean resultLowerCase = fileRecord.belongsToApp("blog");
+            boolean resultUpperCase = fileRecord.belongsToApp("BLOG");
+            boolean resultMixedCase = fileRecord.belongsToApp("Blog");
+            
+            // Then
+            assertTrue(resultLowerCase);
+            assertFalse(resultUpperCase);
+            assertFalse(resultMixedCase);
+        }
+        
+        @Test
+        @DisplayName("应该返回 false 当 appId 包含额外空格时")
+        void shouldReturnFalseWhenAppIdHasExtraSpaces() {
+            // When
+            boolean result = fileRecord.belongsToApp(" blog ");
+            
+            // Then
+            assertFalse(result);
+        }
+        
+        @Test
+        @DisplayName("应该正确处理带连字符的 appId")
+        void shouldHandleAppIdWithHyphens() {
+            // Given
+            fileRecord.setAppId("blog-service");
+            
+            // When
+            boolean resultMatch = fileRecord.belongsToApp("blog-service");
+            boolean resultNoMatch = fileRecord.belongsToApp("blog");
+            
+            // Then
+            assertTrue(resultMatch);
+            assertFalse(resultNoMatch);
+        }
+        
+        @Test
+        @DisplayName("应该正确处理带下划线的 appId")
+        void shouldHandleAppIdWithUnderscores() {
+            // Given
+            fileRecord.setAppId("blog_service");
+            
+            // When
+            boolean resultMatch = fileRecord.belongsToApp("blog_service");
+            boolean resultNoMatch = fileRecord.belongsToApp("blog");
+            
+            // Then
+            assertTrue(resultMatch);
+            assertFalse(resultNoMatch);
+        }
+    }
+    
+    @Nested
+    @DisplayName("markAsDeleted() 方法测试")
+    class MarkAsDeletedTests {
+        
+        @Test
+        @DisplayName("应该将状态设置为 DELETED")
+        void shouldSetStatusToDeleted() {
+            // Given
+            assertEquals(FileStatus.COMPLETED, fileRecord.getStatus());
+            LocalDateTime beforeUpdate = fileRecord.getUpdatedAt();
+            
+            // When
+            fileRecord.markAsDeleted();
+            
+            // Then
+            assertEquals(FileStatus.DELETED, fileRecord.getStatus());
+        }
+        
+        @Test
+        @DisplayName("应该更新 updatedAt 时间戳")
+        void shouldUpdateTimestamp() {
+            // Given
+            LocalDateTime beforeUpdate = fileRecord.getUpdatedAt();
+            
+            // When
+            try {
+                Thread.sleep(10); // 确保时间戳不同
+            } catch (InterruptedException e) {
+                // Ignore
+            }
+            fileRecord.markAsDeleted();
+            
+            // Then
+            assertTrue(fileRecord.getUpdatedAt().isAfter(beforeUpdate));
+        }
+        
+        @Test
+        @DisplayName("应该可以多次调用而不出错")
+        void shouldBeIdempotent() {
+            // When
+            fileRecord.markAsDeleted();
+            fileRecord.markAsDeleted();
+            fileRecord.markAsDeleted();
+            
+            // Then
+            assertEquals(FileStatus.DELETED, fileRecord.getStatus());
+        }
+    }
+    
+    @Nested
+    @DisplayName("isDeleted() 方法测试")
+    class IsDeletedTests {
+        
+        @Test
+        @DisplayName("应该返回 true 当状态为 DELETED 时")
+        void shouldReturnTrueWhenStatusIsDeleted() {
+            // Given
+            fileRecord.setStatus(FileStatus.DELETED);
+            
+            // When
+            boolean result = fileRecord.isDeleted();
+            
+            // Then
+            assertTrue(result);
+        }
+        
+        @Test
+        @DisplayName("应该返回 false 当状态为 COMPLETED 时")
+        void shouldReturnFalseWhenStatusIsCompleted() {
+            // Given
+            fileRecord.setStatus(FileStatus.COMPLETED);
+            
+            // When
+            boolean result = fileRecord.isDeleted();
+            
+            // Then
+            assertFalse(result);
+        }
+        
+        @Test
+        @DisplayName("应该返回 false 当状态为 PENDING 时")
+        void shouldReturnFalseWhenStatusIsPending() {
+            // Given
+            fileRecord.setStatus(FileStatus.ACTIVE);
+            
+            // When
+            boolean result = fileRecord.isDeleted();
+            
+            // Then
+            assertFalse(result);
+        }
+        
+        @Test
+        @DisplayName("应该返回 false 当状态为 null 时")
+        void shouldReturnFalseWhenStatusIsNull() {
+            // Given
+            fileRecord.setStatus(null);
+            
+            // When
+            boolean result = fileRecord.isDeleted();
+            
+            // Then
+            assertFalse(result);
+        }
+    }
+    
+    @Nested
+    @DisplayName("isCompleted() 方法测试")
+    class IsCompletedTests {
+        
+        @Test
+        @DisplayName("应该返回 true 当状态为 COMPLETED 时")
+        void shouldReturnTrueWhenStatusIsCompleted() {
+            // Given
+            fileRecord.setStatus(FileStatus.COMPLETED);
+            
+            // When
+            boolean result = fileRecord.isCompleted();
+            
+            // Then
+            assertTrue(result);
+        }
+        
+        @Test
+        @DisplayName("应该返回 false 当状态为 DELETED 时")
+        void shouldReturnFalseWhenStatusIsDeleted() {
+            // Given
+            fileRecord.setStatus(FileStatus.DELETED);
+            
+            // When
+            boolean result = fileRecord.isCompleted();
+            
+            // Then
+            assertFalse(result);
+        }
+        
+        @Test
+        @DisplayName("应该返回 false 当状态为 PENDING 时")
+        void shouldReturnFalseWhenStatusIsPending() {
+            // Given
+            fileRecord.setStatus(FileStatus.ACTIVE);
+            
+            // When
+            boolean result = fileRecord.isCompleted();
+            
+            // Then
+            assertFalse(result);
+        }
+        
+        @Test
+        @DisplayName("应该返回 false 当状态为 null 时")
+        void shouldReturnFalseWhenStatusIsNull() {
+            // Given
+            fileRecord.setStatus(null);
+            
+            // When
+            boolean result = fileRecord.isCompleted();
+            
+            // Then
+            assertFalse(result);
+        }
+    }
+    
+    @Nested
+    @DisplayName("Builder 模式测试")
+    class BuilderTests {
+        
+        @Test
+        @DisplayName("应该正确构建包含所有字段的 FileRecord")
+        void shouldBuildFileRecordWithAllFields() {
+            // Given
+            LocalDateTime now = LocalDateTime.now();
+            
+            // When
+            FileRecord record = FileRecord.builder()
+                    .id("file-123")
+                    .appId("blog")
+                    .userId(456L)
+                    .storageObjectId("storage-456")
+                    .originalFilename("document.pdf")
+                    .storagePath("blog/2026/01/19/456/files/document.pdf")
+                    .fileSize(2048L)
+                    .contentType("application/pdf")
+                    .fileHash("def456")
+                    .hashAlgorithm("SHA256")
+                    .status(FileStatus.COMPLETED)
+                    .accessLevel(AccessLevel.PRIVATE)
+                    .createdAt(now)
+                    .updatedAt(now)
+                    .build();
+            
+            // Then
+            assertEquals("file-123", record.getId());
+            assertEquals("blog", record.getAppId());
+            assertEquals(456L, record.getUserId());
+            assertEquals("storage-456", record.getStorageObjectId());
+            assertEquals("document.pdf", record.getOriginalFilename());
+            assertEquals("blog/2026/01/19/456/files/document.pdf", record.getStoragePath());
+            assertEquals(2048L, record.getFileSize());
+            assertEquals("application/pdf", record.getContentType());
+            assertEquals("def456", record.getFileHash());
+            assertEquals("SHA256", record.getHashAlgorithm());
+            assertEquals(FileStatus.COMPLETED, record.getStatus());
+            assertEquals(AccessLevel.PRIVATE, record.getAccessLevel());
+            assertEquals(now, record.getCreatedAt());
+            assertEquals(now, record.getUpdatedAt());
+        }
+        
+        @Test
+        @DisplayName("应该允许构建部分字段的 FileRecord")
+        void shouldBuildFileRecordWithPartialFields() {
+            // When
+            FileRecord record = FileRecord.builder()
+                    .id("file-789")
+                    .appId("im")
+                    .userId(789L)
+                    .build();
+            
+            // Then
+            assertEquals("file-789", record.getId());
+            assertEquals("im", record.getAppId());
+            assertEquals(789L, record.getUserId());
+            assertNull(record.getStorageObjectId());
+            assertNull(record.getOriginalFilename());
+        }
+    }
+}

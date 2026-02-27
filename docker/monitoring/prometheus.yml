@@ -1,0 +1,74 @@
+# Prometheus 配置文件
+# 用于监控 File Service 的 Bitmap 优化功能
+
+global:
+  # 抓取间隔 - 每 15 秒采集一次指标
+  scrape_interval: 15s
+  
+  # 评估间隔 - 每 15 秒评估一次告警规则
+  evaluation_interval: 15s
+  
+  # 外部标签 - 添加到所有时间序列和告警
+  external_labels:
+    cluster: 'file-service'
+    environment: 'development'
+
+# 抓取配置
+scrape_configs:
+  # File Service 应用监控
+  - job_name: 'file-service'
+    # Actuator Prometheus 端点路径
+    metrics_path: '/actuator/prometheus'
+    
+    # 静态目标配置
+    static_configs:
+      - targets: ['host.docker.internal:8089']  # Windows/Mac Docker Desktop
+        labels:
+          service: 'file-service'
+          instance: 'file-service-1'
+          component: 'application'
+    
+    # 健康检查和重新标记配置
+    relabel_configs:
+      # 保留原始地址作为 __param_target
+      - source_labels: [__address__]
+        target_label: __param_target
+      
+      # 使用 __param_target 作为 instance 标签
+      - source_labels: [__param_target]
+        target_label: instance
+      
+      # 设置实际的抓取地址
+      - target_label: __address__
+        replacement: host.docker.internal:8089
+
+  # Redis 监控 (可选 - 如果安装了 Redis Exporter)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+          instance: 'file-service-redis'
+    # 如果没有 Redis Exporter，可以注释掉此配置
+
+  # PostgreSQL 监控 (可选 - 如果安装了 Postgres Exporter)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgres'
+          instance: 'file-service-postgres'
+    # 如果没有 Postgres Exporter，可以注释掉此配置
+
+# 告警规则文件 (可选)
+# rule_files:
+#   - '/etc/prometheus/alerts/*.yml'
+
+# 存储配置
+storage:
+  tsdb:
+    # 数据保留时间
+    retention.time: 30d
+    
+    # 数据压缩
+    wal_compression: true

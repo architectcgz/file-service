@@ -1,0 +1,281 @@
+# =====================================================
+# File Service - 生产环境完整部署
+# =====================================================
+# 包含所有依赖，无需依赖外部共享基础设施
+#
+# 使用方式:
+#   使用 MinIO (推荐):
+#     docker compose -f docker-compose.prod.yml --profile minio up -d
+#
+#   使用 RustFS (备选):
+#     docker compose -f docker-compose.prod.yml --profile rustfs up -d
+# =====================================================
+
+services:
+  # =====================================================
+  # PostgreSQL
+  # =====================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: file-service-prod-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres123456}
+      - POSTGRES_DB=file_service
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - file-service-prod
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d file_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # =====================================================
+  # Redis
+  # =====================================================
+  redis:
+    image: redis:7.4-alpine
+    container_name: file-service-prod-redis
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-redis123456}
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - file-service-prod
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis123456}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # =====================================================
+  # MinIO - S3 兼容对象存储 (推荐)
+  # =====================================================
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: file-service-prod-minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-fileservice}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-fileservice123}
+      - TZ=Asia/Shanghai
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - file-service-prod
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    profiles:
+      - minio
+
+  # =====================================================
+  # MinIO 初始化 - 自动创建存储桶
+  # =====================================================
+  minio-init:
+    image: minio/mc:latest
+    container_name: file-service-prod-minio-init
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-fileservice}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-fileservice123}
+    volumes:
+      - ./minio-init:/scripts:ro
+    entrypoint: /scripts/init-buckets.sh
+    networks:
+      - file-service-prod
+    depends_on:
+      minio:
+        condition: service_healthy
+    profiles:
+      - minio
+
+  # =====================================================
+  # RustFS - S3 兼容对象存储 (备选)
+  # =====================================================
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: file-service-prod-rustfs
+    environment:
+      - RUSTFS_ACCESS_KEY=${RUSTFS_ROOT_USER:-fileservice}
+      - RUSTFS_SECRET_KEY=${RUSTFS_ROOT_PASSWORD:-fileservice123}
+      - RUSTFS_CONSOLE_ADDRESS=:9001
+    ports:
+      - "${RUSTFS_API_PORT:-9001}:9000"
+      - "${RUSTFS_CONSOLE_PORT:-9002}:9001"
+    volumes:
+      - rustfs_data:/data
+    networks:
+      - file-service-prod
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/9000' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    profiles:
+      - rustfs
+
+  # =====================================================
+  # File Service 应用 (MinIO)
+  # =====================================================
+  file-service-minio-app:
+    build:
+      context: ../file-service
+      dockerfile: Dockerfile
+    image: file-service:latest
+    container_name: file-service-prod-app
+    environment:
+      - SERVER_PORT=8089
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_CLOUD_NACOS_DISCOVERY_ENABLED=false
+      - SPRING_CLOUD_NACOS_CONFIG_ENABLED=false
+      - DB_URL=jdbc:postgresql://postgres:5432/file_service
+      - DB_USERNAME=${POSTGRES_USER:-postgres}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-postgres123456}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis123456}
+      - REDIS_DATABASE=0
+      - CACHE_ENABLED=${CACHE_ENABLED:-true}
+      - CACHE_URL_TTL=${CACHE_URL_TTL:-3600}
+      - S3_ENDPOINT=http://minio:9000
+      - S3_PUBLIC_ENDPOINT=${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      - S3_ACCESS_KEY=${MINIO_ROOT_USER:-fileservice}
+      - S3_SECRET_KEY=${MINIO_ROOT_PASSWORD:-fileservice123}
+      - S3_BUCKET=${S3_BUCKET:-platform-files}
+      - S3_PUBLIC_BUCKET=${S3_PUBLIC_BUCKET:-platform-files-public}
+      - S3_PRIVATE_BUCKET=${S3_PRIVATE_BUCKET:-platform-files-private}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - STORAGE_TYPE=s3
+      - ROCKETMQ_NAME_SERVER=rocketmq-placeholder:9876
+      - JAVA_OPTS=${JAVA_OPTS:--Xms256m -Xmx512m -XX:+UseG1GC}
+    ports:
+      - "${FILE_SERVICE_PORT:-8089}:8089"
+    volumes:
+      - app_logs:/app/logs
+      - app_uploads:/app/uploads
+    networks:
+      - file-service-prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8089/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    profiles:
+      - minio
+
+  # =====================================================
+  # File Service 应用 (RustFS)
+  # =====================================================
+  file-service-rustfs-app:
+    build:
+      context: ../file-service
+      dockerfile: Dockerfile
+    image: file-service:latest
+    container_name: file-service-prod-app
+    environment:
+      - SERVER_PORT=8089
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_CLOUD_NACOS_DISCOVERY_ENABLED=false
+      - SPRING_CLOUD_NACOS_CONFIG_ENABLED=false
+      - DB_URL=jdbc:postgresql://postgres:5432/file_service
+      - DB_USERNAME=${POSTGRES_USER:-postgres}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-postgres123456}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis123456}
+      - REDIS_DATABASE=0
+      - CACHE_ENABLED=${CACHE_ENABLED:-true}
+      - CACHE_URL_TTL=${CACHE_URL_TTL:-3600}
+      - S3_ENDPOINT=http://rustfs:9000
+      - S3_PUBLIC_ENDPOINT=${S3_PUBLIC_ENDPOINT:-http://localhost:9001}
+      - S3_ACCESS_KEY=${RUSTFS_ROOT_USER:-fileservice}
+      - S3_SECRET_KEY=${RUSTFS_ROOT_PASSWORD:-fileservice123}
+      - S3_BUCKET=${S3_BUCKET:-platform-files}
+      - S3_PUBLIC_BUCKET=${S3_PUBLIC_BUCKET:-platform-files-public}
+      - S3_PRIVATE_BUCKET=${S3_PRIVATE_BUCKET:-platform-files-private}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - STORAGE_TYPE=s3
+      - ROCKETMQ_NAME_SERVER=rocketmq-placeholder:9876
+      - JAVA_OPTS=${JAVA_OPTS:--Xms256m -Xmx512m -XX:+UseG1GC}
+    ports:
+      - "${FILE_SERVICE_PORT:-8089}:8089"
+    volumes:
+      - app_logs:/app/logs
+      - app_uploads:/app/uploads
+    networks:
+      - file-service-prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8089/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    profiles:
+      - rustfs
+
+# =====================================================
+# Networks
+# =====================================================
+networks:
+  file-service-prod:
+    name: file-service-prod
+    driver: bridge
+
+# =====================================================
+# Volumes
+# =====================================================
+volumes:
+  postgres_data:
+    name: file_service_prod_postgres_data
+  redis_data:
+    name: file_service_prod_redis_data
+  minio_data:
+    name: file_service_prod_minio_data
+  rustfs_data:
+    name: file_service_prod_rustfs_data
+  app_logs:
+    name: file_service_prod_logs
+  app_uploads:
+    name: file_service_prod_uploads

@@ -1,0 +1,121 @@
+# RustFS Integration Test Configuration
+# This configuration is used for integration tests with real RustFS/MinIO storage
+
+server:
+  port: 0
+
+spring:
+  application:
+    name: file-service-rustfs-test
+  datasource:
+    url: jdbc:h2:mem:rustfs_testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+  h2:
+    console:
+      enabled: false
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+  config:
+    import: ""
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+# MyBatis Configuration
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# Storage Configuration - Using S3 (RustFS/MinIO)
+storage:
+  type: s3
+  
+  # S3 Compatible Storage Configuration (RustFS/MinIO)
+  s3:
+    endpoint: ${RUSTFS_ENDPOINT:http://localhost:9100}
+    access-key: ${RUSTFS_ACCESS_KEY:admin}
+    secret-key: ${RUSTFS_SECRET_KEY:admin123456}
+    bucket: ${RUSTFS_BUCKET:test-bucket}
+    region: ${RUSTFS_REGION:us-east-1}
+    path-style-access: true
+    cdn-domain: ${RUSTFS_CDN_DOMAIN:}
+  
+  # Multipart Upload Configuration
+  multipart:
+    enabled: true
+    threshold: 10485760      # 10MB - Files larger than this use multipart upload
+    chunk-size: 5242880      # 5MB - Size of each part
+    max-parts: 10000         # Maximum number of parts
+    task-expire-hours: 24    # Task expiration time (hours)
+    cleanup-cron: 0 0 * * * *  # Cleanup expired tasks every hour
+  
+  # File Type Restrictions
+  file-types:
+    allowed-types:
+      images:
+        - image/jpeg
+        - image/png
+        - image/gif
+        - image/webp
+        - image/svg+xml
+      videos:
+        - video/mp4
+        - video/webm
+        - video/quicktime
+      documents:
+        - application/pdf
+        - application/msword
+        - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+        - text/plain
+    allowed-extensions:
+      - jpg
+      - jpeg
+      - png
+      - gif
+      - webp
+      - svg
+      - mp4
+      - webm
+      - mov
+      - pdf
+      - doc
+      - docx
+      - txt
+    max-file-size: 104857600  # 100MB
+    enable-magic-number-check: false  # Disabled for test simplicity
+  
+  # Access Control Configuration
+  access:
+    private-url-expire-seconds: 3600   # 1 hour
+    presigned-url-expire-seconds: 900  # 15 minutes
+
+# Upload Configuration
+upload:
+  max-size: 104857600  # 100MB
+  allowed-image-types: image/jpeg,image/png,image/gif,image/webp
+  allowed-file-types: application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain
+  image:
+    max-width: 1920
+    max-height: 1080
+    quality: 0.85
+    thumbnail-width: 200
+    thumbnail-height: 200
+    convert-to-webp: false  # Disabled for test simplicity
+
+# Logging Configuration
+logging:
+  level:
+    com.architectcgz.file: DEBUG
+    org.springframework.web: INFO
+    software.amazon.awssdk: WARN
+    org.apache.http: WARN

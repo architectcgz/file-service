@@ -1,0 +1,242 @@
+server:
+  port: 8089
+
+spring:
+  application:
+    name: file-service
+  config:
+    import: optional:nacos:file-service.yml?group=BLOG_SERVICE&refreshEnabled=true
+  cloud:
+    nacos:
+      discovery:
+        group: BLOG_SERVICE
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:nacos}
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 200MB
+  # 数据源配置
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/file_service}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres123456}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  
+  # Redis 配置
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:redis123456}
+      database: ${REDIS_DATABASE:0}
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: -1ms
+
+# MyBatis 配置
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    default-fetch-size: 100
+    default-statement-timeout: 30
+  type-aliases-package: com.architectcgz.file.infrastructure.repository.po
+  type-handlers-package: com.architectcgz.file.infrastructure.mybatis
+  mapper-locations: classpath:mapper/*.xml
+
+# 存储配置
+storage:
+  type: ${STORAGE_TYPE:s3}
+  # 本地存储配置
+  local:
+    base-path: ${LOCAL_STORAGE_PATH:./uploads}
+    base-url: ${LOCAL_STORAGE_URL:http://localhost:8089/files}
+  # S3兼容存储配置 (支持 MinIO/RustFS/OSS)
+  # 
+  # MinIO 配置说明 (推荐):
+  # - endpoint: MinIO API 端点，容器内部访问使用 http://file-service-minio:9000
+  # - public-endpoint: 浏览器访问端点，用于生成预签名 URL，使用 http://localhost:9000
+  # - access-key: MinIO 访问密钥，默认 fileservice
+  # - secret-key: MinIO 密钥，默认 fileservice123
+  # - region: 区域设置，MinIO 使用 us-east-1
+  # - 端口配置: API 端口 9000, 控制台端口 9001
+  # 
+  # RustFS 配置说明 (备选):
+  # - endpoint: RustFS API 端点，容器内部访问使用 http://file-service-rustfs:9000
+  # - public-endpoint: 浏览器访问端点，使用 http://localhost:9001
+  # - 端口配置: API 端口 9001, 控制台端口 9002
+  # 
+  # 注意: MinIO 和 RustFS 通过 Docker Compose profiles 切换，不能同时运行
+  s3:
+    # S3 端点配置
+    # Docker 环境: 使用容器名称 (file-service-minio:9000 或 file-service-rustfs:9000)
+    # 本地开发: 使用 localhost (MinIO: localhost:9000, RustFS: localhost:9001)
+    endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    
+    # 公开端点配置 - 用于生成浏览器可访问的预签名 URL
+    # MinIO: http://localhost:9000
+    # RustFS: http://localhost:9001
+    public-endpoint: ${S3_PUBLIC_ENDPOINT:http://localhost:9000}
+    
+    # 访问凭证配置
+    access-key: ${S3_ACCESS_KEY:fileservice}
+    secret-key: ${S3_SECRET_KEY:fileservice123}
+    
+    # 存储桶配置
+    bucket: ${S3_BUCKET:platform-files}
+    # 双 Bucket 配置 - 公开和私有文件分离存储
+    public-bucket: ${S3_PUBLIC_BUCKET:platform-files-public}
+    private-bucket: ${S3_PRIVATE_BUCKET:platform-files-private}
+    
+    # 区域配置 - MinIO 和 RustFS 都使用 us-east-1
+    region: ${S3_REGION:us-east-1}
+    
+    # CDN 域名配置（可选）- 用于公开文件的 CDN 加速访问
+    cdn-domain: ${S3_CDN_DOMAIN:}
+  # 分片上传配置
+  multipart:
+    enabled: ${MULTIPART_ENABLED:true}
+    threshold: ${MULTIPART_THRESHOLD:10485760}      # 10MB - 超过此大小使用分片上传
+    chunk-size: ${MULTIPART_CHUNK_SIZE:5242880}     # 5MB - 每个分片大小
+    max-parts: ${MULTIPART_MAX_PARTS:10000}         # 最大分片数
+    task-expire-hours: ${MULTIPART_EXPIRE_HOURS:24} # 任务过期时间（小时）
+    cleanup-cron: ${MULTIPART_CLEANUP_CRON:0 0 * * * *}  # 每小时清理过期任务
+    # Bitmap 优化配置
+    bitmap:
+      enabled: ${BITMAP_ENABLED:true}                 # 是否启用 Bitmap 优化
+      sync-batch-size: ${BITMAP_SYNC_BATCH_SIZE:10}   # 同步批次大小（每 N 个分片同步一次）
+      expire-hours: ${BITMAP_EXPIRE_HOURS:24}         # Bitmap 过期时间（小时）
+      max-parts: ${BITMAP_MAX_PARTS:10000}            # 最大分片数（超过此数量直接使用数据库）
+  
+  # 文件类型限制配置
+  file-types:
+    # 允许的 MIME 类型分类
+    allowed-types:
+      images:
+        - image/jpeg
+        - image/png
+        - image/gif
+        - image/webp
+        - image/svg+xml
+      videos:
+        - video/mp4
+        - video/webm
+        - video/quicktime
+      documents:
+        - application/pdf
+        - application/msword
+        - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+        - text/plain
+    # 允许的文件扩展名
+    allowed-extensions:
+      - jpg
+      - jpeg
+      - png
+      - gif
+      - webp
+      - svg
+      - mp4
+      - webm
+      - mov
+      - pdf
+      - doc
+      - docx
+      - txt
+    # 最大文件大小（字节）- 5GB
+    max-file-size: ${MAX_FILE_SIZE:5368709120}
+    # 是否启用文件魔数检测（防止文件类型伪造）
+    enable-magic-number-check: ${ENABLE_MAGIC_CHECK:true}
+  
+  # 访问控制配置
+  access:
+    # 私有文件临时 URL 过期时间（秒）- 1小时
+    private-url-expire-seconds: ${PRIVATE_URL_EXPIRE:3600}
+    # 预签名上传 URL 过期时间（秒）- 15分钟
+    presigned-url-expire-seconds: ${PRESIGNED_URL_EXPIRE:900}
+
+# 上传配置
+upload:
+  max-size: 10485760  # 10MB
+  allowed-image-types: image/jpeg,image/png,image/gif,image/webp
+  allowed-file-types: application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain
+  image:
+    max-width: 1920
+    max-height: 1080
+    quality: 0.85
+    thumbnail-width: 200
+    thumbnail-height: 200
+    convert-to-webp: true
+
+# 租户配置
+tenant:
+  # 是否自动创建租户
+  auto-create: ${TENANT_AUTO_CREATE:true}
+  # 默认配额配置
+  defaults:
+    # 默认最大存储空间（字节），默认 10GB
+    max-storage-bytes: ${TENANT_DEFAULT_MAX_STORAGE:10737418240}
+    # 默认最大文件数量，默认 10000
+    max-file-count: ${TENANT_DEFAULT_MAX_FILES:10000}
+    # 默认单文件大小限制（字节），默认 5GB
+    max-single-file-size: ${TENANT_DEFAULT_MAX_FILE_SIZE:5368709120}
+
+# 管理员 API 配置
+admin:
+  api-keys:
+    - name: admin-console
+      key: ${ADMIN_API_KEY:change-me-in-production}
+      permissions:
+        - READ
+        - WRITE
+        - DELETE
+    - name: monitoring
+      key: ${MONITORING_API_KEY:monitoring-key-change-me}
+      permissions:
+        - READ
+
+# Actuator 配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      environment: ${spring.profiles.active:default}
+    export:
+      prometheus:
+        enabled: true
+
+# 日志配置
+logging:
+  level:
+    com.platform.file: DEBUG
+
+# 文件服务缓存配置
+file-service:
+  cache:
+    enabled: ${CACHE_ENABLED:true}
+    url:
+      ttl: ${CACHE_URL_TTL:3600}  # 1小时
+
+# RocketMQ 配置
+rocketmq:
+  name-server: ${ROCKETMQ_NAME_SERVER:localhost:9876}
+  producer:
+    group: upload-producer-group
+    send-message-timeout: 3000
+    retry-times-when-send-failed: 2

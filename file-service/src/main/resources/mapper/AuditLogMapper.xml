@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.architectcgz.file.infrastructure.repository.mapper.AuditLogMapper">
+
+    <resultMap id="AuditLogResultMap" type="com.architectcgz.file.infrastructure.repository.po.AuditLogPO">
+        <id property="id" column="id"/>
+        <result property="adminUserId" column="admin_user_id"/>
+        <result property="action" column="action"/>
+        <result property="targetType" column="target_type"/>
+        <result property="targetId" column="target_id"/>
+        <result property="tenantId" column="tenant_id"/>
+        <result property="details" column="details"/>
+        <result property="ipAddress" column="ip_address"/>
+        <result property="createdAt" column="created_at" 
+                typeHandler="com.architectcgz.file.infrastructure.config.OffsetDateTimeTypeHandler"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.architectcgz.file.infrastructure.repository.po.AuditLogPO">
+        INSERT INTO admin_audit_logs (
+            id,
+            admin_user_id,
+            action,
+            target_type,
+            target_id,
+            tenant_id,
+            details,
+            ip_address,
+            created_at
+        ) VALUES (
+            #{id},
+            #{adminUserId},
+            #{action},
+            #{targetType},
+            #{targetId},
+            #{tenantId},
+            #{details}::jsonb,
+            #{ipAddress},
+            #{createdAt,typeHandler=com.architectcgz.file.infrastructure.config.OffsetDateTimeTypeHandler}
+        )
+    </insert>
+
+</mapper>

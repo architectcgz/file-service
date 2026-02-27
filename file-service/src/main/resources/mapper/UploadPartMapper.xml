@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" 
+    "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.architectcgz.file.infrastructure.repository.mapper.UploadPartMapper">
+    
+    <!-- 批量插入上传分片 -->
+    <!-- 使用 ON CONFLICT DO NOTHING 保证幂等性 -->
+    <insert id="batchInsert">
+        INSERT INTO upload_parts (
+            id, task_id, part_number, etag, size, uploaded_at
+        ) VALUES
+        <foreach collection="parts" item="part" separator=",">
+            (
+                #{part.id},
+                #{part.taskId},
+                #{part.partNumber},
+                #{part.etag},
+                #{part.size},
+                #{part.uploadedAt}
+            )
+        </foreach>
+        ON CONFLICT (task_id, part_number) DO NOTHING
+    </insert>
+    
+</mapper>

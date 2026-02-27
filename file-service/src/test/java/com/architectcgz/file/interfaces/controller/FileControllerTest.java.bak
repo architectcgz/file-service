@@ -1,0 +1,385 @@
+package com.architectcgz.file.interfaces.controller;
+
+import com.architectcgz.file.common.context.UserContext;
+import com.architectcgz.file.common.exception.BusinessException;
+import com.architectcgz.file.application.dto.FileDetailResponse;
+import com.architectcgz.file.application.dto.FileUrlResponse;
+import com.architectcgz.file.application.dto.UpdateAccessLevelRequest;
+import com.architectcgz.file.application.service.FileAccessService;
+import com.architectcgz.file.domain.model.AccessLevel;
+import com.architectcgz.file.domain.model.FileStatus;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockHttpServletRequest;
+
+import java.time.LocalDateTime;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+/**
+ * FileController 单元测试
+ */
+@ExtendWith(MockitoExtension.class)
+class FileControllerTest {
+    
+    @Mock
+    private FileAccessService fileAccessService;
+    
+    private MockHttpServletRequest mockRequest;
+    
+    @InjectMocks
+    private FileController fileController;
+    
+    private MockedStatic<UserContext> userContextMock;
+    
+    @BeforeEach
+    void setUp() {
+        mockRequest = new MockHttpServletRequest();
+        mockRequest.setAttribute("appId", "test-app");
+        mockRequest.setAttribute("userId", 1L);
+        userContextMock = mockStatic(UserContext.class);
+        userContextMock.when(UserContext::getUserId).thenReturn("123");
+    }
+    
+    @AfterEach
+    void tearDown() {
+        userContextMock.close();
+    }
+    
+    @Test
+    void testGetFileUrl_PublicFile_Success() {
+        // Given
+        String fileId = "file-001";
+        FileUrlResponse expectedResponse = FileUrlResponse.builder()
+                .url("https://cdn.example.com/2026/01/19/123/test-file.jpg")
+                .permanent(true)
+                .expiresAt(null)
+                .build();
+        
+        when(fileAccessService.getFileUrl("blog", fileId, 123L)).thenReturn(expectedResponse);
+        
+        // When
+        var response = fileController.getFileUrl(fileId);
+        
+        // Then
+        assertNotNull(response);
+        assertEquals(200, response.getCode());
+        assertNotNull(response.getData());
+        assertEquals("https://cdn.example.com/2026/01/19/123/test-file.jpg", response.getData().getUrl());
+        assertTrue(response.getData().getPermanent());
+        assertNull(response.getData().getExpiresAt());
+        
+        verify(fileAccessService, times(1)).getFileUrl(fileId, 123L);
+    }
+    
+    @Test
+    void testGetFileUrl_PrivateFile_Success() {
+        // Given
+        String fileId = "file-002";
+        LocalDateTime expiresAt = LocalDateTime.now().plusHours(1);
+        FileUrlResponse expectedResponse = FileUrlResponse.builder()
+                .url("https://s3.example.com/bucket/path?X-Amz-Signature=...")
+                .permanent(false)
+                .expiresAt(expiresAt)
+                .build();
+        
+        when(fileAccessService.getFileUrl("blog", fileId, 123L)).thenReturn(expectedResponse);
+        
+        // When
+        var response = fileController.getFileUrl(fileId);
+        
+        // Then
+        assertNotNull(response);
+        assertEquals(200, response.getCode());
+        assertNotNull(response.getData());
+        assertEquals("https://s3.example.com/bucket/path?X-Amz-Signature=...", response.getData().getUrl());
+        assertFalse(response.getData().getPermanent());
+        assertNotNull(response.getData().getExpiresAt());
+        
+        verify(fileAccessService, times(1)).getFileUrl(fileId, 123L);
+    }
+    
+    @Test
+    void testGetFileUrl_FileNotFound_ThrowsExceptiExcepException() {
+        // Given
+        String fileId = "non-existent";
+        when(fileAccessService.getFileUrl("blog", fileId, 123L))
+                .thenThrow(new BusinessException("文件不存在"));
+        
+        // When & Then
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            fileController.getFileUrl(fileId);
+        });
+        
+        assertEquals("文件不存在", exception.getMessage());
+        verify(fileAccessService, times(1)).getFileUrl(fileId, 123L);
+    }
+    
+    @Test
+    void testGetFileUrl_DeletedFile_ThrowsExceptiExcepException() {
+        // Given
+        String fileId = "deleted-file";
+        when(fileAccessService.getFileUrl("blog", fileId, 123L))
+                .thenThrow(new BusinessException("文件已删除"));
+        
+        // When & Then
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            fileController.getFileUrl(fileId);
+        });
+        
+        assertEquals("文件已删除", exception.getMessage());
+        verify(fileAccessService, times(1)).getFileUrl(fileId, 123L);
+    }
+    
+    @Test
+    void testGetFileUrl_UnauthorizedAccess_ThrowsException() {
+        // Given
+        String fileId = "private-file";
+        when(fileAccessService.getFileUrl("blog", fileId, 123L))
+                .thenThrow(new BusinessException("无权访问该文件"));
+        
+        // When & Then
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            fileController.getFileUrl(fileId);
+        });
+        
+        assertEquals("无权访问该文件", exception.getMessage());
+        verify(fileAccessService, times(1)).getFileUrl(fileId, 123L);
+    }
+    
+    // ========== getFileDetail Tests ==========
+    
+    @Test
+    void testGetFileDetail_PublicFile_Success() {
+        // Given
+        String fileId = "file-001";
+        LocalDateTime now = LocalDateTime.now();
+        FileDetailResponse expectedResponse = FileDetailResponse.builder()
+                .fileId(fileId)
+                .userId(123L)
+                .originalFilename("test.jpg")
+                .fileSize(1024L)
+                .contentType("image/jpeg")
+                .fileHash("abc123")
+                .hashAlgorithm("MD5")
+                .status(FileStatus.COMPLETED)
+                .accessLevel(AccessLevel.PUBLIC)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        
+        when(fileAccessService.getFileDetail("blog", fileId, 123L)).thenReturn(expectedResponse);
+        
+        // When
+        var response = fileController.getFileDetail(fileId);
+        
+        // Then
+        assertNotNull(response);
+        assertEquals(200, response.getCode());
+        assertNotNull(response.getData());
+        assertEquals(fileId, response.getData().getFileId());
+        assertEquals(123L, response.getData().getUserId());
+        assertEquals("test.jpg", response.getData().getOriginalFilename());
+        assertEquals(1024L, response.getData().getFileSize());
+        assertEquals("image/jpeg", response.getData().getContentType());
+        assertEquals("abc123", response.getData().getFileHash());
+        assertEquals("MD5", response.getData().getHashAlgorithm());
+        assertEquals(FileStatus.COMPLETED, response.getData().getStatus());
+        assertEquals(AccessLevel.PUBLIC, response.getData().getAccessLevel());
+        
+        verify(fileAccessService, times(1)).getFileDetail(fileId, 123L);
+    }
+    
+    @Test
+    void testGetFileDetail_PrivateFile_Owner_Success() {
+        // Given
+        String fileId = "file-002";
+        LocalDateTime now = LocalDateTime.now();
+        FileDetailResponse expectedResponse = FileDetailResponse.builder()
+                .fileId(fileId)
+                .userId(123L)
+                .originalFilename("private.jpg")
+                .fileSize(2048L)
+                .contentType("image/jpeg")
+                .fileHash("def456")
+                .hashAlgorithm("MD5")
+                .status(FileStatus.COMPLETED)
+                .accessLevel(AccessLevel.PRIVATE)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        
+        when(fileAccessService.getFileDetail("blog", fileId, 123L)).thenReturn(expectedResponse);
+        
+        // When
+        var response = fileController.getFileDetail(fileId);
+        
+        // Then
+        assertNotNull(response);
+        assertEquals(200, response.getCode());
+        assertNotNull(response.getData());
+        assertEquals(fileId, response.getData().getFileId());
+        assertEquals(AccessLevel.PRIVATE, response.getData().getAccessLevel());
+        
+        verify(fileAccessService, times(1)).getFileDetail(fileId, 123L);
+    }
+    
+    @Test
+    void testGetFileDetail_FileNotFound_ThrowsExceptiExcepException() {
+        // Given
+        String fileId = "non-existent";
+        when(fileAccessService.getFileDetail("blog", fileId, 123L))
+                .thenThrow(new BusinessException("文件不存在"));
+        
+        // When & Then
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            fileController.getFileDetail(fileId);
+        });
+        
+        assertEquals("文件不存在", exception.getMessage());
+        verify(fileAccessService, times(1)).getFileDetail(fileId, 123L);
+    }
+    
+    @Test
+    void testGetFileDetail_DeletedFile_ThrowsExceptiExcepException() {
+        // Given
+        String fileId = "deleted-file";
+        when(fileAccessService.getFileDetail("blog", fileId, 123L))
+                .thenThrow(new BusinessException("文件已删除"));
+        
+        // When & Then
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            fileController.getFileDetail(fileId);
+        });
+        
+        assertEquals("文件已删除", exception.getMessage());
+        verify(fileAccessService, times(1)).getFileDetail(fileId, 123L);
+    }
+    
+    @Test
+    void testGetFileDetail_UnauthorizedAccess_ThrowsExceptiExcepException() {
+        // Given
+        String fileId = "private-file";
+        when(fileAccessService.getFileDetail("blog", fileId, 123L))
+                .thenThrow(new BusinessException("无权访问该文件"));
+        
+        // When & Then
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            fileController.getFileDetail(fileId);
+        });
+        
+        assertEquals("无权访问该文件", exception.getMessage());
+        verify(fileAccessService, times(1)).getFileDetail(fileId, 123L);
+    }
+    
+    // ========== updateAccessLevel Tests ==========
+    
+    @Test
+    void testUpdateAccessLevel_PublicToPrivate_Success() {
+        // Given
+        String fileId = "file-001";
+        UpdateAccessLevelRequest request = UpdateAccessLevelRequest.builder()
+                .accessLevel(AccessLevel.PRIVATE)
+                .build();
+        
+        doNothing().when(fileAccessService).updateAccessLevel(fileId, 123L, AccessLevel.PRIVATE);
+        
+        // When
+        var response = fileController.updateAccessLevel(fileId, request);
+        
+        // Then
+        assertNotNull(response);
+        assertEquals(200, response.getCode());
+        
+        verify(fileAccessService, times(1)).updateAccessLevel(fileId, 123L, AccessLevel.PRIVATE);
+    }
+    
+    @Test
+    void testUpdateAccessLevel_PrivateToPublic_Success() {
+        // Given
+        String fileId = "file-002";
+        UpdateAccessLevelRequest request = UpdateAccessLevelRequest.builder()
+                .accessLevel(AccessLevel.PUBLIC)
+                .build();
+        
+        doNothing().when(fileAccessService).updateAccessLevel(fileId, 123L, AccessLevel.PUBLIC);
+        
+        // When
+        var response = fileController.updateAccessLevel(fileId, request);
+        
+        // Then
+        assertNotNull(response);
+        assertEquals(200, response.getCode());
+        
+        verify(fileAccessService, times(1)).updateAccessLevel(fileId, 123L, AccessLevel.PUBLIC);
+    }
+    
+    @Test
+    void testUpdateAccessLevel_FileNotFound_ThrowsExceptiExcepException() {
+        // Given
+        String fileId = "non-existent";
+        UpdateAccessLevelRequest request = UpdateAccessLevelRequest.builder()
+                .accessLevel(AccessLevel.PRIVATE)
+                .build();
+        
+        doThrow(new BusinessException("文件不存在"))
+                .when(fileAccessService).updateAccessLevel(fileId, 123L, AccessLevel.PRIVATE);
+        
+        // When & Then
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            fileController.updateAccessLevel(fileId, request);
+        });
+        
+        assertEquals("文件不存在", exception.getMessage());
+        verify(fileAccessService, times(1)).updateAccessLevel(fileId, 123L, AccessLevel.PRIVATE);
+    }
+    
+    @Test
+    void testUpdateAccessLevel_DeletedFile_ThrowsExceptiExcepException() {
+        // Given
+        String fileId = "deleted-file";
+        UpdateAccessLevelRequest request = UpdateAccessLevelRequest.builder()
+                .accessLevel(AccessLevel.PRIVATE)
+                .build();
+        
+        doThrow(new BusinessException("鏂囦欢宸插垹闄わ紝鏃犳硶淇敼璁块棶绾у埆"))
+                .when(fileAccessService).updateAccessLevel(fileId, 123L, AccessLevel.PRIVATE);
+        
+        // When & Then
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            fileController.updateAccessLevel(fileId, request);
+        });
+        
+        assertEquals("鏂囦欢宸插垹闄わ紝鏃犳硶淇敼璁块棶绾у埆", exception.getMessage());
+        verify(fileAccessService, times(1)).updateAccessLevel(fileId, 123L, AccessLevel.PRIVATE);
+    }
+    
+    @Test
+    void testUpdateAccessLevel_UnauthorizedAccess_ThrowsExceptiExcepException() {
+        // Given
+        String fileId = "other-user-file";
+        UpdateAccessLevelRequest request = UpdateAccessLevelRequest.builder()
+                .accessLevel(AccessLevel.PRIVATE)
+                .build();
+        
+        doThrow(new BusinessException("鏃犳潈淇敼璇ユ枃浠剁殑璁块棶绾у埆"))
+                .when(fileAccessService).updateAccessLevel(fileId, 123L, AccessLevel.PRIVATE);
+        
+        // When & Then
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            fileController.updateAccessLevel(fileId, request);
+        });
+        
+        assertEquals("鏃犳潈淇敼璇ユ枃浠剁殑璁块棶绾у埆", exception.getMessage());
+        verify(fileAccessService, times(1)).updateAccessLevel(fileId, 123L, AccessLevel.PRIVATE);
+    }
+}
+

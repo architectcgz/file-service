@@ -1,0 +1,5 @@
+"TestName","FileSizeMB","DurationSeconds","ThroughputMBps","Success"
+"Upload 50MB File","50","32.05","1.56","True"
+"Upload 100MB File","100","69.41","1.44","True"
+"Concurrent Upload - 5 users","1","4.7196373","0","False"
+"Concurrent Upload - 10 users","1","8.3604694","0","False"
