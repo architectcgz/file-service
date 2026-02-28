@@ -14,7 +14,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -36,6 +35,7 @@ public class FileManagementService {
     private final AuditLogService auditLogService;
     private final RedisTemplate<String, String> redisTemplate;
     private final CacheProperties cacheProperties;
+    private final FileDeleteTransactionHelper deleteTransactionHelper;
     
     /**
      * 查询文件列表
@@ -66,48 +66,33 @@ public class FileManagementService {
     }
     
     /**
-     * 删除单个文件
-     * 
+     * 删除单个文件（管理员操作）
+     * 操作顺序：先删 S3 -> 再更新数据库，S3 删除失败则中止，保证一致性
+     *
      * @param fileId 文件ID
      * @param adminUserId 管理员用户ID
      */
-    @Transactional
     public void deleteFile(String fileId, String adminUserId) {
         log.info("Deleting file: {} by admin: {}", fileId, adminUserId);
-        
+
         // 查询文件记录
         FileRecord fileRecord = fileRecordRepository.findById(fileId)
                 .orElseThrow(() -> FileNotFoundException.notFound(fileId));
-        
-        try {
-            // 1. 从存储系统删除文件
-            storageService.delete(fileRecord.getStoragePath());
-            log.debug("Deleted file from storage: {}", fileRecord.getStoragePath());
-            
-            // 2. 从数据库删除文件记录
-            boolean deleted = fileRecordRepository.deleteById(fileId);
-            if (!deleted) {
-                throw new RuntimeException("Failed to delete file record from database");
-            }
-            log.debug("Deleted file record from database: {}", fileId);
-            
-            // 3. 更新租户使用统计
-            tenantUsageRepository.decrementUsage(fileRecord.getAppId(), fileRecord.getFileSize());
-            log.debug("Decremented tenant usage for tenant: {}, size: {}", 
-                    fileRecord.getAppId(), fileRecord.getFileSize());
-            
-            // 4. 清除缓存
-            clearCache(fileId);
-            
-            // 5. 记录审计日志
-            recordDeleteFileAudit(fileId, fileRecord, adminUserId);
-            
-            log.info("Successfully deleted file: {}", fileId);
-            
-        } catch (Exception e) {
-            log.error("Failed to delete file: {}", fileId, e);
-            throw new RuntimeException("Failed to delete file: " + e.getMessage(), e);
-        }
+
+        // 1. 先从存储系统删除文件，失败则整个操作中止
+        storageService.delete(fileRecord.getStoragePath());
+        log.debug("Deleted file from storage: {}", fileRecord.getStoragePath());
+
+        // 2. S3 删除成功后，通过独立 Bean 执行短事务更新数据库
+        deleteTransactionHelper.updateDatabaseAfterAdminDelete(fileId, fileRecord);
+
+        // 3. 清除缓存（缓存操作不影响核心流程）
+        clearCache(fileId);
+
+        // 4. 记录审计日志
+        recordDeleteFileAudit(fileId, fileRecord, adminUserId);
+
+        log.info("Successfully deleted file: {}", fileId);
     }
     
     /**
