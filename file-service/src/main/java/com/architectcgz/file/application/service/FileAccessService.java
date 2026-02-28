@@ -258,8 +258,37 @@ public class FileAccessService {
         if (!updated) {
             throw new BusinessException("更新文件访问级别失败: " + fileId);
         }
-        
-        log.info("File access level updated: fileId={}, oldLevel={}, newLevel={}, userId={}", 
+
+        // 清除该文件的 URL 缓存，避免访问级别变更后仍返回旧的公开 URL
+        evictUrlCache(fileId);
+
+        log.info("File access level updated: fileId={}, oldLevel={}, newLevel={}, userId={}",
                 fileId, file.getAccessLevel(), newLevel, requestUserId);
+    }
+
+    /**
+     * 清除文件 URL 缓存
+     * 用于访问级别变更等场景，确保不会返回过期的公开 URL
+     *
+     * @param fileId 文件ID
+     */
+    private void evictUrlCache(String fileId) {
+        if (!cacheProperties.isEnabled()) {
+            return;
+        }
+
+        try {
+            String cacheKey = FileRedisKeys.fileUrl(fileId);
+            Boolean deleted = redisTemplate.delete(cacheKey);
+
+            if (Boolean.TRUE.equals(deleted)) {
+                log.info("Evicted URL cache after access level change: fileId={}", fileId);
+            } else {
+                log.debug("No URL cache to evict: fileId={}", fileId);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to evict URL cache: fileId={}", fileId, e);
+            // 缓存清除失败不影响业务流程
+        }
     }
 }
