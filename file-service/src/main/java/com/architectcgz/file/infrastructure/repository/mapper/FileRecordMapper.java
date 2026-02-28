@@ -1,6 +1,9 @@
 package com.architectcgz.file.infrastructure.repository.mapper;
 
+import com.architectcgz.file.application.dto.ContentTypeCount;
 import com.architectcgz.file.application.dto.FileQuery;
+import com.architectcgz.file.application.dto.StorageStatisticsAggregation;
+import com.architectcgz.file.application.dto.TenantStorageAggregation;
 import com.architectcgz.file.infrastructure.repository.po.FileRecordPO;
 import org.apache.ibatis.annotations.*;
 
@@ -155,4 +158,28 @@ public interface FileRecordMapper {
         WHERE id = #{id}
     """)
     int deleteById(String id);
+
+    /**
+     * 存储统计聚合查询
+     * 在 SQL 层完成 COUNT/SUM 计算，避免全量加载文件记录到内存
+     *
+     * @return 聚合统计结果（总文件数、总存储空间、公开/私有文件数）
+     */
+    StorageStatisticsAggregation selectStorageStatistics();
+
+    /**
+     * 按内容类型分组统计文件数量
+     * 在 SQL 层完成 GROUP BY 聚合，避免全量加载
+     *
+     * @return 各内容类型的文件计数列表
+     */
+    List<ContentTypeCount> selectFileCountByContentType();
+
+    /**
+     * 按租户分组统计存储空间
+     * 在 SQL 层完成 GROUP BY 聚合，避免全量加载
+     *
+     * @return 各租户的存储空间聚合列表
+     */
+    List<TenantStorageAggregation> selectStorageByTenant();
 }

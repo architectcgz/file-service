@@ -77,5 +77,33 @@
         FROM file_records
         <include refid="queryConditions"/>
     </select>
-    
+
+    <!-- 存储统计聚合查询：总文件数、总存储空间、按 access_level 分组计数 -->
+    <select id="selectStorageStatistics" resultType="com.architectcgz.file.application.dto.StorageStatisticsAggregation">
+        SELECT
+            COUNT(*)                                                          AS totalFiles,
+            COALESCE(SUM(file_size), 0)                                       AS totalStorageBytes,
+            COUNT(CASE WHEN access_level = 'public'  THEN 1 END)              AS publicFiles,
+            COUNT(CASE WHEN access_level = 'private' THEN 1 END)              AS privateFiles
+        FROM file_records
+    </select>
+
+    <!-- 按 content_type 分组统计文件数量 -->
+    <select id="selectFileCountByContentType" resultType="com.architectcgz.file.application.dto.ContentTypeCount">
+        SELECT
+            content_type AS contentType,
+            COUNT(*)     AS fileCount
+        FROM file_records
+        GROUP BY content_type
+    </select>
+
+    <!-- 按租户（app_id）分组统计存储空间 -->
+    <select id="selectStorageByTenant" resultType="com.architectcgz.file.application.dto.TenantStorageAggregation">
+        SELECT
+            app_id                        AS appId,
+            COALESCE(SUM(file_size), 0)   AS storageBytes
+        FROM file_records
+        GROUP BY app_id
+    </select>
+
 </mapper>

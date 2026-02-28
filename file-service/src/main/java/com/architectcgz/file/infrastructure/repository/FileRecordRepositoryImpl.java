@@ -1,6 +1,9 @@
 package com.architectcgz.file.infrastructure.repository;
 
+import com.architectcgz.file.application.dto.ContentTypeCount;
 import com.architectcgz.file.application.dto.FileQuery;
+import com.architectcgz.file.application.dto.StorageStatisticsAggregation;
+import com.architectcgz.file.application.dto.TenantStorageAggregation;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
@@ -81,7 +84,22 @@ public class FileRecordRepositoryImpl implements FileRecordRepository {
         int rows = fileRecordMapper.deleteById(id);
         return rows > 0;
     }
-    
+
+    @Override
+    public StorageStatisticsAggregation getStorageStatisticsAggregation() {
+        return fileRecordMapper.selectStorageStatistics();
+    }
+
+    @Override
+    public List<ContentTypeCount> getFileCountByContentType() {
+        return fileRecordMapper.selectFileCountByContentType();
+    }
+
+    @Override
+    public List<TenantStorageAggregation> getStorageByTenant() {
+        return fileRecordMapper.selectStorageByTenant();
+    }
+
     /**
      * 将领域模型转换为持久化对或
      */
