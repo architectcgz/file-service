@@ -98,4 +98,14 @@ public interface StorageService {
      * @return 是否存在
      */
     boolean exists(String path);
+
+    /**
+     * 获取存储对象的元数据（文件大小、内容类型）
+     * 用于预签名上传确认等场景，从存储服务获取真实的文件元信息
+     *
+     * @param path 存储路径
+     * @return 对象元数据，包含 fileSize 和 contentType
+     * @throws com.architectcgz.file.common.exception.BusinessException 文件不存在或查询失败时抛出
+     */
+    ObjectMetadata getObjectMetadata(String path);
 }

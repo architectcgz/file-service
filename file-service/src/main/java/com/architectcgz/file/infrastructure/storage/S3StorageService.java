@@ -239,18 +239,50 @@ public class S3StorageService implements StorageService {
                     .bucket(properties.getBucket())
                     .key(path)
                     .build();
-            
+
             s3Client.headObject(headRequest);
             return true;
         } catch (NoSuchKeyException e) {
             // 文件不存在，返回 false，不抛异或
             return false;
         } catch (S3Exception e) {
-            log.error("Failed to check file existence in S3: bucket={}, key={}, error={}", 
+            log.error("Failed to check file existence in S3: bucket={}, key={}, error={}",
                     properties.getBucket(), path, e.getMessage(), e);
             throw new BusinessException("检查文件是否存在失败: " + e.getMessage(), e);
         } catch (SdkClientException e) {
-            log.error("S3 client error during exists check: bucket={}, key={}, error={}", 
+            log.error("S3 client error during exists check: bucket={}, key={}, error={}",
+                    properties.getBucket(), path, e.getMessage(), e);
+            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public ObjectMetadata getObjectMetadata(String path) {
+        try {
+            HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                    .bucket(properties.getBucket())
+                    .key(path)
+                    .build();
+
+            HeadObjectResponse response = s3Client.headObject(headRequest);
+
+            log.debug("Got object metadata from S3: bucket={}, key={}, size={}, contentType={}",
+                    properties.getBucket(), path, response.contentLength(), response.contentType());
+
+            return ObjectMetadata.builder()
+                    .fileSize(response.contentLength() != null ? response.contentLength() : 0L)
+                    .contentType(response.contentType() != null ? response.contentType() : "application/octet-stream")
+                    .build();
+        } catch (NoSuchKeyException e) {
+            log.error("File not found in S3 when getting metadata: bucket={}, key={}",
+                    properties.getBucket(), path);
+            throw new BusinessException("文件不存在: " + path, e);
+        } catch (S3Exception e) {
+            log.error("Failed to get object metadata from S3: bucket={}, key={}, error={}",
+                    properties.getBucket(), path, e.getMessage(), e);
+            throw new BusinessException("获取文件元数据失败: " + e.getMessage(), e);
+        } catch (SdkClientException e) {
+            log.error("S3 client error during head object: bucket={}, key={}, error={}",
                     properties.getBucket(), path, e.getMessage(), e);
             throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
         }
