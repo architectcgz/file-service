@@ -56,44 +56,25 @@ public class StorageObject {
     /**
      * 引用计数
      * 记录有多少个 FileRecord 引用此存储对象
+     * 注意：引用计数的增减统一通过 {@link com.architectcgz.file.domain.repository.StorageObjectRepository}
+     * 的原子 SQL 操作完成（incrementReferenceCount / decrementReferenceCount），
+     * 不在领域模型中做内存操作，避免并发场景下计数不一致
      */
     private Integer referenceCount;
-    
+
     /**
      * 创建时间
      */
     private LocalDateTime createdAt;
-    
+
     /**
      * 更新时间
      */
     private LocalDateTime updatedAt;
-    
-    /**
-     * 增加引用计数
-     */
-    public void incrementReferenceCount() {
-        if (this.referenceCount == null) {
-            this.referenceCount = 1;
-        } else {
-            this.referenceCount++;
-        }
-        this.updatedAt = LocalDateTime.now();
-    }
-    
-    /**
-     * 减少引用计数
-     */
-    public void decrementReferenceCount() {
-        if (this.referenceCount != null && this.referenceCount > 0) {
-            this.referenceCount--;
-            this.updatedAt = LocalDateTime.now();
-        }
-    }
-    
+
     /**
      * 检查是否可以删除
-     * 当引用计数为 0 时，可以删除实际的S3 对象
+     * 当引用计数为 0 时，可以删除实际的 S3 对象
      */
     public boolean canBeDeleted() {
         return this.referenceCount != null && this.referenceCount == 0;
