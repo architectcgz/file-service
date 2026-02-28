@@ -1,5 +1,6 @@
 package com.architectcgz.file.application.service;
 
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.application.dto.InitUploadRequest;
@@ -100,7 +101,7 @@ public class MultipartUploadService {
         int totalParts = (int) Math.ceil((double) request.getFileSize() / chunkSize);
         
         if (totalParts > multipartProperties.getMaxParts()) {
-            throw new BusinessException("文件过大，分片数超过限制: " + multipartProperties.getMaxParts());
+            throw new BusinessException(String.format(FileServiceErrorMessages.PART_COUNT_EXCEEDED, multipartProperties.getMaxParts()));
         }
         
         // 创建上传任务记录
@@ -147,28 +148,28 @@ public class MultipartUploadService {
         
         // 查询任务
         UploadTask task = uploadTaskRepository.findById(taskId)
-                .orElseThrow(() -> new BusinessException("上传任务不存在"));
-        
+                .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
+
         // 验证用户权限
         if (!task.getUserId().equals(userId)) {
-            throw new AccessDeniedException("无权操作该上传任务");
+            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
         }
-        
+
         // 验证任务状态
         if (task.getStatus() != UploadTaskStatus.UPLOADING) {
-            throw new BusinessException("任务状态不正确: " + task.getStatus());
+            throw new BusinessException(String.format(FileServiceErrorMessages.TASK_STATUS_INVALID, task.getStatus()));
         }
-        
+
         // 验证任务是否过期
         if (task.getExpiresAt().isBefore(LocalDateTime.now())) {
             task.setStatus(UploadTaskStatus.EXPIRED);
             uploadTaskRepository.updateStatus(taskId, UploadTaskStatus.EXPIRED);
-            throw new BusinessException("上传任务已过期");
+            throw new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_EXPIRED);
         }
-        
+
         // 验证分片号
         if (partNumber < 1 || partNumber > task.getTotalParts()) {
-            throw new BusinessException("分片号无效: " + partNumber);
+            throw new BusinessException(String.format(FileServiceErrorMessages.PART_NUMBER_INVALID, partNumber));
         }
         
         // 检查分片是否已上传（使用 bitmap 优化）
@@ -178,7 +179,7 @@ public class MultipartUploadService {
             // 分片已存在，直接返回成功（幂等性）
             // 注意：这里无法返回原始 ETag，客户端应该缓存 ETag
             // 如果必须返回 ETag，需要额外查询数据库
-            throw new BusinessException("分片已上传，请勿重复提交");
+            throw new BusinessException(FileServiceErrorMessages.PART_ALREADY_UPLOADED);
         }
         
         // 上传分片到S3
@@ -212,22 +213,22 @@ public class MultipartUploadService {
         
         // 查询任务
         UploadTask task = uploadTaskRepository.findById(taskId)
-                .orElseThrow(() -> new BusinessException("上传任务不存在"));
-        
+                .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
+
         // 验证用户权限
         if (!task.getUserId().equals(userId)) {
-            throw new AccessDeniedException("无权操作该上传任务");
+            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
         }
-        
+
         // 验证任务状态
         if (task.getStatus() != UploadTaskStatus.UPLOADING) {
-            throw new BusinessException("任务状态不正确: " + task.getStatus());
+            throw new BusinessException(String.format(FileServiceErrorMessages.TASK_STATUS_INVALID, task.getStatus()));
         }
         
         // 验证所有分片是否已上传（使用 Bitmap 优化）
         int completedCount = uploadPartRepository.countCompletedParts(taskId);
         if (completedCount != task.getTotalParts()) {
-            throw new BusinessException(String.format("分片未全部上传，已上传:%d, 总数: %d", 
+            throw new BusinessException(String.format(FileServiceErrorMessages.PARTS_INCOMPLETE,
                     completedCount, task.getTotalParts()));
         }
         
@@ -305,11 +306,11 @@ public class MultipartUploadService {
         
         // 查询任务
         UploadTask task = uploadTaskRepository.findById(taskId)
-                .orElseThrow(() -> new BusinessException("上传任务不存在"));
-        
+                .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
+
         // 验证用户权限
         if (!task.getUserId().equals(userId)) {
-            throw new AccessDeniedException("无权操作该上传任务");
+            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
         }
         
         // 验证任务状态
@@ -343,11 +344,11 @@ public class MultipartUploadService {
     public UploadProgressResponse getProgress(String taskId, String userId) {
         // 查询任务
         UploadTask task = uploadTaskRepository.findById(taskId)
-                .orElseThrow(() -> new BusinessException("上传任务不存在"));
-        
+                .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
+
         // 验证用户权限
         if (!task.getUserId().equals(userId)) {
-            throw new AccessDeniedException("无权查看该上传任务");
+            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_VIEW_UPLOAD_TASK);
         }
         
         // 查询已完成的分片数量（使用 Bitmap 优化）

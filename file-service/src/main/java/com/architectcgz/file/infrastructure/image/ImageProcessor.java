@@ -1,5 +1,6 @@
 package com.architectcgz.file.infrastructure.image;
 
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.domain.model.ImageProcessConfig;
 import lombok.extern.slf4j.Slf4j;
@@ -38,7 +39,7 @@ public class ImageProcessor {
         try {
             BufferedImage originalImage = ImageIO.read(new ByteArrayInputStream(imageData));
             if (originalImage == null) {
-                throw new BusinessException("无法读取图片数据");
+                throw new BusinessException(FileServiceErrorMessages.IMAGE_READ_FAILED);
             }
             
             int originalWidth = originalImage.getWidth();
@@ -76,7 +77,7 @@ public class ImageProcessor {
             return result;
         } catch (IOException e) {
             log.error("Failed to process image", e);
-            throw new BusinessException("图片处理失败: " + e.getMessage());
+            throw new BusinessException(String.format(FileServiceErrorMessages.IMAGE_PROCESS_FAILED, e.getMessage()));
         }
     }
     
@@ -104,7 +105,7 @@ public class ImageProcessor {
             return result;
         } catch (IOException e) {
             log.error("Failed to generate thumbnail", e);
-            throw new BusinessException("缩略图生成失或 " + e.getMessage());
+            throw new BusinessException(String.format(FileServiceErrorMessages.THUMBNAIL_GENERATE_FAILED, e.getMessage()));
         }
     }
     
@@ -128,7 +129,7 @@ public class ImageProcessor {
             return outputStream.toByteArray();
         } catch (IOException e) {
             log.error("Failed to convert image to WebP", e);
-            throw new BusinessException("WebP转换失败: " + e.getMessage());
+            throw new BusinessException(String.format(FileServiceErrorMessages.WEBP_CONVERT_FAILED, e.getMessage()));
         }
     }
     
@@ -142,12 +143,12 @@ public class ImageProcessor {
         try {
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageData));
             if (image == null) {
-                throw new BusinessException("无法读取图片数据");
+                throw new BusinessException(FileServiceErrorMessages.IMAGE_READ_FAILED);
             }
             return new int[]{image.getWidth(), image.getHeight()};
         } catch (IOException e) {
             log.error("Failed to get image dimensions", e);
-            throw new BusinessException("获取图片尺寸失败: " + e.getMessage());
+            throw new BusinessException(String.format(FileServiceErrorMessages.IMAGE_DIMENSIONS_FAILED, e.getMessage()));
         }
     }
     
@@ -195,7 +196,7 @@ public class ImageProcessor {
             return result;
         } catch (IOException e) {
             log.error("Failed to compress image", e);
-            throw new BusinessException("图片压缩失败: " + e.getMessage());
+            throw new BusinessException(String.format(FileServiceErrorMessages.IMAGE_COMPRESS_FAILED, e.getMessage()));
         }
     }
     
@@ -223,7 +224,7 @@ public class ImageProcessor {
             return result;
         } catch (IOException e) {
             log.error("Failed to resize image", e);
-            throw new BusinessException("图片调整尺寸失败: " + e.getMessage());
+            throw new BusinessException(String.format(FileServiceErrorMessages.IMAGE_RESIZE_FAILED, e.getMessage()));
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.architectcgz.file.application.service;
 
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.infrastructure.config.FileTypeProperties;
 import com.architectcgz.file.infrastructure.util.FileTypeDetector;
@@ -26,17 +27,17 @@ public class FileTypeValidator {
      */
     public void validateFileExtension(String fileName) {
         if (fileName == null || fileName.isEmpty()) {
-            throw new BusinessException("文件名不能为空");
+            throw new BusinessException(FileServiceErrorMessages.FILENAME_EMPTY);
         }
         
         String extension = getExtension(fileName);
         if (extension == null || extension.isEmpty()) {
-            throw new BusinessException("文件必须有扩展名");
+            throw new BusinessException(FileServiceErrorMessages.EXTENSION_REQUIRED);
         }
         
         if (!fileTypeProperties.isAllowedExtension(extension)) {
             log.warn("不支持的文件扩展名: {}", extension);
-            throw new BusinessException("不支持的文件扩展名: " + extension);
+            throw new BusinessException(String.format(FileServiceErrorMessages.EXTENSION_NOT_ALLOWED, extension));
         }
         
         log.debug("文件扩展名验证通过: {}", extension);
@@ -50,7 +51,7 @@ public class FileTypeValidator {
      */
     public void validateContentType(String contentType) {
         if (contentType == null || contentType.isEmpty()) {
-            throw new BusinessException("Content-Type 不能为空");
+            throw new BusinessException(FileServiceErrorMessages.CONTENT_TYPE_EMPTY);
         }
         
         // 移除可能的参数（如 charset）
@@ -58,7 +59,7 @@ public class FileTypeValidator {
         
         if (!fileTypeProperties.isAllowedContentType(mimeType)) {
             log.warn("不支持的文件类型: {}", mimeType);
-            throw new BusinessException("不支持的文件类型: " + mimeType);
+            throw new BusinessException(String.format(FileServiceErrorMessages.CONTENT_TYPE_NOT_ALLOWED, mimeType));
         }
         
         log.debug("Content-Type 验证通过: {}", mimeType);
@@ -72,13 +73,13 @@ public class FileTypeValidator {
      */
     public void validateFileSize(long fileSize) {
         if (fileSize <= 0) {
-            throw new BusinessException("文件大小必须大于 0");
+            throw new BusinessException(FileServiceErrorMessages.FILE_SIZE_MUST_POSITIVE);
         }
         
         if (!fileTypeProperties.isFileSizeAllowed(fileSize)) {
             long maxSizeMB = fileTypeProperties.getMaxFileSize() / (1024 * 1024);
             log.warn("文件大小超出限制: {} bytes (最大 {} MB)", fileSize, maxSizeMB);
-            throw new BusinessException("文件大小超出限制，最大允许 " + maxSizeMB + " MB");
+            throw new BusinessException(String.format(FileServiceErrorMessages.FILE_SIZE_EXCEEDED, maxSizeMB));
         }
         
         log.debug("文件大小验证通过: {} bytes", fileSize);
@@ -129,20 +130,20 @@ public class FileTypeValidator {
         // 5. 检测实际文件类型（通过魔数）
         if (fileHeader == null || fileHeader.length < 4) {
             log.warn("文件头数据不足，无法进行魔数检测");
-            throw new BusinessException("文件头数据不足，无法验证文件类型");
+            throw new BusinessException(FileServiceErrorMessages.FILE_HEADER_INSUFFICIENT);
         }
         
         String detectedType = FileTypeDetector.detectFileType(fileHeader);
         if (detectedType == null) {
             log.warn("无法识别文件类型，文件名: {}", fileName);
-            throw new BusinessException("无法识别文件类型");
+            throw new BusinessException(FileServiceErrorMessages.FILE_TYPE_UNRECOGNIZED);
         }
         
         // 6. 验证声明的类型与检测到的类型是否匹配
         if (!FileTypeDetector.isTypeMatch(contentType, detectedType)) {
             log.warn("文件类型不匹配: 声明={}, 检测={}, 文件名={}", 
                 contentType, detectedType, fileName);
-            throw new BusinessException("文件类型与内容不匹配");
+            throw new BusinessException(FileServiceErrorMessages.FILE_TYPE_CONTENT_MISMATCH);
         }
         
         log.info("文件验证通过（含魔数检测）: fileName={}, contentType={}, detectedType={}, size={}", 

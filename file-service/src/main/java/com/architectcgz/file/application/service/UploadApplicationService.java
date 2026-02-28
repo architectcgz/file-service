@@ -1,6 +1,7 @@
 package com.architectcgz.file.application.service;
 
 import com.github.f4b6a3.uuid.UuidCreator;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.common.exception.FileNotFoundException;
@@ -154,8 +155,8 @@ public class UploadApplicationService {
             
             // 从 StorageObject 获取 storagePath
             StorageObject storageObject = storageObjectRepository.findById(storageObjectId)
-                    .orElseThrow(() -> new BusinessException("存储对象不存在"));
-            
+                    .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.STORAGE_OBJECT_NOT_FOUND));
+
             FileRecord fileRecord = FileRecord.builder()
                     .id(fileRecordId)
                     .appId(appId)
@@ -190,7 +191,7 @@ public class UploadApplicationService {
                     
         } catch (IOException e) {
             log.error("Failed to upload image: {}", file.getOriginalFilename(), e);
-            throw new BusinessException("图片上传失败: " + e.getMessage());
+            throw new BusinessException(String.format(FileServiceErrorMessages.IMAGE_UPLOAD_FAILED, e.getMessage()));
         }
     }
     
@@ -273,8 +274,8 @@ public class UploadApplicationService {
             
             // 从 StorageObject 获取 storagePath
             StorageObject storageObject = storageObjectRepository.findById(storageObjectId)
-                    .orElseThrow(() -> new BusinessException("存储对象不存在"));
-            
+                    .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.STORAGE_OBJECT_NOT_FOUND));
+
             FileRecord fileRecord = FileRecord.builder()
                     .id(fileRecordId)
                     .appId(appId)
@@ -308,7 +309,7 @@ public class UploadApplicationService {
                     
         } catch (IOException e) {
             log.error("Failed to upload file: {}", file.getOriginalFilename(), e);
-            throw new BusinessException("文件上传失败: " + e.getMessage());
+            throw new BusinessException(String.format(FileServiceErrorMessages.FILE_UPLOAD_FAILED, e.getMessage()));
         }
     }
     
@@ -327,12 +328,12 @@ public class UploadApplicationService {
         
         // 2. 验证 appId 归属
         if (!fileRecord.belongsToApp(appId)) {
-            throw new AccessDeniedException("Access denied: file belongs to different app");
+            throw new AccessDeniedException(FileServiceErrorMessages.FILE_NOT_BELONG_TO_APP);
         }
         
         // 3. 验证用户权限
         if (!fileRecord.getUserId().equals(userId)) {
-            throw new AccessDeniedException("无权删除该文件");
+            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_DELETE_FILE);
         }
         
         // 4. 更新 FileRecord 状态为 DELETED（软删除）
@@ -431,7 +432,7 @@ public class UploadApplicationService {
             return sb.toString();
         } catch (NoSuchAlgorithmException e) {
             log.error("MD5 algorithm not available", e);
-            throw new BusinessException("文件哈希计算失败");
+            throw new BusinessException(FileServiceErrorMessages.FILE_HASH_FAILED);
         }
     }
 }

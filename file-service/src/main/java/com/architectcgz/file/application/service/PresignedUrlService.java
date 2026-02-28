@@ -1,5 +1,6 @@
 package com.architectcgz.file.application.service;
 
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.application.dto.ConfirmUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadRequest;
@@ -76,7 +77,7 @@ public class PresignedUrlService {
                 // 用户已有该文件，直接返回已存在的文件信息
                 log.info("File already exists for user (instant upload): userId={}, fileHash={}", 
                         userId, request.getFileHash());
-                throw new BusinessException("文件已存在，无需重复上传");
+                throw new BusinessException(FileServiceErrorMessages.FILE_ALREADY_EXISTS);
             }
         }
         
@@ -126,7 +127,7 @@ public class PresignedUrlService {
         // 1. 验证文件是否存在于 S3
         if (!storageService.exists(request.getStoragePath())) {
             log.error("File not found in S3: storagePath={}", request.getStoragePath());
-            throw new BusinessException("文件不存在，请先上传文件");
+            throw new BusinessException(FileServiceErrorMessages.FILE_NOT_UPLOADED);
         }
         
         // 2. 检查是否存在相同 hash 的 StorageObject（去重）

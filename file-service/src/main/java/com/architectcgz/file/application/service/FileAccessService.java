@@ -2,6 +2,7 @@ package com.architectcgz.file.application.service;
 
 import com.architectcgz.file.application.dto.FileDetailResponse;
 import com.architectcgz.file.application.dto.FileUrlResponse;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.common.exception.FileNotFoundException;
@@ -74,30 +75,30 @@ public class FileAccessService {
         
         // 验证文件属于该应用
         if (!file.belongsToApp(appId)) {
-            throw new AccessDeniedException("文件不属于该应用");
+            throw new AccessDeniedException(FileServiceErrorMessages.FILE_NOT_BELONG_TO_APP);
         }
-        
+
         // 验证文件未被删除
         if (file.getStatus() == com.architectcgz.file.domain.model.FileStatus.DELETED) {
             throw FileNotFoundException.deleted(fileId);
         }
-        
+
         String url;
         boolean isPermanent;
         LocalDateTime expiresAt;
-        
+
         if (file.getAccessLevel() == AccessLevel.PUBLIC) {
             // 公开文件：返回公开URL
             url = storageService.getPublicUrl(file.getStoragePath());
             isPermanent = true;
             expiresAt = null;
-            
+
             // 将公开文件的URL写入缓存
             cacheUrl(fileId, url);
         } else {
             // 私有文件：验证权限后返回预签名URL（不缓存）
             if (!canAccessFile(file, requestUserId)) {
-                throw new AccessDeniedException("无权访问该文件: " + fileId);
+                throw new AccessDeniedException(String.format(FileServiceErrorMessages.ACCESS_DENIED_FILE, fileId));
             }
             url = storageService.generatePresignedUrl(
                     file.getStoragePath(), 
@@ -180,17 +181,17 @@ public class FileAccessService {
         
         // 验证文件属于该应用
         if (!file.belongsToApp(appId)) {
-            throw new AccessDeniedException("文件不属于该应用");
+            throw new AccessDeniedException(FileServiceErrorMessages.FILE_NOT_BELONG_TO_APP);
         }
-        
+
         // 验证文件未被删除
         if (file.getStatus() == com.architectcgz.file.domain.model.FileStatus.DELETED) {
             throw FileNotFoundException.deleted(fileId);
         }
-        
+
         // 对于私有文件，验证访问权限
         if (file.getAccessLevel() == AccessLevel.PRIVATE && !canAccessFile(file, requestUserId)) {
-            throw new AccessDeniedException("无权访问该文件: " + fileId);
+            throw new AccessDeniedException(String.format(FileServiceErrorMessages.ACCESS_DENIED_FILE, fileId));
         }
         
         return FileDetailResponse.builder()
@@ -245,18 +246,18 @@ public class FileAccessService {
         
         // 验证文件属于该应用
         if (!file.belongsToApp(appId)) {
-            throw new AccessDeniedException("文件不属于该应用");
+            throw new AccessDeniedException(FileServiceErrorMessages.FILE_NOT_BELONG_TO_APP);
         }
-        
+
         // 只有文件所有者可以修改访问级别
         if (!file.getUserId().equals(requestUserId)) {
-            throw new AccessDeniedException("无权修改该文件的访问级别: " + fileId);
+            throw new AccessDeniedException(String.format(FileServiceErrorMessages.ACCESS_DENIED_UPDATE_ACCESS_LEVEL, fileId));
         }
-        
+
         // 更新访问级别
         boolean updated = fileRecordRepository.updateAccessLevel(fileId, newLevel);
         if (!updated) {
-            throw new BusinessException("更新文件访问级别失败: " + fileId);
+            throw new BusinessException(String.format(FileServiceErrorMessages.UPDATE_ACCESS_LEVEL_FAILED, fileId));
         }
         
         log.info("File access level updated: fileId={}, oldLevel={}, newLevel={}, userId={}", 
