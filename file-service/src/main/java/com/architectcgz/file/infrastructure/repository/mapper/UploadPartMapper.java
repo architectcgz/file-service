@@ -86,8 +86,24 @@ public interface UploadPartMapper {
     List<Integer> findPartNumbersByTaskId(@Param("taskId") String taskId);
     
     /**
+     * 根据任务ID和分片编号查询单个分片
+     * 用于幂等性检查时获取已有分片的 ETag
+     *
+     * @param taskId 任务ID
+     * @param partNumber 分片编号
+     * @return 分片记录，不存在时返回 null
+     */
+    @Select("""
+        SELECT id, task_id, part_number, etag, size, uploaded_at
+        FROM upload_parts
+        WHERE task_id = #{taskId} AND part_number = #{partNumber}
+    """)
+    @ResultMap("uploadPartResult")
+    UploadPartPO selectByTaskIdAndPartNumber(@Param("taskId") String taskId, @Param("partNumber") int partNumber);
+
+    /**
      * 统计任务的已完成分片数量
-     * 
+     *
      * @param taskId 任务ID
      * @return 已完成分片数量
      */

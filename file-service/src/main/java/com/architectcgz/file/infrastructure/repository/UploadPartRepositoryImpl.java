@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -151,8 +152,38 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
     }
     
     /**
+     * 根据任务ID和分片编号查询单个分片
+     * 直接查询数据库，因为 Bitmap 中不存储 ETag 等详细信息
+     *
+     * @param taskId 任务ID
+     * @param partNumber 分片编号（从1开始）
+     * @return 分片信息，不存在时返回 empty
+     */
+    @Override
+    public Optional<UploadPart> findByTaskIdAndPartNumber(String taskId, int partNumber) {
+        try {
+            UploadPartPO po = uploadPartMapper.selectByTaskIdAndPartNumber(taskId, partNumber);
+            if (po == null) {
+                return Optional.empty();
+            }
+            UploadPart part = UploadPart.builder()
+                    .id(po.getId())
+                    .taskId(po.getTaskId())
+                    .partNumber(po.getPartNumber())
+                    .etag(po.getEtag())
+                    .size(po.getSize())
+                    .uploadedAt(po.getUploadedAt())
+                    .build();
+            return Optional.of(part);
+        } catch (Exception e) {
+            log.error("查询分片记录失败: taskId={}, partNumber={}", taskId, partNumber, e);
+            return Optional.empty();
+        }
+    }
+
+    /**
      * 查询已完成的分片数量
-     * 
+     *
      * 实现策略:
      * 1. 优先从 Redis Bitmap 查询 (BITCOUNT)
      * 2. Redis 失败时回退到数据库

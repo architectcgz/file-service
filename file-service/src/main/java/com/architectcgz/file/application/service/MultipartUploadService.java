@@ -174,11 +174,16 @@ public class MultipartUploadService {
         // 检查分片是否已上传（使用 bitmap 优化）
         List<Integer> completedPartNumbers = uploadPartRepository.findCompletedPartNumbers(taskId);
         if (completedPartNumbers.contains(partNumber)) {
-            log.warn("Part {} already uploaded for task: {}, returning cached result", partNumber, taskId);
-            // 分片已存在，直接返回成功（幂等性）
-            // 注意：这里无法返回原始 ETag，客户端应该缓存 ETag
-            // 如果必须返回 ETag，需要额外查询数据库
-            throw new BusinessException("分片已上传，请勿重复提交");
+            // 幂等处理：查询已有分片的 ETag 并直接返回，避免重复上传到 S3
+            Optional<UploadPart> existingPart = uploadPartRepository.findByTaskIdAndPartNumber(taskId, partNumber);
+            if (existingPart.isPresent() && existingPart.get().getEtag() != null) {
+                log.info("分片幂等命中，返回已有 ETag: taskId={}, partNumber={}, etag={}",
+                        taskId, partNumber, existingPart.get().getEtag());
+                return existingPart.get().getEtag();
+            }
+            // 数据库中无记录或无 ETag（可能仅在 Bitmap 中），仍需上传
+            log.info("分片已在 Bitmap 中但数据库无 ETag 记录，重新上传: taskId={}, partNumber={}",
+                    taskId, partNumber);
         }
         
         // 上传分片到S3
