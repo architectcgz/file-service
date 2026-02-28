@@ -61,16 +61,8 @@ public class StorageObjectRepositoryImpl implements StorageObjectRepository {
     }
 
     @Override
-    public List<StorageObject> findZeroReferenceObjects(int limit) {
-        List<StorageObjectPO> pos = storageObjectMapper.selectZeroReferenceObjects(limit);
-        return pos.stream()
-                .map(this::toDomain)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<StorageObject> findAll(int offset, int limit) {
-        List<StorageObjectPO> pos = storageObjectMapper.selectAll(offset, limit);
+    public List<StorageObject> findZeroReferenceObjects(int graceMinutes, int limit) {
+        List<StorageObjectPO> pos = storageObjectMapper.selectZeroReferenceObjects(graceMinutes, limit);
         return pos.stream()
                 .map(this::toDomain)
                 .collect(Collectors.toList());

@@ -96,8 +96,10 @@ public interface StorageObjectMapper {
     int deleteById(String id);
 
     /**
-     * 查询引用计数为零的存储对象（孤立对象）
+     * 查询引用计数为零且超过保护窗口的存储对象（孤立对象）
+     * 增加时间保护窗口，避免与正常删除流程互相干扰
      *
+     * @param graceMinutes 时间保护窗口（分钟），只清理 updated_at 早于该时间的记录
      * @param limit 最大返回数量
      * @return 孤立存储对象列表
      */
@@ -106,26 +108,12 @@ public interface StorageObjectMapper {
                content_type, reference_count, created_at, updated_at
         FROM storage_objects
         WHERE reference_count <= 0
+          AND updated_at < NOW() - CAST(#{graceMinutes} || ' minutes' AS INTERVAL)
         ORDER BY updated_at ASC
         LIMIT #{limit}
         """)
     @ResultMap("storageObjectResult")
-    List<StorageObjectPO> selectZeroReferenceObjects(@Param("limit") int limit);
-
-    /**
-     * 分页查询所有存储对象
-     *
-     * @param offset 偏移量
-     * @param limit 每页数量
-     * @return 存储对象列表
-     */
-    @Select("""
-        SELECT id, app_id, file_hash, hash_algorithm, storage_path, file_size,
-               content_type, reference_count, created_at, updated_at
-        FROM storage_objects
-        ORDER BY id ASC
-        LIMIT #{limit} OFFSET #{offset}
-        """)
-    @ResultMap("storageObjectResult")
-    List<StorageObjectPO> selectAll(@Param("offset") int offset, @Param("limit") int limit);
+    List<StorageObjectPO> selectZeroReferenceObjects(@Param("graceMinutes") int graceMinutes,
+                                                      @Param("limit") int limit);
 }
+

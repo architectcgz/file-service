@@ -67,24 +67,27 @@ public class FileManagementService {
     
     /**
      * 删除单个文件（管理员操作）
-     * 操作顺序：先删 S3 -> 再更新数据库，S3 删除失败则中止，保证一致性
+     * 操作顺序：事务内原子递减引用计数并判断归零 -> 事务提交后删 S3
+     * 通过事务内原子操作保证引用计数一致性，避免 S3 泄漏
      *
      * @param fileId 文件ID
      * @param adminUserId 管理员用户ID
      */
     public void deleteFile(String fileId, String adminUserId) {
-        log.info("Deleting file: {} by admin: {}", fileId, adminUserId);
+        log.info("管理员删除文件: fileId={}, adminUserId={}", fileId, adminUserId);
 
         // 查询文件记录
         FileRecord fileRecord = fileRecordRepository.findById(fileId)
                 .orElseThrow(() -> FileNotFoundException.notFound(fileId));
 
-        // 1. 先从存储系统删除文件，失败则整个操作中止
-        storageService.delete(fileRecord.getStoragePath());
-        log.debug("Deleted file from storage: {}", fileRecord.getStoragePath());
+        // 1. 事务内原子递减引用计数，判断是否归零并返回需要删除的 S3 路径
+        String s3PathToDelete = deleteTransactionHelper.updateDatabaseAfterAdminDelete(fileId, fileRecord);
 
-        // 2. S3 删除成功后，通过独立 Bean 执行短事务更新数据库
-        deleteTransactionHelper.updateDatabaseAfterAdminDelete(fileId, fileRecord);
+        // 2. 事务提交后删除 S3 对象（如果引用计数归零）
+        if (s3PathToDelete != null) {
+            storageService.delete(s3PathToDelete);
+            log.info("S3 对象已删除: path={}", s3PathToDelete);
+        }
 
         // 3. 清除缓存（缓存操作不影响核心流程）
         clearCache(fileId);
@@ -92,7 +95,7 @@ public class FileManagementService {
         // 4. 记录审计日志
         recordDeleteFileAudit(fileId, fileRecord, adminUserId);
 
-        log.info("Successfully deleted file: {}", fileId);
+        log.info("文件删除完成: fileId={}", fileId);
     }
     
     /**

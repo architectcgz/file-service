@@ -1,6 +1,7 @@
 package com.architectcgz.file.application.service;
 
 import com.github.f4b6a3.uuid.UuidCreator;
+import com.architectcgz.file.common.constants.FileErrorMessages;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.common.exception.FileNotFoundException;
@@ -315,8 +316,8 @@ public class UploadApplicationService {
     
     /**
      * 删除文件
-     * 操作顺序：查询校验 -> 判断引用计数 -> 先删 S3 -> 短事务更新数据库
-     * S3 删除失败则整个操作中止，数据库状态不变，避免 S3 与数据库状态不一致
+     * 操作顺序：查询校验 -> 短事务内原子递减引用计数并判断归零 -> 事务提交后删 S3
+     * 通过事务内原子操作消除引用计数的 TOCTOU 竞态窗口
      *
      * @param appId 应用ID
      * @param fileRecordId 文件记录ID
@@ -329,41 +330,31 @@ public class UploadApplicationService {
 
         // 2. 验证 appId 归属
         if (!fileRecord.belongsToApp(appId)) {
-            throw new AccessDeniedException("Access denied: file belongs to different app");
+            throw new AccessDeniedException(FileErrorMessages.FILE_APP_MISMATCH);
         }
 
         // 3. 验证用户权限
         if (!fileRecord.getUserId().equals(userId)) {
-            throw new AccessDeniedException("无权删除该文件");
+            throw new AccessDeniedException(FileErrorMessages.FILE_DELETE_FORBIDDEN);
         }
 
-        // 4. 判断引用计数是否将归零，决定是否需要删除 S3 对象
+        // 4. 事务内原子递减引用计数，判断是否归零并返回需要删除的 S3 路径
         String storageObjectId = fileRecord.getStorageObjectId();
-        boolean shouldDeleteS3 = false;
-        StorageObject storageObject = null;
+        String s3PathToDelete = deleteTransactionHelper.updateDatabaseAfterUserDelete(
+                appId, fileRecordId, storageObjectId, fileRecord.getFileSize());
 
-        Optional<StorageObject> storageObjectOpt = storageObjectRepository.findById(storageObjectId);
-        if (storageObjectOpt.isPresent()) {
-            storageObject = storageObjectOpt.get();
-            // 引用计数为 1 表示当前是最后一个引用，删除后将归零
-            shouldDeleteS3 = storageObject.getReferenceCount() != null
-                    && storageObject.getReferenceCount() <= 1;
+        // 5. 事务提交后删除 S3 对象（如果引用计数归零）
+        boolean s3Deleted = false;
+        if (s3PathToDelete != null) {
+            log.info("引用计数归零，删除 S3 对象: storageObjectId={}, path={}",
+                    storageObjectId, s3PathToDelete);
+            storageService.delete(s3PathToDelete);
+            s3Deleted = true;
+            log.info("S3 对象删除成功: path={}", s3PathToDelete);
         }
 
-        // 5. 先删 S3 对象（如果需要），失败则中止整个操作
-        if (shouldDeleteS3 && storageObject != null) {
-            log.info("引用计数将归零，先删除 S3 对象: storageObjectId={}, path={}",
-                    storageObjectId, storageObject.getStoragePath());
-            storageService.delete(storageObject.getStoragePath());
-            log.info("S3 对象删除成功: path={}", storageObject.getStoragePath());
-        }
-
-        // 6. S3 删除成功后，通过独立 Bean 执行短事务更新数据库
-        deleteTransactionHelper.updateDatabaseAfterUserDelete(appId, fileRecordId,
-                storageObjectId, fileRecord.getFileSize(), shouldDeleteS3);
-
-        log.info("File deleted: fileRecordId={}, userId={}, s3Deleted={}",
-                fileRecordId, userId, shouldDeleteS3);
+        log.info("文件已删除: fileRecordId={}, userId={}, s3Deleted={}",
+                fileRecordId, userId, s3Deleted);
     }
     
     /**

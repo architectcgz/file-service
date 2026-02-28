@@ -61,21 +61,13 @@ public interface StorageObjectRepository {
     boolean deleteById(String id);
 
     /**
-     * 查找引用计数为零的存储对象（孤立对象）
-     * 用于定时清理任务，分批查询避免一次加载过多数据
+     * 查找引用计数为零且超过保护窗口的存储对象（孤立对象）
+     * 用于定时清理任务，分批查询避免一次加载过多数据。
+     * 增加时间保护窗口，避免与正常删除流程互相干扰。
      *
+     * @param graceMinutes 时间保护窗口（分钟），只清理 updated_at 早于该时间的记录
      * @param limit 最大返回数量
      * @return 引用计数为零的存储对象列表
      */
-    List<StorageObject> findZeroReferenceObjects(int limit);
-
-    /**
-     * 分页查询所有存储对象
-     * 用于孤立文件清理任务中与 S3 对象进行比对
-     *
-     * @param offset 偏移量
-     * @param limit 每页数量
-     * @return 存储对象列表
-     */
-    List<StorageObject> findAll(int offset, int limit);
+    List<StorageObject> findZeroReferenceObjects(int graceMinutes, int limit);
 }
