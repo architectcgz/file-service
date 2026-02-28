@@ -4,6 +4,7 @@ import com.architectcgz.file.infrastructure.repository.po.StorageObjectPO;
 import org.apache.ibatis.annotations.*;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 存储对象 Mapper
@@ -93,4 +94,38 @@ public interface StorageObjectMapper {
      */
     @Delete("DELETE FROM storage_objects WHERE id = #{id}")
     int deleteById(String id);
+
+    /**
+     * 查询引用计数为零的存储对象（孤立对象）
+     *
+     * @param limit 最大返回数量
+     * @return 孤立存储对象列表
+     */
+    @Select("""
+        SELECT id, app_id, file_hash, hash_algorithm, storage_path, file_size,
+               content_type, reference_count, created_at, updated_at
+        FROM storage_objects
+        WHERE reference_count <= 0
+        ORDER BY updated_at ASC
+        LIMIT #{limit}
+        """)
+    @ResultMap("storageObjectResult")
+    List<StorageObjectPO> selectZeroReferenceObjects(@Param("limit") int limit);
+
+    /**
+     * 分页查询所有存储对象
+     *
+     * @param offset 偏移量
+     * @param limit 每页数量
+     * @return 存储对象列表
+     */
+    @Select("""
+        SELECT id, app_id, file_hash, hash_algorithm, storage_path, file_size,
+               content_type, reference_count, created_at, updated_at
+        FROM storage_objects
+        ORDER BY id ASC
+        LIMIT #{limit} OFFSET #{offset}
+        """)
+    @ResultMap("storageObjectResult")
+    List<StorageObjectPO> selectAll(@Param("offset") int offset, @Param("limit") int limit);
 }

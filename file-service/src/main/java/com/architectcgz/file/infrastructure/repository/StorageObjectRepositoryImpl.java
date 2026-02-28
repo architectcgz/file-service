@@ -8,7 +8,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * 存储对象仓储实现
@@ -57,7 +59,23 @@ public class StorageObjectRepositoryImpl implements StorageObjectRepository {
         int rows = storageObjectMapper.deleteById(id);
         return rows > 0;
     }
-    
+
+    @Override
+    public List<StorageObject> findZeroReferenceObjects(int limit) {
+        List<StorageObjectPO> pos = storageObjectMapper.selectZeroReferenceObjects(limit);
+        return pos.stream()
+                .map(this::toDomain)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<StorageObject> findAll(int offset, int limit) {
+        List<StorageObjectPO> pos = storageObjectMapper.selectAll(offset, limit);
+        return pos.stream()
+                .map(this::toDomain)
+                .collect(Collectors.toList());
+    }
+
     /**
      * 将领域模型转换为持久化对或
      */

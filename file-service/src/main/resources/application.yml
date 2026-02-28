@@ -232,6 +232,11 @@ file-service:
     enabled: ${CACHE_ENABLED:true}
     url:
       ttl: ${CACHE_URL_TTL:3600}  # 1小时
+  # 孤立文件清理配置
+  cleanup:
+    orphaned:
+      cron: ${ORPHANED_CLEANUP_CRON:0 30 3 * * *}  # 默认每天凌晨 3:30 执行
+      batch-size: ${ORPHANED_CLEANUP_BATCH_SIZE:100}  # 每批处理的最大记录数
 
 # RocketMQ 配置
 rocketmq:
