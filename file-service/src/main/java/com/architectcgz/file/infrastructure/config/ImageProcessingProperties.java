@@ -54,4 +54,9 @@ public class ImageProcessingProperties {
      * 是否转换为 WebP 格式
      */
     private boolean convertToWebp = true;
+
+    /**
+     * 临时文件前缀，用于图片处理时的临时文件命名
+     */
+    private String tempFilePrefix = "img-upload-";
 }

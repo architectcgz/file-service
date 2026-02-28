@@ -2,6 +2,7 @@ package com.architectcgz.file.infrastructure.storage;
 
 import com.architectcgz.file.domain.model.AccessLevel;
 
+import java.nio.file.Path;
 import java.time.Duration;
 
 /**
@@ -27,7 +28,17 @@ public interface StorageService {
      * @return 访问URL
      */
     String upload(byte[] data, String path, String contentType);
-    
+
+    /**
+     * 从本地文件上传到存储，避免将整个文件加载到内存
+     *
+     * @param file 本地文件路径
+     * @param storagePath 存储路径
+     * @param contentType 内容类型
+     * @return 访问URL
+     */
+    String uploadFromFile(Path file, String storagePath, String contentType);
+
     /**
      * 上传文件到公开存储桶
      *
