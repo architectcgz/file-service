@@ -2,6 +2,7 @@ package com.architectcgz.file.application.service;
 
 import com.architectcgz.file.application.dto.FileUrlResponse;
 import com.architectcgz.file.common.exception.BusinessException;
+import com.architectcgz.file.common.exception.FileNotFoundException;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
@@ -221,6 +222,58 @@ class FileAccessServicePropertyTest {
                 eq(Duration.ofSeconds(expireSeconds))
         );
         verify(mockStorageService, never()).getPublicUrl(anyString());
+    }
+
+    /**
+     * Property 5: 跨租户访问被拒绝
+     *
+     * 属性：对于任何文件，当使用不同于文件所属应用的 appId 请求时，
+     * 系统应该拒绝请求并抛出 FileNotFoundException（不暴露文件存在性）。
+     */
+    @Property(tries = 100)
+    @Label("Property 5: 跨租户访问被拒绝 - 不同 appId 返回 404")
+    void crossTenantAccessDenied(
+            @ForAll("fileRecords") FileRecord fileRecord,
+            @ForAll("appIds") String requestAppId,
+            @ForAll("userIds") String requestUserId
+    ) {
+        // 确保请求的 appId 与文件的 appId 不同
+        Assume.that(!requestAppId.equals(fileRecord.getAppId()));
+
+        fileRecord.setAccessLevel(AccessLevel.PUBLIC);
+        fileRecord.setStatus(FileStatus.COMPLETED);
+
+        // 创建 mock 依赖
+        FileRecordRepository mockRepository = mock(FileRecordRepository.class);
+        StorageService mockStorageService = mock(StorageService.class);
+        S3Properties mockS3Properties = mock(S3Properties.class);
+        @SuppressWarnings("unchecked")
+        org.springframework.data.redis.core.RedisTemplate<String, String> mockRedisTemplate =
+                mock(org.springframework.data.redis.core.RedisTemplate.class);
+        com.architectcgz.file.infrastructure.config.CacheProperties mockCacheProperties =
+                mock(com.architectcgz.file.infrastructure.config.CacheProperties.class);
+
+        when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
+
+        FileAccessService service = new FileAccessService(
+                mockRepository, mockStorageService, mockS3Properties,
+                mockRedisTemplate, mockCacheProperties
+        );
+        ReflectionTestUtils.setField(service, "privateUrlExpireSeconds", 3600);
+
+        // When & Then: 跨租户访问应抛出 FileNotFoundException
+        FileNotFoundException exception = assertThrows(
+                FileNotFoundException.class,
+                () -> service.getFileUrl(requestAppId, fileRecord.getId(), requestUserId),
+                "Cross-tenant access should throw FileNotFoundException"
+        );
+
+        assertTrue(exception.getMessage().contains("文件不存在"),
+                "Exception message should indicate file not found");
+
+        // 验证没有调用 URL 生成方法
+        verify(mockStorageService, never()).getPublicUrl(anyString());
+        verify(mockStorageService, never()).generatePresignedUrl(anyString(), any(Duration.class));
     }
 
     // ========== Arbitraries (数据生成器) ==========

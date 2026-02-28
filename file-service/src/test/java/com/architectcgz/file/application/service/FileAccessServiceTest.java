@@ -1,6 +1,7 @@
 package com.architectcgz.file.application.service;
 
 import com.architectcgz.file.common.exception.BusinessException;
+import com.architectcgz.file.common.exception.FileNotFoundException;
 import com.architectcgz.file.application.dto.FileDetailResponse;
 import com.architectcgz.file.application.dto.FileUrlResponse;
 import com.architectcgz.file.domain.model.AccessLevel;
@@ -23,12 +24,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
@@ -346,13 +345,86 @@ class FileAccessServiceTest {
     void testGetFileDetail_PublicFile_AnyUser_returnsDetails() {
         // Given - 公开文件，任何用户都可以查看详情
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
-        
+
         // When - 使用不同的用户ID
         FileDetailResponse response = fileAccessService.getFileDetail("blog", "file-001", "999");
-        
+
         // Then
         assertNotNull(response);
         assertEquals("file-001", response.getFileId());
         assertEquals(AccessLevel.PUBLIC, response.getAccessLevel());
+    }
+
+    // ========== 跨租户访问测试（L1 补充） ==========
+
+    @Test
+    void testGetFileUrl_CrossTenant_ThrowsFileNotFoundException() {
+        // Given - 使用不同的 appId 访问其他租户的文件
+        when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
+
+        // When & Then - 跨租户应返回 404（不暴露文件存在性）
+        FileNotFoundException exception = assertThrows(FileNotFoundException.class, () -> {
+            fileAccessService.getFileUrl("other-app", "file-001", "123");
+        });
+
+        assertEquals("文件不存在: file-001", exception.getMessage());
+    }
+
+    @Test
+    void testGetFileDetail_CrossTenant_ThrowsFileNotFoundException() {
+        // Given - 使用不同的 appId 访问其他租户的文件
+        when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
+
+        // When & Then - 跨租户应返回 404（不暴露文件存在性）
+        FileNotFoundException exception = assertThrows(FileNotFoundException.class, () -> {
+            fileAccessService.getFileDetail("other-app", "file-001", "123");
+        });
+
+        assertEquals("文件不存在: file-001", exception.getMessage());
+    }
+
+    // ========== updateAccessLevel 测试（H3/M2/M3 补充） ==========
+
+    @Test
+    void testUpdateAccessLevel_DeletedFile_ThrowsException() {
+        // Given - 已删除文件不应允许修改访问级别
+        FileRecord deletedFile = FileRecord.builder()
+                .id("file-003")
+                .appId("blog")
+                .userId("123")
+                .storageObjectId("storage-001")
+                .originalFilename("deleted.jpg")
+                .storagePath("2026/01/19/123/test-file.jpg")
+                .fileSize(1024L)
+                .contentType("image/jpeg")
+                .fileHash("abc123")
+                .hashAlgorithm("MD5")
+                .status(FileStatus.DELETED)
+                .accessLevel(AccessLevel.PUBLIC)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        when(fileRecordRepository.findById("file-003")).thenReturn(Optional.of(deletedFile));
+
+        // When & Then
+        FileNotFoundException exception = assertThrows(FileNotFoundException.class, () -> {
+            fileAccessService.updateAccessLevel("blog", "file-003", "123", AccessLevel.PRIVATE);
+        });
+
+        assertEquals("文件已被删除: file-003", exception.getMessage());
+    }
+
+    @Test
+    void testUpdateAccessLevel_CrossTenant_ThrowsFileNotFoundException() {
+        // Given - 跨租户修改访问级别应返回 404
+        when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
+
+        // When & Then
+        FileNotFoundException exception = assertThrows(FileNotFoundException.class, () -> {
+            fileAccessService.updateAccessLevel("other-app", "file-001", "123", AccessLevel.PRIVATE);
+        });
+
+        assertEquals("文件不存在: file-001", exception.getMessage());
     }
 }
