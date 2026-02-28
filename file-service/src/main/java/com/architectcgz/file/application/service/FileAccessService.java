@@ -71,34 +71,33 @@ public class FileAccessService {
         // 2. 缓存未命中，查询数据库
         FileRecord file = fileRecordRepository.findById(fileId)
                 .orElseThrow(() -> FileNotFoundException.notFound(fileId));
-        
-        // 验证文件属于该应用
-        if (!file.belongsToApp(appId)) {
-            throw new AccessDeniedException("文件不属于该应用");
+
+        // 统一访问控制检查（租户隔离 + 文件状态 + 访问级别）
+        if (!canAccessFile(file, requestUserId, appId)) {
+            // 区分异常类型：已删除文件返回 FileNotFoundException，其他返回 AccessDeniedException
+            if (file.isDeleted()) {
+                throw FileNotFoundException.deleted(fileId);
+            }
+            if (!file.belongsToApp(appId)) {
+                throw new AccessDeniedException("文件不属于该应用");
+            }
+            throw new AccessDeniedException("无权访问该文件: " + fileId);
         }
-        
-        // 验证文件未被删除
-        if (file.getStatus() == com.architectcgz.file.domain.model.FileStatus.DELETED) {
-            throw FileNotFoundException.deleted(fileId);
-        }
-        
+
         String url;
         boolean isPermanent;
         LocalDateTime expiresAt;
-        
+
         if (file.getAccessLevel() == AccessLevel.PUBLIC) {
             // 公开文件：返回公开URL
             url = storageService.getPublicUrl(file.getStoragePath());
             isPermanent = true;
             expiresAt = null;
-            
+
             // 将公开文件的URL写入缓存
             cacheUrl(fileId, url);
         } else {
-            // 私有文件：验证权限后返回预签名URL（不缓存）
-            if (!canAccessFile(file, requestUserId)) {
-                throw new AccessDeniedException("无权访问该文件: " + fileId);
-            }
+            // 私有文件：返回预签名URL（不缓存）
             url = storageService.generatePresignedUrl(
                     file.getStoragePath(), 
                     Duration.ofSeconds(privateUrlExpireSeconds)
@@ -177,19 +176,15 @@ public class FileAccessService {
     public FileDetailResponse getFileDetail(String appId, String fileId, String requestUserId) {
         FileRecord file = fileRecordRepository.findById(fileId)
                 .orElseThrow(() -> FileNotFoundException.notFound(fileId));
-        
-        // 验证文件属于该应用
-        if (!file.belongsToApp(appId)) {
-            throw new AccessDeniedException("文件不属于该应用");
-        }
-        
-        // 验证文件未被删除
-        if (file.getStatus() == com.architectcgz.file.domain.model.FileStatus.DELETED) {
-            throw FileNotFoundException.deleted(fileId);
-        }
-        
-        // 对于私有文件，验证访问权限
-        if (file.getAccessLevel() == AccessLevel.PRIVATE && !canAccessFile(file, requestUserId)) {
+
+        // 统一访问控制检查（租户隔离 + 文件状态 + 访问级别）
+        if (!canAccessFile(file, requestUserId, appId)) {
+            if (file.isDeleted()) {
+                throw FileNotFoundException.deleted(fileId);
+            }
+            if (!file.belongsToApp(appId)) {
+                throw new AccessDeniedException("文件不属于该应用");
+            }
             throw new AccessDeniedException("无权访问该文件: " + fileId);
         }
         
@@ -210,23 +205,38 @@ public class FileAccessService {
     
     /**
      * 验证用户是否有权访问文件
+     * 完整的访问控制检查链：租户隔离 -> 文件状态 -> 访问级别
      * 传入已查询的FileRecord对象，避免重复查询
-     * 
+     *
      * @param file 文件记录
      * @param requestUserId 请求用户ID
+     * @param appId 应用ID，用于租户隔离校验
      * @return 是否有权访问
      */
-    public boolean canAccessFile(FileRecord file, String requestUserId) {
-        // 公开文件任何人都可以访问
+    public boolean canAccessFile(FileRecord file, String requestUserId, String appId) {
+        // 1. 租户隔离：文件必须属于当前应用
+        if (!file.belongsToApp(appId)) {
+            log.warn("跨租户访问被拒绝: fileId={}, fileAppId={}, requestAppId={}",
+                    file.getId(), file.getAppId(), appId);
+            return false;
+        }
+
+        // 2. 文件状态：已删除的文件不可访问
+        if (file.isDeleted()) {
+            log.debug("已删除文件被拒绝访问: fileId={}", file.getId());
+            return false;
+        }
+
+        // 3. 访问级别：公开文件任何人都可以访问
         if (file.getAccessLevel() == AccessLevel.PUBLIC) {
             return true;
         }
-        
-        // 私有文件只有所有者可以访问
+
+        // 4. 私有文件只有所有者可以访问
         if (file.getAccessLevel() == AccessLevel.PRIVATE) {
             return file.getUserId() != null && file.getUserId().equals(requestUserId);
         }
-        
+
         return false;
     }
     
