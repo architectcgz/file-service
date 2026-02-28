@@ -19,10 +19,10 @@ public interface UploadTaskMapper {
      */
     @Insert("""
         INSERT INTO upload_tasks (
-            id, app_id, user_id, file_name, file_size, file_hash, storage_path,
+            id, app_id, user_id, file_name, file_size, file_hash, content_type, storage_path,
             upload_id, total_chunks, chunk_size, status, created_at, updated_at, expires_at
         ) VALUES (
-            #{id}, #{appId}, #{userId}, #{fileName}, #{fileSize}, #{fileHash}, #{storagePath},
+            #{id}, #{appId}, #{userId}, #{fileName}, #{fileSize}, #{fileHash}, #{contentType}, #{storagePath},
             #{uploadId}, #{totalParts}, #{chunkSize}, #{status}, #{createdAt}, #{updatedAt}, #{expiresAt}
         )
     """)
@@ -35,7 +35,7 @@ public interface UploadTaskMapper {
      * @return 上传任务PO
      */
     @Select("""
-        SELECT id, app_id, user_id, file_name, file_size, file_hash, storage_path,
+        SELECT id, app_id, user_id, file_name, file_size, file_hash, content_type, storage_path,
                upload_id, total_chunks, chunk_size, status, created_at, updated_at, expires_at
         FROM upload_tasks
         WHERE id = #{id}
@@ -47,6 +47,7 @@ public interface UploadTaskMapper {
         @Result(property = "fileName", column = "file_name"),
         @Result(property = "fileSize", column = "file_size"),
         @Result(property = "fileHash", column = "file_hash"),
+        @Result(property = "contentType", column = "content_type"),
         @Result(property = "storagePath", column = "storage_path"),
         @Result(property = "uploadId", column = "upload_id"),
         @Result(property = "totalParts", column = "total_chunks"),
@@ -67,7 +68,7 @@ public interface UploadTaskMapper {
      * @return 上传任务PO
      */
     @Select("""
-        SELECT id, app_id, user_id, file_name, file_size, file_hash, storage_path,
+        SELECT id, app_id, user_id, file_name, file_size, file_hash, content_type, storage_path,
                upload_id, total_chunks, chunk_size, status, created_at, updated_at, expires_at
         FROM upload_tasks
         WHERE app_id = #{appId} AND user_id = #{userId} AND file_hash = #{fileHash} AND status = 'uploading'
@@ -84,7 +85,7 @@ public interface UploadTaskMapper {
      * @return 过期任务列表
      */
     @Select("""
-        SELECT id, app_id, user_id, file_name, file_size, file_hash, storage_path,
+        SELECT id, app_id, user_id, file_name, file_size, file_hash, content_type, storage_path,
                upload_id, total_chunks, chunk_size, status, created_at, updated_at, expires_at
         FROM upload_tasks
         WHERE status = 'uploading' AND expires_at < #{now}
@@ -118,7 +119,7 @@ public interface UploadTaskMapper {
      * @return 上传任务列表
      */
     @Select("""
-        SELECT id, app_id, user_id, file_name, file_size, file_hash, storage_path,
+        SELECT id, app_id, user_id, file_name, file_size, file_hash, content_type, storage_path,
                upload_id, total_chunks, chunk_size, status, created_at, updated_at, expires_at
         FROM upload_tasks
         WHERE app_id = #{appId} AND user_id = #{userId}

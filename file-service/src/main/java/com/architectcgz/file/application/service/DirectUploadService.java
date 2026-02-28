@@ -15,6 +15,7 @@ import com.architectcgz.file.domain.model.UploadPart;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.UploadTaskRepository;
 import com.architectcgz.file.domain.repository.UploadPartRepository;
+import com.architectcgz.file.infrastructure.config.AccessProperties;
 import com.architectcgz.file.infrastructure.config.MultipartProperties;
 import com.architectcgz.file.infrastructure.storage.S3StorageService;
 import com.github.f4b6a3.uuid.UuidCreator;
@@ -50,6 +51,7 @@ public class DirectUploadService {
     private final UploadPartRepository uploadPartRepository;
     private final FileRecordRepository fileRecordRepository;
     private final MultipartProperties multipartProperties;
+    private final AccessProperties accessProperties;
     private final FileTypeValidator fileTypeValidator;
     
     /**
@@ -204,6 +206,7 @@ public class DirectUploadService {
         task.setFileName(request.getFileName());
         task.setFileSize(request.getFileSize());
         task.setFileHash(request.getFileHash());
+        task.setContentType(request.getContentType());
         task.setStoragePath(storagePath);
         task.setUploadId(uploadId);
         task.setTotalParts(totalParts);
@@ -270,18 +273,19 @@ public class DirectUploadService {
                 throw new BusinessException("分片号无效: " + partNumber);
             }
             
-            // 生成预签名 URL（有效期 1 小时）
+            // 生成预签名 URL，过期时间从配置读取
+            int expireSeconds = accessProperties.getPresignedUrlExpireSeconds();
             String presignedUrl = s3StorageService.generatePresignedUploadPartUrl(
                     task.getStoragePath(),
                     task.getUploadId(),
                     partNumber,
-                    3600  // 1 小时
+                    expireSeconds
             );
             
             partUrls.add(DirectUploadPartUrlResponse.PartUrl.builder()
                     .partNumber(partNumber)
                     .uploadUrl(presignedUrl)
-                    .expiresIn(3600)
+                    .expiresIn(expireSeconds)
                     .build());
         }
         

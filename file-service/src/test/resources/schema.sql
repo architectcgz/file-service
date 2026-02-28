@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS upload_tasks (
     file_name       VARCHAR(255) NOT NULL,
     file_size       BIGINT NOT NULL,
     file_hash       VARCHAR(64),
+    content_type    VARCHAR(128),
     storage_path    VARCHAR(512) NOT NULL,
     upload_id       VARCHAR(256) NOT NULL,
     total_parts     INT NOT NULL,
