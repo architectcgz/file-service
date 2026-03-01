@@ -56,6 +56,14 @@ public class ImageProcessingProperties {
     private boolean convertToWebp = true;
 
     /**
+     * 缩略图压缩质量（0.0-1.0）
+     * 独立于主图质量，缩略图通常可以使用较低质量以减小文件体积
+     */
+    @DecimalMin(value = "0.1", message = "缩略图质量不能低于 0.1")
+    @DecimalMax(value = "1.0", message = "缩略图质量不能超过 1.0")
+    private double thumbnailQuality = 0.8;
+
+    /**
      * 临时文件前缀，用于图片处理时的临时文件命名
      */
     private String tempFilePrefix = "img-upload-";

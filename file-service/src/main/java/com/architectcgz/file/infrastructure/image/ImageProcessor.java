@@ -291,13 +291,14 @@ public class ImageProcessor {
      * @param outputFile 输出缩略图文件路径
      * @param width 缩略图宽度
      * @param height 缩略图高度
+     * @param quality 缩略图压缩质量（0.0-1.0），由外部配置注入，禁止硬编码
      * @return 缩略图文件的字节数
      */
-    public long generateThumbnailToFile(Path sourceFile, Path outputFile, int width, int height) {
+    public long generateThumbnailToFile(Path sourceFile, Path outputFile, int width, int height, double quality) {
         try {
             Thumbnails.of(sourceFile.toFile())
                     .size(width, height)
-                    .outputQuality(0.8)
+                    .outputQuality(quality)
                     .outputFormat("jpg")
                     .toFile(outputFile.toFile());
 
