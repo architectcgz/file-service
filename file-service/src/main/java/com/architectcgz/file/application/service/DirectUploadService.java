@@ -5,6 +5,7 @@ import com.architectcgz.file.application.dto.DirectUploadInitResponse;
 import com.architectcgz.file.application.dto.DirectUploadPartUrlRequest;
 import com.architectcgz.file.application.dto.DirectUploadPartUrlResponse;
 import com.architectcgz.file.application.dto.DirectUploadCompleteRequest;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.domain.model.FileRecord;
@@ -140,7 +141,7 @@ public class DirectUploadService {
                     if (!request.getFileSize().equals(task.getFileSize())) {
                         log.warn("文件大小不匹配，无法续传: taskId={}, expected={}, actual={}", 
                                 task.getId(), task.getFileSize(), request.getFileSize());
-                        throw new BusinessException("文件大小不匹配，无法续传");
+                        throw new BusinessException(FileServiceErrorMessages.FILE_SIZE_MISMATCH);
                     }
                     
                     // 从 S3 查询已上传分片的完整信息（包括 ETag）
@@ -195,7 +196,7 @@ public class DirectUploadService {
         int totalParts = (int) Math.ceil((double) request.getFileSize() / chunkSize);
         
         if (totalParts > multipartProperties.getMaxParts()) {
-            throw new BusinessException("文件过大，分片数超过限制: " + multipartProperties.getMaxParts());
+            throw new BusinessException(String.format(FileServiceErrorMessages.PART_COUNT_EXCEEDED, multipartProperties.getMaxParts()));
         }
         
         // 创建上传任务记录
@@ -247,21 +248,21 @@ public class DirectUploadService {
         
         // 查询上传任务
         UploadTask task = uploadTaskRepository.findById(request.getTaskId())
-                .orElseThrow(() -> new BusinessException("上传任务不存在"));
-        
+                .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
+
         // 验证用户权限
         if (!task.getUserId().equals(userId)) {
-            throw new AccessDeniedException("无权操作该上传任务");
+            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
         }
-        
+
         // 验证任务状态
         if (task.getStatus() != UploadTaskStatus.UPLOADING) {
-            throw new BusinessException("任务状态不正确: " + task.getStatus());
+            throw new BusinessException(String.format(FileServiceErrorMessages.TASK_STATUS_INVALID, task.getStatus()));
         }
-        
+
         // 验证任务是否过期
         if (task.getExpiresAt().isBefore(LocalDateTime.now())) {
-            throw new BusinessException("上传任务已过期");
+            throw new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_EXPIRED);
         }
         
         // 生成预签名 URL
@@ -270,7 +271,7 @@ public class DirectUploadService {
         for (Integer partNumber : request.getPartNumbers()) {
             // 验证分片号
             if (partNumber < 1 || partNumber > task.getTotalParts()) {
-                throw new BusinessException("分片号无效: " + partNumber);
+                throw new BusinessException(String.format(FileServiceErrorMessages.PART_NUMBER_INVALID, partNumber));
             }
             
             // 生成预签名 URL，过期时间从配置读取
@@ -314,21 +315,21 @@ public class DirectUploadService {
         
         // 查询上传任务
         UploadTask task = uploadTaskRepository.findById(request.getTaskId())
-                .orElseThrow(() -> new BusinessException("上传任务不存在"));
-        
+                .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
+
         // 验证用户权限
         if (!task.getUserId().equals(userId)) {
-            throw new AccessDeniedException("无权操作该上传任务");
+            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
         }
-        
+
         // 验证任务状态
         if (task.getStatus() != UploadTaskStatus.UPLOADING) {
-            throw new BusinessException("任务状态不正确: " + task.getStatus());
+            throw new BusinessException(String.format(FileServiceErrorMessages.TASK_STATUS_INVALID, task.getStatus()));
         }
         
         // 验证分片数量
         if (request.getParts().size() != task.getTotalParts()) {
-            throw new BusinessException(String.format("分片数量不匹配，期望:%d, 实际: %d", 
+            throw new BusinessException(String.format(FileServiceErrorMessages.PART_COUNT_MISMATCH,
                     task.getTotalParts(), request.getParts().size()));
         }
         

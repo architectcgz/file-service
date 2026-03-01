@@ -1,6 +1,7 @@
 package com.architectcgz.file.infrastructure.repository;
 
 import com.architectcgz.file.common.config.BitmapProperties;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.domain.model.UploadPart;
 import com.architectcgz.file.domain.repository.UploadPartRepository;
 import com.architectcgz.file.infrastructure.cache.UploadRedisKeys;
@@ -76,7 +77,7 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
             UploadTaskPO taskPO = uploadTaskMapper.selectById(part.getTaskId());
             if (taskPO == null) {
                 throw new IllegalArgumentException(
-                    String.format("上传任务不存在: taskId=%s", part.getTaskId())
+                    String.format(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND_WITH_ID, part.getTaskId())
                 );
             }
             

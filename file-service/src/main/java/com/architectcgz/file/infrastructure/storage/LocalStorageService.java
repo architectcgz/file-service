@@ -1,5 +1,6 @@
 package com.architectcgz.file.infrastructure.storage;
 
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,7 +36,7 @@ public class LocalStorageService implements StorageService {
                 log.info("Created upload directory: {}", uploadDir.toAbsolutePath());
             }
         } catch (IOException e) {
-            throw new BusinessException("Failed to create upload directory: " + e.getMessage());
+            throw new BusinessException(String.format(FileServiceErrorMessages.LOCAL_DIR_CREATE_FAILED, e.getMessage()));
         }
     }
     
@@ -61,7 +62,7 @@ public class LocalStorageService implements StorageService {
             return getUrl(path);
         } catch (IOException e) {
             log.error("Failed to upload file to local storage: {}", path, e);
-            throw new BusinessException("文件上传失败: " + e.getMessage());
+            throw new BusinessException(String.format(FileServiceErrorMessages.FILE_UPLOAD_FAILED, e.getMessage()));
         }
     }
     
@@ -94,7 +95,7 @@ public class LocalStorageService implements StorageService {
             }
         } catch (IOException e) {
             log.error("Failed to delete file from local storage: {}", path, e);
-            throw new BusinessException("文件删除失败: " + e.getMessage());
+            throw new BusinessException(String.format(FileServiceErrorMessages.FILE_DELETE_FAILED, e.getMessage()));
         }
     }
     

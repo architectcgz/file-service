@@ -1,5 +1,6 @@
 package com.architectcgz.file.application.service;
 
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.application.dto.ConfirmUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadRequest;
@@ -77,7 +78,7 @@ public class PresignedUrlService {
                 // 用户已有该文件，直接返回已存在的文件信息
                 log.info("File already exists for user (instant upload): userId={}, fileHash={}", 
                         userId, request.getFileHash());
-                throw new BusinessException("文件已存在，无需重复上传");
+                throw new BusinessException(FileServiceErrorMessages.FILE_ALREADY_EXISTS);
             }
         }
         

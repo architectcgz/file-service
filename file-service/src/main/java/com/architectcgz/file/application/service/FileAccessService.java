@@ -2,7 +2,7 @@ package com.architectcgz.file.application.service;
 
 import com.architectcgz.file.application.dto.FileDetailResponse;
 import com.architectcgz.file.application.dto.FileUrlResponse;
-import com.architectcgz.file.common.constant.FileErrorMessages;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.common.exception.FileNotFoundException;
@@ -221,13 +221,13 @@ public class FileAccessService {
         // 4. 私有文件只有所有者可以访问
         if (file.getAccessLevel() == AccessLevel.PRIVATE) {
             if (file.getUserId() == null || !file.getUserId().equals(requestUserId)) {
-                throw new AccessDeniedException(FileErrorMessages.ACCESS_DENIED_PREFIX + fileId);
+                throw new AccessDeniedException(String.format(FileServiceErrorMessages.ACCESS_DENIED_FILE, fileId));
             }
             return;
         }
 
         // 未知访问级别，拒绝访问
-        throw new AccessDeniedException(FileErrorMessages.ACCESS_DENIED_PREFIX + fileId);
+        throw new AccessDeniedException(String.format(FileServiceErrorMessages.ACCESS_DENIED_FILE, fileId));
     }
     
     /**
@@ -243,18 +243,18 @@ public class FileAccessService {
         FileRecord file = fileRecordRepository.findById(fileId)
                 .orElseThrow(() -> FileNotFoundException.notFound(fileId));
 
-        // [H3] 统一访问控制检查（租户隔离 + 文件状态），复用 checkFileAccess
+        // 统一访问控制检查（租户隔离 + 文件状态），复用 checkFileAccess
         checkFileAccess(file, fileId, requestUserId, appId);
 
-        // [M3] 只有文件所有者可以修改访问级别，增加 null 防护
+        // 只有文件所有者可以修改访问级别，增加 null 防护
         if (file.getUserId() == null || !file.getUserId().equals(requestUserId)) {
-            throw new AccessDeniedException(FileErrorMessages.MODIFY_ACCESS_DENIED_PREFIX + fileId);
+            throw new AccessDeniedException(String.format(FileServiceErrorMessages.ACCESS_DENIED_UPDATE_ACCESS_LEVEL, fileId));
         }
 
         // 更新访问级别
         boolean updated = fileRecordRepository.updateAccessLevel(fileId, newLevel);
         if (!updated) {
-            throw new BusinessException(FileErrorMessages.UPDATE_ACCESS_LEVEL_FAILED_PREFIX + fileId);
+            throw new BusinessException(String.format(FileServiceErrorMessages.UPDATE_ACCESS_LEVEL_FAILED, fileId));
         }
 
         // [M2] 清除 URL 缓存，确保访问级别变更立即生效

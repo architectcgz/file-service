@@ -1,5 +1,6 @@
 package com.architectcgz.file.infrastructure.storage;
 
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.infrastructure.config.S3Properties;
 import lombok.extern.slf4j.Slf4j;
@@ -69,11 +70,11 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to upload file to S3: bucket={}, key={}, error={}", 
                     properties.getBucket(), path, e.getMessage(), e);
-            throw new BusinessException("文件上传失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.FILE_UPLOAD_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during upload: bucket={}, key={}, error={}", 
                     properties.getBucket(), path, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -94,11 +95,11 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to upload file to public bucket: bucket={}, key={}, error={}", 
                     properties.getPublicBucket(), path, e.getMessage(), e);
-            throw new BusinessException("文件上传到公开存储桶失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_UPLOAD_PUBLIC_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during public bucket upload: bucket={}, key={}, error={}", 
                     properties.getPublicBucket(), path, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -120,11 +121,11 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to upload file to private bucket: bucket={}, key={}, error={}", 
                     properties.getPrivateBucket(), path, e.getMessage(), e);
-            throw new BusinessException("文件上传到私有存储桶失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_UPLOAD_PRIVATE_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during private bucket upload: bucket={}, key={}, error={}", 
                     properties.getPrivateBucket(), path, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -151,11 +152,11 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to delete file from S3: bucket={}, key={}, error={}", 
                     properties.getBucket(), path, e.getMessage(), e);
-            throw new BusinessException("文件删除失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.FILE_DELETE_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during delete: bucket={}, key={}, error={}", 
                     properties.getBucket(), path, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -224,11 +225,11 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to generate presigned URL: bucket={}, key={}, error={}", 
                     properties.getPrivateBucket(), path, e.getMessage(), e);
-            throw new BusinessException("生成预签名URL失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_PRESIGN_GET_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during presigned URL generation: bucket={}, key={}, error={}", 
                     properties.getPrivateBucket(), path, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -248,7 +249,7 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to check file existence in S3: bucket={}, key={}, error={}",
                     properties.getBucket(), path, e.getMessage(), e);
-            throw new BusinessException("检查文件是否存在失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_EXISTS_CHECK_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during exists check: bucket={}, key={}, error={}",
                     properties.getBucket(), path, e.getMessage(), e);
@@ -284,7 +285,7 @@ public class S3StorageService implements StorageService {
         } catch (SdkClientException e) {
             log.error("S3 client error during head object: bucket={}, key={}, error={}",
                     properties.getBucket(), path, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -313,11 +314,11 @@ public class S3StorageService implements StorageService {
         } catch (IllegalArgumentException e) {
             log.error("Invalid S3 configuration: endpoint={}, region={}, error={}", 
                     props.getEndpoint(), props.getRegion(), e.getMessage(), e);
-            throw new BusinessException("S3 配置无效: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CONFIG_INVALID, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("Failed to build S3 client: endpoint={}, error={}", 
                     props.getEndpoint(), e.getMessage(), e);
-            throw new BusinessException("S3 客户端创建失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_BUILD_FAILED, e.getMessage()), e);
         }
     }
     
@@ -338,11 +339,11 @@ public class S3StorageService implements StorageService {
             createBucket();
         } catch (S3Exception e) {
             log.error("Failed to check S3 bucket: {}, error={}", properties.getBucket(), e.getMessage(), e);
-            throw new BusinessException("S3 存储初始化失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_INIT_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during bucket check: bucket={}, error={}", 
                     properties.getBucket(), e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -363,11 +364,11 @@ public class S3StorageService implements StorageService {
             
         } catch (S3Exception e) {
             log.error("Failed to create S3 bucket: {}, error={}", properties.getBucket(), e.getMessage(), e);
-            throw new BusinessException("创建 S3 存储桶失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_BUCKET_CREATE_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during bucket creation: bucket={}, error={}", 
                     properties.getBucket(), e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -434,11 +435,11 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to create multipart upload: bucket={}, key={}, error={}", 
                     properties.getBucket(), path, e.getMessage(), e);
-            throw new BusinessException("创建分片上传任务失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_MULTIPART_CREATE_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during multipart upload creation: bucket={}, key={}, error={}", 
                     properties.getBucket(), path, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -473,11 +474,11 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to upload part: bucket={}, key={}, uploadId={}, partNumber={}, error={}", 
                     properties.getBucket(), path, uploadId, partNumber, e.getMessage(), e);
-            throw new BusinessException("上传分片失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_PART_UPLOAD_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during part upload: bucket={}, key={}, uploadId={}, partNumber={}, error={}", 
                     properties.getBucket(), path, uploadId, partNumber, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -510,11 +511,11 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to complete multipart upload: bucket={}, key={}, uploadId={}, error={}", 
                     properties.getBucket(), path, uploadId, e.getMessage(), e);
-            throw new BusinessException("完成分片上传失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_MULTIPART_COMPLETE_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during multipart upload completion: bucket={}, key={}, uploadId={}, error={}", 
                     properties.getBucket(), path, uploadId, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -538,11 +539,11 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to abort multipart upload: bucket={}, key={}, uploadId={}, error={}", 
                     properties.getBucket(), path, uploadId, e.getMessage(), e);
-            throw new BusinessException("中止分片上传失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_MULTIPART_ABORT_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during multipart upload abort: bucket={}, key={}, uploadId={}, error={}", 
                     properties.getBucket(), path, uploadId, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -581,11 +582,11 @@ public class S3StorageService implements StorageService {
                 log.warn("Upload not found, returning empty list: uploadId={}", uploadId);
                 return java.util.Collections.emptyList();
             }
-            throw new BusinessException("查询已上传分片失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_LIST_PARTS_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during list parts: bucket={}, key={}, uploadId={}, error={}", 
                     properties.getBucket(), path, uploadId, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -624,11 +625,11 @@ public class S3StorageService implements StorageService {
                 log.warn("Upload not found, returning empty list: uploadId={}", uploadId);
                 return java.util.Collections.emptyList();
             }
-            throw new BusinessException("查询已上传分片失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_LIST_PARTS_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during list parts with ETag: bucket={}, key={}, uploadId={}, error={}", 
                     properties.getBucket(), path, uploadId, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -673,11 +674,11 @@ public class S3StorageService implements StorageService {
         } catch (IllegalArgumentException e) {
             log.error("Invalid S3 presigner configuration: endpoint={}, region={}, error={}", 
                     props.getPresignEndpoint(), props.getRegion(), e.getMessage(), e);
-            throw new BusinessException("S3 预签名器配置无效: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_PRESIGNER_CONFIG_INVALID, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("Failed to build S3 presigner: endpoint={}, error={}", 
                     props.getPresignEndpoint(), e.getMessage(), e);
-            throw new BusinessException("S3 预签名器创建失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_PRESIGNER_BUILD_FAILED, e.getMessage()), e);
         }
     }
     
@@ -712,11 +713,11 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to generate presigned PUT URL: bucket={}, key={}, error={}", 
                     properties.getBucket(), path, e.getMessage(), e);
-            throw new BusinessException("生成预签名上传URL 失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_PRESIGN_PUT_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during presigned PUT URL generation: bucket={}, key={}, error={}", 
                     properties.getBucket(), path, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -749,11 +750,11 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to generate presigned GET URL: bucket={}, key={}, error={}", 
                     properties.getBucket(), path, e.getMessage(), e);
-            throw new BusinessException("生成预签名下载URL 失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_PRESIGN_DOWNLOAD_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during presigned GET URL generation: bucket={}, key={}, error={}", 
                     properties.getBucket(), path, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
@@ -792,11 +793,11 @@ public class S3StorageService implements StorageService {
         } catch (S3Exception e) {
             log.error("Failed to generate presigned upload part URL: bucket={}, key={}, uploadId={}, partNumber={}, error={}", 
                     properties.getBucket(), path, uploadId, partNumber, e.getMessage(), e);
-            throw new BusinessException("生成预签名分片上传URL失败: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_PRESIGN_PART_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during presigned upload part URL generation: bucket={}, key={}, uploadId={}, partNumber={}, error={}", 
                     properties.getBucket(), path, uploadId, partNumber, e.getMessage(), e);
-            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
 }
