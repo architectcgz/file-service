@@ -316,12 +316,15 @@ public class UploadApplicationService {
     
     /**
      * 删除文件
-     * 操作顺序：查询校验 -> 短事务内原子递减引用计数并判断归零 -> 事务提交后删 S3
-     * 通过事务内原子操作消除引用计数的 TOCTOU 竞态窗口
+     * 操作顺序：查询校验 -> 事务外判断是否需要删 S3 -> 先删 S3 -> 短事务更新数据库
      *
-     * @param appId 应用ID
+     * 为什么先删 S3 再更新数据库：
+     * - 若先删库再删 S3，S3 删除失败时 StorageObject 记录已丢失，孤立文件无法被定时任务追踪；
+     * - 先删 S3 再删库，S3 删除失败时整个操作中止，数据库保持完整，可重试或由定时任务兜底。
+     *
+     * @param appId        应用ID
      * @param fileRecordId 文件记录ID
-     * @param userId 用户ID（用于权限验证）
+     * @param userId       用户ID（用于权限验证）
      */
     public void deleteFile(String appId, String fileRecordId, String userId) {
         // 1. 查找文件记录
@@ -338,23 +341,30 @@ public class UploadApplicationService {
             throw new AccessDeniedException(FileErrorMessages.FILE_DELETE_FORBIDDEN);
         }
 
-        // 4. 事务内原子递减引用计数，判断是否归零并返回需要删除的 S3 路径
+        // 4. 事务外预判：查询 StorageObject，判断引用计数是否为最后一个（递减后归零需删 S3）
         String storageObjectId = fileRecord.getStorageObjectId();
-        String s3PathToDelete = deleteTransactionHelper.updateDatabaseAfterUserDelete(
-                appId, fileRecordId, storageObjectId, fileRecord.getFileSize());
+        boolean needDeleteS3 = deleteTransactionHelper
+                .findStorageObjectIfLastReference(storageObjectId)
+                .isPresent();
 
-        // 5. 事务提交后删除 S3 对象（如果引用计数归零）
-        boolean s3Deleted = false;
-        if (s3PathToDelete != null) {
-            log.info("引用计数归零，删除 S3 对象: storageObjectId={}, path={}",
-                    storageObjectId, s3PathToDelete);
-            storageService.delete(s3PathToDelete);
-            s3Deleted = true;
-            log.info("S3 对象删除成功: path={}", s3PathToDelete);
+        // 5. 如果引用计数将归零，先执行 S3 删除；S3 删除失败则整个操作中止，数据库保持不变
+        if (needDeleteS3) {
+            String storagePath = storageObjectRepository.findById(storageObjectId)
+                    .map(StorageObject::getStoragePath)
+                    .orElse(null);
+            if (storagePath != null) {
+                log.info("引用计数将归零，先删除 S3 对象: storageObjectId={}, path={}",
+                        storageObjectId, storagePath);
+                storageService.delete(storagePath);
+                log.info("S3 对象删除成功: path={}", storagePath);
+            }
         }
 
-        log.info("文件已删除: fileRecordId={}, userId={}, s3Deleted={}",
-                fileRecordId, userId, s3Deleted);
+        // 6. S3 删除成功后，短事务内原子更新数据库（软删 FileRecord、递减引用计数、删 StorageObject 记录）
+        deleteTransactionHelper.commitUserDelete(
+                appId, fileRecordId, storageObjectId, fileRecord.getFileSize());
+
+        log.info("文件已删除: fileRecordId={}, userId={}, s3Deleted={}", fileRecordId, userId, needDeleteS3);
     }
     
     /**

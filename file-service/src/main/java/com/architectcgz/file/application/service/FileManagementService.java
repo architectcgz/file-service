@@ -67,10 +67,13 @@ public class FileManagementService {
     
     /**
      * 删除单个文件（管理员操作）
-     * 操作顺序：事务内原子递减引用计数并判断归零 -> 事务提交后删 S3
-     * 通过事务内原子操作保证引用计数一致性，避免 S3 泄漏
+     * 操作顺序：事务外判断是否需要删 S3 -> 先删 S3 -> 短事务更新数据库
      *
-     * @param fileId 文件ID
+     * 为什么先删 S3 再更新数据库：
+     * - 若先删库再删 S3，S3 删除失败时 StorageObject 记录已丢失，孤立文件无法被定时任务追踪；
+     * - 先删 S3 再删库，S3 删除失败时整个操作中止，数据库保持完整，可重试或由定时任务兜底。
+     *
+     * @param fileId      文件ID
      * @param adminUserId 管理员用户ID
      */
     public void deleteFile(String fileId, String adminUserId) {
@@ -80,22 +83,31 @@ public class FileManagementService {
         FileRecord fileRecord = fileRecordRepository.findById(fileId)
                 .orElseThrow(() -> FileNotFoundException.notFound(fileId));
 
-        // 1. 事务内原子递减引用计数，判断是否归零并返回需要删除的 S3 路径
-        String s3PathToDelete = deleteTransactionHelper.updateDatabaseAfterAdminDelete(fileId, fileRecord);
+        // 1. 事务外预判：查询 StorageObject，判断引用计数是否为最后一个（递减后归零需删 S3）
+        String storageObjectId = fileRecord.getStorageObjectId();
+        boolean needDeleteS3 = deleteTransactionHelper
+                .findStorageObjectIfLastReference(storageObjectId)
+                .isPresent();
 
-        // 2. 事务提交后删除 S3 对象（如果引用计数归零）
-        if (s3PathToDelete != null) {
-            storageService.delete(s3PathToDelete);
-            log.info("S3 对象已删除: path={}", s3PathToDelete);
+        // 2. 如果引用计数将归零，先执行 S3 删除；S3 删除失败则整个操作中止，数据库保持不变
+        if (needDeleteS3) {
+            String storagePath = fileRecord.getStoragePath();
+            log.info("引用计数将归零，先删除 S3 对象: storageObjectId={}, path={}",
+                    storageObjectId, storagePath);
+            storageService.delete(storagePath);
+            log.info("S3 对象删除成功: path={}", storagePath);
         }
 
-        // 3. 清除缓存（缓存操作不影响核心流程）
+        // 3. S3 删除成功后，短事务内原子更新数据库（硬删 FileRecord、递减引用计数、删 StorageObject 记录）
+        deleteTransactionHelper.commitAdminDelete(fileId, fileRecord);
+
+        // 4. 清除缓存（缓存操作不影响核心流程）
         clearCache(fileId);
 
-        // 4. 记录审计日志
+        // 5. 记录审计日志
         recordDeleteFileAudit(fileId, fileRecord, adminUserId);
 
-        log.info("文件删除完成: fileId={}", fileId);
+        log.info("文件删除完成: fileId={}, s3Deleted={}", fileId, needDeleteS3);
     }
     
     /**

@@ -19,6 +19,11 @@ import java.util.Optional;
  * 文件删除事务辅助类
  * 将数据库更新操作封装为独立的短事务，供 UploadApplicationService 和 FileManagementService 调用。
  * 解决同类内部调用 @Transactional 不生效的问题。
+ *
+ * 设计要点（S3 与数据库一致性）：
+ * - 调用方应在调用本类方法之前完成 S3 删除，本类只负责事后更新数据库。
+ * - 遵循"先删 S3，再短事务更新数据库"原则：S3 删除失败时整个操作中止，数据库保持不变，
+ *   孤立文件可被定时任务追踪和清理；反之若先删库再删 S3，S3 删除失败则孤立文件无法追踪。
  */
 @Slf4j
 @Service
@@ -30,21 +35,32 @@ public class FileDeleteTransactionHelper {
     private final TenantUsageRepository tenantUsageRepository;
 
     /**
-     * 用户删除文件：在事务内原子地递减引用计数并判断是否归零
-     * 包括：软删除 FileRecord、减少引用计数、更新租户用量、清理零引用 StorageObject
+     * 查询 StorageObject 并判断引用计数是否会在递减后归零
+     * 供调用方在执行 S3 删除前预判是否需要删除 S3 对象。
      *
-     * 返回值表示是否需要在事务提交后删除 S3 对象及对应的存储路径。
-     * 调用方应在事务提交后根据返回值决定是否执行 S3 删除。
-     *
-     * @param appId 应用ID
-     * @param fileRecordId 文件记录ID
      * @param storageObjectId 存储对象ID
-     * @param fileSize 文件大小（字节）
-     * @return 需要删除的 S3 存储路径，如果不需要删除则返回 null
+     * @return 如果引用计数为 1（递减后归零），返回 StorageObject；否则返回 empty
+     */
+    public Optional<StorageObject> findStorageObjectIfLastReference(String storageObjectId) {
+        return storageObjectRepository.findById(storageObjectId)
+                .filter(StorageObject::isLastReference);
+    }
+
+    /**
+     * 用户删除文件：S3 已删除后，用短事务原子更新数据库
+     * 包括：软删除 FileRecord、减少引用计数、更新租户用量；
+     * 若引用计数归零则同时删除 StorageObject 记录。
+     *
+     * 前置条件：调用方已完成 S3 对象删除（如需要）。
+     *
+     * @param appId           应用ID
+     * @param fileRecordId    文件记录ID
+     * @param storageObjectId 存储对象ID
+     * @param fileSize        文件大小（字节）
      */
     @Transactional(rollbackFor = Exception.class)
-    public String updateDatabaseAfterUserDelete(String appId, String fileRecordId,
-                                                 String storageObjectId, Long fileSize) {
+    public void commitUserDelete(String appId, String fileRecordId,
+                                 String storageObjectId, Long fileSize) {
         // 软删除 FileRecord
         fileRecordRepository.updateStatus(fileRecordId, FileStatus.DELETED);
 
@@ -54,31 +70,26 @@ public class FileDeleteTransactionHelper {
         // 原子递减 StorageObject 引用计数
         storageObjectRepository.decrementReferenceCount(storageObjectId);
 
-        // 在同一事务内查询更新后的引用计数，判断是否归零
+        // 查询递减后的引用计数，归零则删除 StorageObject 记录
         Optional<StorageObject> updatedOpt = storageObjectRepository.findById(storageObjectId);
         if (updatedOpt.isPresent() && updatedOpt.get().canBeDeleted()) {
-            // 引用计数归零，删除 StorageObject 记录，返回存储路径供调用方删除 S3
-            String storagePath = updatedOpt.get().getStoragePath();
             storageObjectRepository.deleteById(storageObjectId);
             log.info("引用计数归零，StorageObject 记录已删除: storageObjectId={}", storageObjectId);
-            return storagePath;
         }
-
-        return null;
     }
 
     /**
-     * 管理员删除文件后更新数据库（独立短事务）
-     * 包括：硬删除 FileRecord、递减引用计数、更新租户用量、清理零引用 StorageObject
+     * 管理员删除文件：S3 已删除后，用短事务原子更新数据库
+     * 包括：硬删除 FileRecord、递减引用计数、更新租户用量；
+     * 若引用计数归零则同时删除 StorageObject 记录。
      *
-     * 返回值表示是否需要在事务提交后删除 S3 对象及对应的存储路径。
+     * 前置条件：调用方已完成 S3 对象删除（如需要）。
      *
-     * @param fileId 文件ID
+     * @param fileId     文件ID
      * @param fileRecord 文件记录（用于获取 appId、fileSize、storageObjectId）
-     * @return 需要删除的 S3 存储路径，如果不需要删除则返回 null
      */
     @Transactional(rollbackFor = Exception.class)
-    public String updateDatabaseAfterAdminDelete(String fileId, FileRecord fileRecord) {
+    public void commitAdminDelete(String fileId, FileRecord fileRecord) {
         // 硬删除 FileRecord
         boolean deleted = fileRecordRepository.deleteById(fileId);
         if (!deleted) {
@@ -96,12 +107,8 @@ public class FileDeleteTransactionHelper {
 
         Optional<StorageObject> updatedOpt = storageObjectRepository.findById(storageObjectId);
         if (updatedOpt.isPresent() && updatedOpt.get().canBeDeleted()) {
-            String storagePath = updatedOpt.get().getStoragePath();
             storageObjectRepository.deleteById(storageObjectId);
             log.info("引用计数归零，StorageObject 记录已删除: storageObjectId={}", storageObjectId);
-            return storagePath;
         }
-
-        return null;
     }
 }
