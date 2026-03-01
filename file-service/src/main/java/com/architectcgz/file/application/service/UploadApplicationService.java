@@ -15,6 +15,7 @@ import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.StorageObjectRepository;
 import com.architectcgz.file.domain.repository.TenantUsageRepository;
 import com.architectcgz.file.domain.service.TenantDomainService;
+import com.architectcgz.file.infrastructure.cache.FileUrlCacheManager;
 import com.architectcgz.file.infrastructure.config.ImageProcessingProperties;
 import com.architectcgz.file.infrastructure.image.ImageProcessor;
 import com.architectcgz.file.infrastructure.storage.StorageService;
@@ -49,6 +50,7 @@ public class UploadApplicationService {
     private final TenantDomainService tenantDomainService;
     private final TenantUsageRepository tenantUsageRepository;
     private final ImageProcessingProperties imageProperties;
+    private final FileUrlCacheManager fileUrlCacheManager;
     
     /**
      * 上传图片
@@ -365,6 +367,9 @@ public class UploadApplicationService {
             }
         }
         
+        // 7. 清除文件 URL 缓存，避免已删除文件的 URL 继续命中缓存
+        fileUrlCacheManager.evict(fileRecordId);
+
         log.info("File deleted: fileRecordId={}, userId={}", fileRecordId, userId);
     }
     

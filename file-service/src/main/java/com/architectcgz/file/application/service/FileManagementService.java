@@ -8,11 +8,10 @@ import com.architectcgz.file.domain.model.*;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.TenantRepository;
 import com.architectcgz.file.domain.repository.TenantUsageRepository;
-import com.architectcgz.file.infrastructure.config.CacheProperties;
+import com.architectcgz.file.infrastructure.cache.FileUrlCacheManager;
 import com.architectcgz.file.infrastructure.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,8 +33,7 @@ public class FileManagementService {
     private final TenantUsageRepository tenantUsageRepository;
     private final StorageService storageService;
     private final AuditLogService auditLogService;
-    private final RedisTemplate<String, String> redisTemplate;
-    private final CacheProperties cacheProperties;
+    private final FileUrlCacheManager fileUrlCacheManager;
     
     /**
      * 查询文件列表
@@ -97,7 +95,7 @@ public class FileManagementService {
                     fileRecord.getAppId(), fileRecord.getFileSize());
             
             // 4. 清除缓存
-            clearCache(fileId);
+            fileUrlCacheManager.evict(fileId);
             
             // 5. 记录审计日志
             recordDeleteFileAudit(fileId, fileRecord, adminUserId);
@@ -248,31 +246,6 @@ public class FileManagementService {
         }
         
         return statsMap;
-    }
-    
-    /**
-     * 清除文件 URL 缓存
-     * 
-     * @param fileId 文件ID
-     */
-    private void clearCache(String fileId) {
-        if (!cacheProperties.isEnabled()) {
-            return;
-        }
-        
-        try {
-            String cacheKey = com.architectcgz.file.infrastructure.cache.FileRedisKeys.fileUrl(fileId);
-            Boolean deleted = redisTemplate.delete(cacheKey);
-            
-            if (Boolean.TRUE.equals(deleted)) {
-                log.info("Cache cleared: fileId={}", fileId);
-            } else {
-                log.debug("Cache not found: fileId={}", fileId);
-            }
-        } catch (Exception e) {
-            log.warn("Failed to clear cache: fileId={}", fileId, e);
-            // 缓存清除失败不影响业务流程
-        }
     }
     
     /**

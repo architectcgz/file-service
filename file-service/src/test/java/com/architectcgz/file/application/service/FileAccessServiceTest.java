@@ -10,11 +10,10 @@ import com.architectcgz.file.domain.model.FileStatus;
 import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.StorageObjectRepository;
-import com.architectcgz.file.infrastructure.config.CacheProperties;
+import com.architectcgz.file.infrastructure.cache.FileUrlCacheManager;
 import com.architectcgz.file.infrastructure.config.S3Properties;
 import com.architectcgz.file.infrastructure.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
-import org.springframework.data.redis.core.RedisTemplate;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -51,10 +50,7 @@ class FileAccessServiceTest {
     private S3Properties s3Properties;
     
     @Mock
-    private CacheProperties cacheProperties;
-    
-    @Mock
-    private RedisTemplate<String, String> redisTemplate;
+    private FileUrlCacheManager fileUrlCacheManager;
     
     @InjectMocks
     private FileAccessService fileAccessService;
@@ -65,9 +61,9 @@ class FileAccessServiceTest {
     
     @BeforeEach
     void setUp() throws Exception {
-        // 默认禁用缓存（使用 lenient 避免 UnnecessaryStubbingException）
-        lenient().when(cacheProperties.isEnabled()).thenReturn(false);
-        
+        // 默认缓存返回 null（未命中），使用 lenient 避免 UnnecessaryStubbingException
+        lenient().when(fileUrlCacheManager.get(anyString())).thenReturn(null);
+
         // 设置 privateUrlExpireSeconds 字段值（使用反射）
         var field = FileAccessService.class.getDeclaredField("privateUrlExpireSeconds");
         field.setAccessible(true);
