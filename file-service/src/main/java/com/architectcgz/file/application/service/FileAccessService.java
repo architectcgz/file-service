@@ -2,6 +2,7 @@ package com.architectcgz.file.application.service;
 
 import com.architectcgz.file.application.dto.FileDetailResponse;
 import com.architectcgz.file.application.dto.FileUrlResponse;
+import com.architectcgz.file.common.constant.FileErrorMessages;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.common.exception.FileNotFoundException;
@@ -17,7 +18,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -54,12 +54,14 @@ public class FileAccessService {
      * @throws BusinessException 如果文件不存在或用户无权访问
      */
     public FileUrlResponse getFileUrl(String appId, String fileId, String requestUserId) {
-        // 1. 尝试从缓存获取
-        // 注意：缓存中只存储公开文件的URL，私有文件的预签名URL不缓存
-        // 因为预签名URL有时效性，缓存会导致URL过期后仍然返回旧URL
+        // 1. 尝试从缓存获取（缓存中只存储公开文件的 URL）
         String cachedUrl = getCachedUrl(fileId);
         if (cachedUrl != null) {
-            // 缓存命中，直接返回（缓存中只有公开文件的URL）
+            // [H1] 缓存命中后仍需校验权限，防止跨租户访问和已删除文件绕过
+            FileRecord file = fileRecordRepository.findById(fileId)
+                    .orElseThrow(() -> FileNotFoundException.notFound(fileId));
+            checkFileAccess(file, fileId, requestUserId, appId);
+
             log.debug("Returning cached URL for fileId={}", fileId);
             return FileUrlResponse.builder()
                     .url(cachedUrl)
@@ -67,46 +69,36 @@ public class FileAccessService {
                     .expiresAt(null)
                     .build();
         }
-        
+
         // 2. 缓存未命中，查询数据库
         FileRecord file = fileRecordRepository.findById(fileId)
                 .orElseThrow(() -> FileNotFoundException.notFound(fileId));
-        
-        // 验证文件属于该应用
-        if (!file.belongsToApp(appId)) {
-            throw new AccessDeniedException("文件不属于该应用");
-        }
-        
-        // 验证文件未被删除
-        if (file.getStatus() == com.architectcgz.file.domain.model.FileStatus.DELETED) {
-            throw FileNotFoundException.deleted(fileId);
-        }
-        
+
+        // 统一访问控制检查（租户隔离 + 文件状态 + 访问级别）
+        checkFileAccess(file, fileId, requestUserId, appId);
+
         String url;
         boolean isPermanent;
         LocalDateTime expiresAt;
-        
+
         if (file.getAccessLevel() == AccessLevel.PUBLIC) {
             // 公开文件：返回公开URL
             url = storageService.getPublicUrl(file.getStoragePath());
             isPermanent = true;
             expiresAt = null;
-            
+
             // 将公开文件的URL写入缓存
             cacheUrl(fileId, url);
         } else {
-            // 私有文件：验证权限后返回预签名URL（不缓存）
-            if (!canAccessFile(file, requestUserId)) {
-                throw new AccessDeniedException("无权访问该文件: " + fileId);
-            }
+            // 私有文件：返回预签名URL（不缓存）
             url = storageService.generatePresignedUrl(
-                    file.getStoragePath(), 
+                    file.getStoragePath(),
                     Duration.ofSeconds(privateUrlExpireSeconds)
             );
             isPermanent = false;
             expiresAt = LocalDateTime.now().plusSeconds(privateUrlExpireSeconds);
         }
-        
+
         return FileUrlResponse.builder()
                 .url(url)
                 .permanent(isPermanent)
@@ -177,21 +169,9 @@ public class FileAccessService {
     public FileDetailResponse getFileDetail(String appId, String fileId, String requestUserId) {
         FileRecord file = fileRecordRepository.findById(fileId)
                 .orElseThrow(() -> FileNotFoundException.notFound(fileId));
-        
-        // 验证文件属于该应用
-        if (!file.belongsToApp(appId)) {
-            throw new AccessDeniedException("文件不属于该应用");
-        }
-        
-        // 验证文件未被删除
-        if (file.getStatus() == com.architectcgz.file.domain.model.FileStatus.DELETED) {
-            throw FileNotFoundException.deleted(fileId);
-        }
-        
-        // 对于私有文件，验证访问权限
-        if (file.getAccessLevel() == AccessLevel.PRIVATE && !canAccessFile(file, requestUserId)) {
-            throw new AccessDeniedException("无权访问该文件: " + fileId);
-        }
+
+        // 统一访问控制检查（租户隔离 + 文件状态 + 访问级别）
+        checkFileAccess(file, fileId, requestUserId, appId);
         
         return FileDetailResponse.builder()
                 .fileId(file.getId())
@@ -209,25 +189,45 @@ public class FileAccessService {
     }
     
     /**
-     * 验证用户是否有权访问文件
-     * 传入已查询的FileRecord对象，避免重复查询
-     * 
+     * 校验文件访问权限，校验失败直接抛出对应异常
+     * 完整的访问控制检查链：租户隔离 -> 文件状态 -> 访问级别
+     *
      * @param file 文件记录
+     * @param fileId 文件ID（用于异常消息）
      * @param requestUserId 请求用户ID
-     * @return 是否有权访问
+     * @param appId 应用ID，用于租户隔离校验
+     * @throws FileNotFoundException 跨租户访问或文件已删除时抛出（不暴露文件存在性）
+     * @throws AccessDeniedException 无权访问时抛出
      */
-    public boolean canAccessFile(FileRecord file, String requestUserId) {
-        // 公开文件任何人都可以访问
+    private void checkFileAccess(FileRecord file, String fileId, String requestUserId, String appId) {
+        // 1. 租户隔离：跨租户统一返回 404，不暴露文件存在性
+        if (!file.belongsToApp(appId)) {
+            log.warn("跨租户访问被拒绝: fileId={}, fileAppId={}, requestAppId={}",
+                    file.getId(), file.getAppId(), appId);
+            throw FileNotFoundException.notFound(fileId);
+        }
+
+        // 2. 文件状态：已删除文件返回 404
+        if (file.isDeleted()) {
+            log.debug("已删除文件被拒绝访问: fileId={}", file.getId());
+            throw FileNotFoundException.deleted(fileId);
+        }
+
+        // 3. 访问级别：公开文件任何人都可以访问
         if (file.getAccessLevel() == AccessLevel.PUBLIC) {
-            return true;
+            return;
         }
-        
-        // 私有文件只有所有者可以访问
+
+        // 4. 私有文件只有所有者可以访问
         if (file.getAccessLevel() == AccessLevel.PRIVATE) {
-            return file.getUserId() != null && file.getUserId().equals(requestUserId);
+            if (file.getUserId() == null || !file.getUserId().equals(requestUserId)) {
+                throw new AccessDeniedException(FileErrorMessages.ACCESS_DENIED_PREFIX + fileId);
+            }
+            return;
         }
-        
-        return false;
+
+        // 未知访问级别，拒绝访问
+        throw new AccessDeniedException(FileErrorMessages.ACCESS_DENIED_PREFIX + fileId);
     }
     
     /**
@@ -242,24 +242,44 @@ public class FileAccessService {
     public void updateAccessLevel(String appId, String fileId, String requestUserId, AccessLevel newLevel) {
         FileRecord file = fileRecordRepository.findById(fileId)
                 .orElseThrow(() -> FileNotFoundException.notFound(fileId));
-        
-        // 验证文件属于该应用
-        if (!file.belongsToApp(appId)) {
-            throw new AccessDeniedException("文件不属于该应用");
+
+        // [H3] 统一访问控制检查（租户隔离 + 文件状态），复用 checkFileAccess
+        checkFileAccess(file, fileId, requestUserId, appId);
+
+        // [M3] 只有文件所有者可以修改访问级别，增加 null 防护
+        if (file.getUserId() == null || !file.getUserId().equals(requestUserId)) {
+            throw new AccessDeniedException(FileErrorMessages.MODIFY_ACCESS_DENIED_PREFIX + fileId);
         }
-        
-        // 只有文件所有者可以修改访问级别
-        if (!file.getUserId().equals(requestUserId)) {
-            throw new AccessDeniedException("无权修改该文件的访问级别: " + fileId);
-        }
-        
+
         // 更新访问级别
         boolean updated = fileRecordRepository.updateAccessLevel(fileId, newLevel);
         if (!updated) {
-            throw new BusinessException("更新文件访问级别失败: " + fileId);
+            throw new BusinessException(FileErrorMessages.UPDATE_ACCESS_LEVEL_FAILED_PREFIX + fileId);
         }
-        
-        log.info("File access level updated: fileId={}, oldLevel={}, newLevel={}, userId={}", 
+
+        // [M2] 清除 URL 缓存，确保访问级别变更立即生效
+        evictUrlCache(fileId);
+
+        log.info("File access level updated: fileId={}, oldLevel={}, newLevel={}, userId={}",
                 fileId, file.getAccessLevel(), newLevel, requestUserId);
+    }
+
+    /**
+     * 清除文件 URL 缓存
+     * 用于访问级别变更、文件删除等场景，确保缓存与实际状态一致
+     *
+     * @param fileId 文件ID
+     */
+    private void evictUrlCache(String fileId) {
+        if (!cacheProperties.isEnabled()) {
+            return;
+        }
+        try {
+            String cacheKey = FileRedisKeys.fileUrl(fileId);
+            redisTemplate.delete(cacheKey);
+            log.debug("Evicted URL cache: fileId={}", fileId);
+        } catch (Exception e) {
+            log.warn("Failed to evict URL cache: fileId={}", fileId, e);
+        }
     }
 }
