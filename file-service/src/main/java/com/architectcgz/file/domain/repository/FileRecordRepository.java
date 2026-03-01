@@ -98,16 +98,18 @@ public interface FileRecordRepository {
     /**
      * 存储统计聚合查询（SQL 层完成 COUNT/SUM）
      *
+     * @param appId 应用ID（可选，为 null 时查询所有租户）
      * @return 聚合统计结果
      */
-    StorageStatisticsAggregation getStorageStatisticsAggregation();
+    StorageStatisticsAggregation getStorageStatisticsAggregation(String appId);
 
     /**
      * 按内容类型分组统计文件数量（SQL 层完成 GROUP BY）
      *
+     * @param appId 应用ID（可选，为 null 时查询所有租户）
      * @return 各内容类型的文件计数列表
      */
-    List<ContentTypeCount> getFileCountByContentType();
+    List<ContentTypeCount> getFileCountByContentType(String appId);
 
     /**
      * 按租户分组统计存储空间（SQL 层完成 GROUP BY）

@@ -161,11 +161,11 @@ public class FileManagementService {
     public StorageStatistics getStorageStatistics() {
         log.debug("Getting storage statistics via SQL aggregation");
 
-        // 1. SQL 聚合：总文件数、总存储空间、公开/私有文件数
-        StorageStatisticsAggregation aggregation = fileRecordRepository.getStorageStatisticsAggregation();
+        // 1. SQL 聚合：总文件数、总存储空间、公开/私有文件数（null 表示不过滤租户）
+        StorageStatisticsAggregation aggregation = fileRecordRepository.getStorageStatisticsAggregation(null);
 
-        // 2. SQL 聚合：按 content_type 分组计数
-        List<ContentTypeCount> typeCounts = fileRecordRepository.getFileCountByContentType();
+        // 2. SQL 聚合：按 content_type 分组计数（null 表示不过滤租户）
+        List<ContentTypeCount> typeCounts = fileRecordRepository.getFileCountByContentType(null);
         Map<String, Long> filesByType = typeCounts.stream()
                 .collect(Collectors.toMap(
                         ContentTypeCount::getContentType,

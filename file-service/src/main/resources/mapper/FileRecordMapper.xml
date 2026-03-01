@@ -86,6 +86,10 @@
             COUNT(CASE WHEN access_level = 'public'  THEN 1 END)              AS publicFiles,
             COUNT(CASE WHEN access_level = 'private' THEN 1 END)              AS privateFiles
         FROM file_records
+        <where>
+            status != 'DELETED'
+            <if test="appId != null">AND app_id = #{appId}</if>
+        </where>
     </select>
 
     <!-- 按 content_type 分组统计文件数量 -->
@@ -94,6 +98,10 @@
             content_type AS contentType,
             COUNT(*)     AS fileCount
         FROM file_records
+        <where>
+            status != 'DELETED'
+            <if test="appId != null">AND app_id = #{appId}</if>
+        </where>
         GROUP BY content_type
     </select>
 
@@ -103,6 +111,9 @@
             app_id                        AS appId,
             COALESCE(SUM(file_size), 0)   AS storageBytes
         FROM file_records
+        <where>
+            status != 'DELETED'
+        </where>
         GROUP BY app_id
     </select>
 

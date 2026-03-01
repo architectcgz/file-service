@@ -86,13 +86,13 @@ public class FileRecordRepositoryImpl implements FileRecordRepository {
     }
 
     @Override
-    public StorageStatisticsAggregation getStorageStatisticsAggregation() {
-        return fileRecordMapper.selectStorageStatistics();
+    public StorageStatisticsAggregation getStorageStatisticsAggregation(String appId) {
+        return fileRecordMapper.selectStorageStatistics(appId);
     }
 
     @Override
-    public List<ContentTypeCount> getFileCountByContentType() {
-        return fileRecordMapper.selectFileCountByContentType();
+    public List<ContentTypeCount> getFileCountByContentType(String appId) {
+        return fileRecordMapper.selectFileCountByContentType(appId);
     }
 
     @Override
