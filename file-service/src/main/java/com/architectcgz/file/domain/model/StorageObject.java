@@ -79,4 +79,12 @@ public class StorageObject {
     public boolean canBeDeleted() {
         return this.referenceCount != null && this.referenceCount == 0;
     }
+
+    /**
+     * 检查当前是否为最后一个引用（引用计数为 1）
+     * 用于在执行 S3 删除前预判：若为最后一个引用，则递减后归零，需要删除 S3 对象
+     */
+    public boolean isLastReference() {
+        return this.referenceCount != null && this.referenceCount == 1;
+    }
 }

@@ -51,6 +51,7 @@ public class UploadApplicationService {
     private final TenantUsageRepository tenantUsageRepository;
     private final ImageProcessingProperties imageProperties;
     private final FileUrlCacheManager fileUrlCacheManager;
+    private final FileDeleteTransactionHelper deleteTransactionHelper;
     
     /**
      * 上传图片
@@ -317,60 +318,59 @@ public class UploadApplicationService {
     
     /**
      * 删除文件
+     * 操作顺序：查询校验 -> 事务外判断是否需要删 S3 -> 先删 S3 -> 短事务更新数据库
      *
-     * @param appId 应用ID
+     * 为什么先删 S3 再更新数据库：
+     * - 若先删库再删 S3，S3 删除失败时 StorageObject 记录已丢失，孤立文件无法被定时任务追踪；
+     * - 先删 S3 再删库，S3 删除失败时整个操作中止，数据库保持完整，可重试或由定时任务兜底。
+     *
+     * @param appId        应用ID
      * @param fileRecordId 文件记录ID
-     * @param userId 用户ID（用于权限验证）
+     * @param userId       用户ID（用于权限验证）
      */
-    @Transactional(rollbackFor = Exception.class)
     public void deleteFile(String appId, String fileRecordId, String userId) {
         // 1. 查找文件记录
         FileRecord fileRecord = fileRecordRepository.findById(fileRecordId)
                 .orElseThrow(() -> FileNotFoundException.notFound(fileRecordId));
-        
+
         // 2. 验证 appId 归属
         if (!fileRecord.belongsToApp(appId)) {
             throw new AccessDeniedException(FileServiceErrorMessages.FILE_NOT_BELONG_TO_APP);
         }
-        
+
         // 3. 验证用户权限
         if (!fileRecord.getUserId().equals(userId)) {
             throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_DELETE_FILE);
         }
-        
-        // 4. 更新 FileRecord 状态为 DELETED（软删除）
-        fileRecordRepository.updateStatus(fileRecordId, FileStatus.DELETED);
-        
-        // 4.5. 更新租户使用统计（减少使用量）
-        tenantUsageRepository.decrementUsage(appId, fileRecord.getFileSize());
-        
-        // 5. 减少 StorageObject 引用计数
+
+        // 4. 事务外预判：查询 StorageObject，判断引用计数是否为最后一个（递减后归零需删 S3）
         String storageObjectId = fileRecord.getStorageObjectId();
-        storageObjectRepository.decrementReferenceCount(storageObjectId);
-        
-        // 6. 检查引用计数，如果或0 则删除S3 对象)StorageObject 记录
-        Optional<StorageObject> storageObjectOpt = storageObjectRepository.findById(storageObjectId);
-        if (storageObjectOpt.isPresent()) {
-            StorageObject storageObject = storageObjectOpt.get();
-            if (storageObject.canBeDeleted()) {
-                // 删除 S3 对象
-                storageService.delete(storageObject.getStoragePath());
-                
-                // 删除 StorageObject 记录
-                storageObjectRepository.deleteById(storageObjectId);
-                
-                log.info("StorageObject and S3 object deleted: storageObjectId={}, path={}", 
-                        storageObjectId, storageObject.getStoragePath());
-            } else {
-                log.info("StorageObject still referenced: storageObjectId={}, referenceCount={}", 
-                        storageObjectId, storageObject.getReferenceCount());
+        boolean needDeleteS3 = deleteTransactionHelper
+                .findStorageObjectIfLastReference(storageObjectId)
+                .isPresent();
+
+        // 5. 如果引用计数将归零，先执行 S3 删除；S3 删除失败则整个操作中止，数据库保持不变
+        if (needDeleteS3) {
+            String storagePath = storageObjectRepository.findById(storageObjectId)
+                    .map(StorageObject::getStoragePath)
+                    .orElse(null);
+            if (storagePath != null) {
+                log.info("引用计数将归零，先删除 S3 对象: storageObjectId={}, path={}",
+                        storageObjectId, storagePath);
+                storageService.delete(storagePath);
+                log.info("S3 对象删除成功: path={}", storagePath);
             }
         }
-        
+
+
+        // 6. S3 删除成功后，短事务内原子更新数据库（软删 FileRecord、递减引用计数、删 StorageObject 记录）
+        deleteTransactionHelper.commitUserDelete(
+                appId, fileRecordId, storageObjectId, fileRecord.getFileSize());
+
         // 7. 清除文件 URL 缓存，避免已删除文件的 URL 继续命中缓存
         fileUrlCacheManager.evict(fileRecordId);
 
-        log.info("File deleted: fileRecordId={}, userId={}", fileRecordId, userId);
+        log.info("文件已删除: fileRecordId={}, userId={}, s3Deleted={}", fileRecordId, userId, needDeleteS3);
     }
     
     /**

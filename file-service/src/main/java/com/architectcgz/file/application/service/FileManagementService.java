@@ -13,7 +13,6 @@ import com.architectcgz.file.infrastructure.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -34,6 +33,7 @@ public class FileManagementService {
     private final StorageService storageService;
     private final AuditLogService auditLogService;
     private final FileUrlCacheManager fileUrlCacheManager;
+    private final FileDeleteTransactionHelper deleteTransactionHelper;
     
     /**
      * 查询文件列表
@@ -64,48 +64,49 @@ public class FileManagementService {
     }
     
     /**
-     * 删除单个文件
-     * 
-     * @param fileId 文件ID
+     * 删除单个文件（管理员操作）
+     * 操作顺序：事务外判断是否需要删 S3 -> 先删 S3 -> 短事务更新数据库
+     *
+     * 为什么先删 S3 再更新数据库：
+     * - 若先删库再删 S3，S3 删除失败时 StorageObject 记录已丢失，孤立文件无法被定时任务追踪；
+     * - 先删 S3 再删库，S3 删除失败时整个操作中止，数据库保持完整，可重试或由定时任务兜底。
+     *
+     * @param fileId      文件ID
      * @param adminUserId 管理员用户ID
      */
-    @Transactional
     public void deleteFile(String fileId, String adminUserId) {
-        log.info("Deleting file: {} by admin: {}", fileId, adminUserId);
-        
+        log.info("管理员删除文件: fileId={}, adminUserId={}", fileId, adminUserId);
+
         // 查询文件记录
         FileRecord fileRecord = fileRecordRepository.findById(fileId)
                 .orElseThrow(() -> FileNotFoundException.notFound(fileId));
-        
-        try {
-            // 1. 从存储系统删除文件
-            storageService.delete(fileRecord.getStoragePath());
-            log.debug("Deleted file from storage: {}", fileRecord.getStoragePath());
-            
-            // 2. 从数据库删除文件记录
-            boolean deleted = fileRecordRepository.deleteById(fileId);
-            if (!deleted) {
-                throw new RuntimeException("Failed to delete file record from database");
-            }
-            log.debug("Deleted file record from database: {}", fileId);
-            
-            // 3. 更新租户使用统计
-            tenantUsageRepository.decrementUsage(fileRecord.getAppId(), fileRecord.getFileSize());
-            log.debug("Decremented tenant usage for tenant: {}, size: {}", 
-                    fileRecord.getAppId(), fileRecord.getFileSize());
-            
-            // 4. 清除缓存
-            fileUrlCacheManager.evict(fileId);
-            
-            // 5. 记录审计日志
-            recordDeleteFileAudit(fileId, fileRecord, adminUserId);
-            
-            log.info("Successfully deleted file: {}", fileId);
-            
-        } catch (Exception e) {
-            log.error("Failed to delete file: {}", fileId, e);
-            throw new RuntimeException("Failed to delete file: " + e.getMessage(), e);
+
+
+        // 1. 事务外预判：查询 StorageObject，判断引用计数是否为最后一个（递减后归零需删 S3）
+        String storageObjectId = fileRecord.getStorageObjectId();
+        boolean needDeleteS3 = deleteTransactionHelper
+                .findStorageObjectIfLastReference(storageObjectId)
+                .isPresent();
+
+        // 2. 如果引用计数将归零，先执行 S3 删除；S3 删除失败则整个操作中止，数据库保持不变
+        if (needDeleteS3) {
+            String storagePath = fileRecord.getStoragePath();
+            log.info("引用计数将归零，先删除 S3 对象: storageObjectId={}, path={}",
+                    storageObjectId, storagePath);
+            storageService.delete(storagePath);
+            log.info("S3 对象删除成功: path={}", storagePath);
         }
+
+        // 3. S3 删除成功后，短事务内原子更新数据库（硬删 FileRecord、递减引用计数、删 StorageObject 记录）
+        deleteTransactionHelper.commitAdminDelete(fileId, fileRecord);
+
+        // 4. 清除缓存（缓存操作不影响核心流程）
+        fileUrlCacheManager.evict(fileId);
+
+        // 5. 记录审计日志
+        recordDeleteFileAudit(fileId, fileRecord, adminUserId);
+
+        log.info("文件删除完成: fileId={}, s3Deleted={}", fileId, needDeleteS3);
     }
     
     /**

@@ -2,6 +2,7 @@ package com.architectcgz.file.domain.repository;
 
 import com.architectcgz.file.domain.model.StorageObject;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -58,4 +59,15 @@ public interface StorageObjectRepository {
      * @return 是否成功
      */
     boolean deleteById(String id);
+
+    /**
+     * 查找引用计数为零且超过保护窗口的存储对象（孤立对象）
+     * 用于定时清理任务，分批查询避免一次加载过多数据。
+     * 增加时间保护窗口，避免与正常删除流程互相干扰。
+     *
+     * @param graceMinutes 时间保护窗口（分钟），只清理 updated_at 早于该时间的记录
+     * @param limit 最大返回数量
+     * @return 引用计数为零的存储对象列表
+     */
+    List<StorageObject> findZeroReferenceObjects(int graceMinutes, int limit);
 }
