@@ -86,6 +86,7 @@ public class UploadTaskRepositoryImpl implements UploadTaskRepository {
         po.setFileName(task.getFileName());
         po.setFileSize(task.getFileSize());
         po.setFileHash(task.getFileHash());
+        po.setContentType(task.getContentType());
         po.setStoragePath(task.getStoragePath());
         po.setUploadId(task.getUploadId());
         po.setTotalParts(task.getTotalParts());
@@ -113,6 +114,7 @@ public class UploadTaskRepositoryImpl implements UploadTaskRepository {
                 .fileName(po.getFileName())
                 .fileSize(po.getFileSize())
                 .fileHash(po.getFileHash())
+                .contentType(po.getContentType())
                 .storagePath(po.getStoragePath())
                 .uploadId(po.getUploadId())
                 .totalParts(po.getTotalParts())

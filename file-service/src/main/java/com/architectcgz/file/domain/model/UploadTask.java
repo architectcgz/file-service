@@ -46,6 +46,11 @@ public class UploadTask {
      * 文件哈希值（用于断点续传匹配)
      */
     private String fileHash;
+
+    /**
+     * 文件 MIME 类型（如 image/png、application/pdf）
+     */
+    private String contentType;
     
     /**
      * 存储路径

@@ -111,6 +111,7 @@ public class MultipartUploadService {
         task.setFileName(request.getFileName());
         task.setFileSize(request.getFileSize());
         task.setFileHash(request.getFileHash());
+        task.setContentType(request.getContentType());
         task.setStoragePath(storagePath);
         task.setUploadId(uploadId);
         task.setTotalParts(totalParts);
@@ -275,7 +276,7 @@ public class MultipartUploadService {
         fileRecord.setOriginalFilename(task.getFileName());
         fileRecord.setStoragePath(task.getStoragePath());  // 使用任务中的存储路径
         fileRecord.setFileSize(task.getFileSize());
-        fileRecord.setContentType("application/octet-stream"); // TODO: 从任务中获取
+        fileRecord.setContentType(task.getContentType()); // 从上传任务元数据获取，不再硬编码
         fileRecord.setFileHash(task.getFileHash());
         fileRecord.setHashAlgorithm("MD5");
         fileRecord.setStatus(FileStatus.COMPLETED);

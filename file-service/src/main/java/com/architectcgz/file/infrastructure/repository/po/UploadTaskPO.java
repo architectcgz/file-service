@@ -40,6 +40,11 @@ public class UploadTaskPO {
      * 文件哈希值
      */
     private String fileHash;
+
+    /**
+     * 文件 MIME 类型
+     */
+    private String contentType;
     
     /**
      * 存储路径
