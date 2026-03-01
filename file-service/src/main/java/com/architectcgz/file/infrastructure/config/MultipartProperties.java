@@ -43,8 +43,15 @@ public class MultipartProperties {
     private int taskExpireHours = 24;
     
     /**
-     * 过期任务清理 Cron 表达或
-     * 默认: 每小时执行一或(0 0 * * * *)
+     * 过期任务清理 Cron 表达式
+     * 默认: 每小时执行一次 (0 0 * * * *)
      */
     private String cleanupCron = "0 0 * * * *";
+
+    /**
+     * 分片上传分布式锁超时时间（秒）
+     * 超过此时间锁自动释放，防止死锁
+     * 默认: 30 秒
+     */
+    private int lockTimeoutSeconds = 30;
 }

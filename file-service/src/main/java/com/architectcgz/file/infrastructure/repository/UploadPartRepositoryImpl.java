@@ -24,6 +24,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -110,25 +111,21 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
                 // 6. 写入 Redis Bitmap
                 String bitmapKey = UploadRedisKeys.partsBitmap(part.getTaskId());
                 long bitOffset = UploadRedisKeys.getBitOffset(part.getPartNumber());
-                
+
                 Boolean previousValue = redisTemplate.opsForValue().setBit(bitmapKey, bitOffset, true);
-                
+
                 // 7. 设置 TTL (24 小时)
                 redisTemplate.expire(bitmapKey, Duration.ofHours(bitmapProperties.getExpireHours()));
-                
+
                 // 记录写入成功
                 metrics.recordWriteSuccess();
-                
-                log.debug("分片记录到 Bitmap: taskId={}, partNumber={}, bitOffset={}, previousValue={}", 
+
+                log.debug("分片记录到 Bitmap: taskId={}, partNumber={}, bitOffset={}, previousValue={}",
                     part.getTaskId(), part.getPartNumber(), bitOffset, previousValue);
-                
-                // 8. 判断是否需要触发定期同步
-                if (shouldSync(part.getPartNumber())) {
-                    log.debug("触发定期同步: taskId={}, partNumber={}, syncBatchSize={}", 
-                        part.getTaskId(), part.getPartNumber(), bitmapProperties.getSyncBatchSize());
-                    asyncSyncToDatabase(part.getTaskId());
-                }
-                
+
+                // 8. 同步写入数据库，确保 ETag 持久化（幂等查询依赖此数据）
+                savePartToDatabase(part);
+
             } catch (DataAccessException e) {
                 // Redis 失败，回退到数据库
                 metrics.recordWriteFailure("connection_failure");
@@ -152,8 +149,26 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
     }
     
     /**
+     * 根据任务ID和分片编号查询单个分片
+     * 直接查询数据库，因为 Bitmap 中不存储 ETag 等详细信息
+     * 查询失败时让异常自然传播，避免将数据库故障静默转化为重复上传
+     *
+     * @param taskId 任务ID
+     * @param partNumber 分片编号（从1开始）
+     * @return 分片信息，不存在时返回 empty
+     */
+    @Override
+    public Optional<UploadPart> findByTaskIdAndPartNumber(String taskId, int partNumber) {
+        UploadPartPO po = uploadPartMapper.selectByTaskIdAndPartNumber(taskId, partNumber);
+        if (po == null) {
+            return Optional.empty();
+        }
+        return Optional.of(convertToModel(po));
+    }
+
+    /**
      * 查询已完成的分片数量
-     * 
+     *
      * 实现策略:
      * 1. 优先从 Redis Bitmap 查询 (BITCOUNT)
      * 2. Redis 失败时回退到数据库
@@ -448,19 +463,15 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
                 return;
             }
             
-            // 4. 批量插入到数据库
-            List<UploadPartPO> partsToInsert = newParts.stream()
-                .map(partNumber -> {
-                    UploadPartPO po = new UploadPartPO();
-                    po.setId(generateId());
-                    po.setTaskId(taskId);
-                    po.setPartNumber(partNumber);
-                    po.setUploadedAt(LocalDateTime.now());
-                    return po;
-                })
-                .collect(Collectors.toList());
-            
-            batchInsertParts(partsToInsert);
+            // 4. 逐条 upsert 到数据库（补偿同步，确保数据一致性）
+            for (Integer partNumber : newParts) {
+                UploadPartPO po = new UploadPartPO();
+                po.setId(generateId());
+                po.setTaskId(taskId);
+                po.setPartNumber(partNumber);
+                po.setUploadedAt(LocalDateTime.now());
+                uploadPartMapper.insertOrIgnore(po);
+            }
             
             // 记录同步指标
             metrics.recordSync(newParts.size());
@@ -475,15 +486,16 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
     }
     
     /**
-     * 直接写入数据库
-     * 
+     * 写入数据库（使用 upsert 保证幂等性）
+     * 冲突时更新 etag 和 size，确保幂等查询能获取到最新的 ETag
+     *
      * @param part 分片信息
      */
     private void savePartToDatabase(UploadPart part) {
         try {
             UploadPartPO po = convertToPO(part);
-            uploadPartMapper.insert(po);
-            log.debug("分片记录到数据库: taskId={}, partNumber={}", part.getTaskId(), part.getPartNumber());
+            uploadPartMapper.upsert(po);
+            log.debug("分片记录到数据库(upsert): taskId={}, partNumber={}", part.getTaskId(), part.getPartNumber());
         } catch (Exception e) {
             log.error("写入数据库失败: taskId={}, partNumber={}", part.getTaskId(), part.getPartNumber(), e);
             throw new RuntimeException("写入数据库失败: " + e.getMessage(), e);
@@ -546,7 +558,7 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
     
     /**
      * 转换领域模型到持久化对象
-     * 
+     *
      * @param part 领域模型
      * @return 持久化对象
      */
@@ -559,6 +571,23 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
         po.setSize(part.getSize());
         po.setUploadedAt(part.getUploadedAt() != null ? part.getUploadedAt() : LocalDateTime.now());
         return po;
+    }
+
+    /**
+     * 转换持久化对象到领域模型
+     *
+     * @param po 持久化对象
+     * @return 领域模型
+     */
+    private UploadPart convertToModel(UploadPartPO po) {
+        return UploadPart.builder()
+                .id(po.getId())
+                .taskId(po.getTaskId())
+                .partNumber(po.getPartNumber())
+                .etag(po.getEtag())
+                .size(po.getSize())
+                .uploadedAt(po.getUploadedAt())
+                .build();
     }
     
     /**

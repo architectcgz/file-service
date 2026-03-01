@@ -18,17 +18,22 @@ import com.architectcgz.file.infrastructure.config.MultipartProperties;
 import com.architectcgz.file.infrastructure.storage.S3StorageService;
 import com.architectcgz.file.infrastructure.repository.mapper.UploadPartMapper;
 import com.architectcgz.file.infrastructure.repository.po.UploadPartPO;
+import com.architectcgz.file.infrastructure.cache.UploadRedisKeys;
 import com.github.f4b6a3.uuid.UuidCreator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -38,7 +43,14 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class MultipartUploadService {
-    
+
+    /**
+     * 释放分布式锁的 Lua 脚本
+     * 先比较锁 value，相同才删除，防止误删其他请求持有的锁
+     */
+    private static final String UNLOCK_SCRIPT =
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+
     private final S3StorageService s3StorageService;
     private final UploadTaskRepository uploadTaskRepository;
     private final UploadPartRepository uploadPartRepository;
@@ -46,6 +58,8 @@ public class MultipartUploadService {
     private final MultipartProperties multipartProperties;
     private final FileTypeValidator fileTypeValidator;
     private final UploadPartMapper uploadPartMapper;
+    private final RedisTemplate<String, String> redisTemplate;
+    private final UploadPartTransactionHelper uploadPartTransactionHelper;
     
     /**
      * 初始化分片上传
@@ -136,17 +150,21 @@ public class MultipartUploadService {
     
     /**
      * 上传分片
-     * 
-     * @param taskId 任务 ID
-     * @param partNumber 分片号(1-based)
-     * @param data 分片数据
-     * @param userId 用户 ID
+     *
+     * <p>此方法不加 @Transactional：方法内部包含分布式锁获取/释放、
+     * Thread.sleep 轮询等待、S3 网络调用等耗时操作，
+     * 若持有数据库事务会长时间占用连接池资源，导致连接耗尽。
+     * 数据库写操作已封装到 {@link UploadPartTransactionHelper#savePart} 中以独立短事务执行。
+     *
+     * @param taskId     任务 ID
+     * @param partNumber 分片号（1-based）
+     * @param data       分片数据
+     * @param userId     用户 ID
      * @return ETag
      */
-    @Transactional
     public String uploadPart(String taskId, int partNumber, byte[] data, String userId) {
         log.info("Uploading part {} for task: {}", partNumber, taskId);
-        
+
         // 查询任务
         UploadTask task = uploadTaskRepository.findById(taskId)
                 .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
@@ -163,7 +181,6 @@ public class MultipartUploadService {
 
         // 验证任务是否过期
         if (task.getExpiresAt().isBefore(LocalDateTime.now())) {
-            task.setStatus(UploadTaskStatus.EXPIRED);
             uploadTaskRepository.updateStatus(taskId, UploadTaskStatus.EXPIRED);
             throw new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_EXPIRED);
         }
@@ -172,32 +189,103 @@ public class MultipartUploadService {
         if (partNumber < 1 || partNumber > task.getTotalParts()) {
             throw new BusinessException(String.format(FileServiceErrorMessages.PART_NUMBER_INVALID, partNumber));
         }
-        
+
+        // 分布式锁：防止同一分片并发上传导致 ETag 不一致
+        // 锁 value 使用 UUID，释放时通过 Lua 脚本比较后删除，防止误删其他请求持有的锁
+        String lockKey = UploadRedisKeys.partLock(taskId, partNumber);
+        String lockValue = UUID.randomUUID().toString();
+        Duration lockTimeout = Duration.ofSeconds(multipartProperties.getLockTimeoutSeconds());
+        Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, lockValue, lockTimeout);
+        if (!Boolean.TRUE.equals(locked)) {
+            // 未获取到锁，说明有另一个请求正在上传同一分片，等待后查询 ETag 返回
+            log.info("Part upload lock contention, waiting for existing upload: taskId={}, partNumber={}",
+                    taskId, partNumber);
+            return waitAndGetExistingEtag(taskId, partNumber);
+        }
+
+        try {
+            return doUploadPart(task, taskId, partNumber, data);
+        } finally {
+            // 使用 Lua 脚本原子性地比较并删除锁，防止锁超时后误删其他请求持有的新锁
+            redisTemplate.execute(
+                    new DefaultRedisScript<>(UNLOCK_SCRIPT, Long.class),
+                    List.of(lockKey),
+                    lockValue
+            );
+        }
+    }
+
+    /**
+     * 等待并发上传完成后获取已有 ETag
+     *
+     * <p>当分布式锁竞争失败时，说明同一分片正在被另一个请求上传。
+     * 此处使用 Thread.sleep 轮询数据库，而非响应式/回调方案，原因如下：
+     * <ul>
+     *   <li>分片上传场景为低频并发，轮询开销可接受</li>
+     *   <li>引入异步回调会大幅增加代码复杂度，与项目同步 Servlet 模型不符</li>
+     *   <li>等待时间上限为 3s（6 次 × 500ms），不会长时间阻塞线程</li>
+     * </ul>
+     * 如未来切换到响应式框架（WebFlux），可改为 Mono.delay + retry。
+     *
+     * @param taskId     任务 ID
+     * @param partNumber 分片编号
+     * @return 已有分片的 ETag
+     */
+    private String waitAndGetExistingEtag(String taskId, int partNumber) {
+        int maxRetries = 6;
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                // 每次等待 500ms，最多等待 3s，让持锁请求完成 S3 上传并写入数据库
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new BusinessException("等待分片上传完成时被中断");
+            }
+            Optional<UploadPart> existing = uploadPartRepository.findByTaskIdAndPartNumber(taskId, partNumber);
+            if (existing.isPresent() && existing.get().getEtag() != null) {
+                log.info("Part idempotent hit after lock wait: taskId={}, partNumber={}", taskId, partNumber);
+                return existing.get().getEtag();
+            }
+        }
+        throw new BusinessException("等待分片上传完成超时，请重试");
+    }
+
+    /**
+     * 执行实际的分片上传逻辑（已持有分布式锁）
+     *
+     * <p>S3 上传完成后，通过 {@link UploadPartTransactionHelper#savePart} 以独立短事务写入数据库，
+     * 避免在持有分布式锁期间同时持有数据库事务。
+     *
+     * @param task       上传任务
+     * @param taskId     任务 ID
+     * @param partNumber 分片编号
+     * @param data       分片数据
+     * @return ETag
+     */
+    private String doUploadPart(UploadTask task, String taskId, int partNumber, byte[] data) {
         // 检查分片是否已上传（使用 bitmap 优化）
         List<Integer> completedPartNumbers = uploadPartRepository.findCompletedPartNumbers(taskId);
         if (completedPartNumbers.contains(partNumber)) {
-            log.warn("Part {} already uploaded for task: {}, returning cached result", partNumber, taskId);
-            // 分片已存在，直接返回成功（幂等性）
-            // 注意：这里无法返回原始 ETag，客户端应该缓存 ETag
-            // 如果必须返回 ETag，需要额外查询数据库
-            throw new BusinessException(FileServiceErrorMessages.PART_ALREADY_UPLOADED);
+            // 幂等处理：查询已有分片的 ETag 并直接返回，避免重复上传到 S3
+            Optional<UploadPart> existingPart = uploadPartRepository.findByTaskIdAndPartNumber(taskId, partNumber);
+            if (existingPart.isPresent() && existingPart.get().getEtag() != null) {
+                log.info("Part idempotent hit: taskId={}, partNumber={}", taskId, partNumber);
+                log.debug("Part idempotent hit ETag detail: taskId={}, partNumber={}, etag={}",
+                        taskId, partNumber, existingPart.get().getEtag());
+                return existingPart.get().getEtag();
+            }
+            // 数据库中无记录或无 ETag（可能仅在 Bitmap 中），仍需上传
+            log.info("Part in bitmap but no ETag in DB, re-uploading: taskId={}, partNumber={}",
+                    taskId, partNumber);
         }
-        
-        // 上传分片到S3
+
+        // 上传分片到 S3（网络 IO，不在事务内执行）
         String etag = s3StorageService.uploadPart(task.getStoragePath(), task.getUploadId(), partNumber, data);
         log.info("Uploaded part {} with ETag: {}", partNumber, etag);
-        
-        // 保存分片记录
-        UploadPart part = new UploadPart();
-        part.setId(UuidCreator.getTimeOrderedEpoch().toString());
-        part.setTaskId(taskId);
-        part.setPartNumber(partNumber);
-        part.setEtag(etag);
-        part.setSize((long) data.length);
-        part.setUploadedAt(LocalDateTime.now());
-        
-        uploadPartRepository.savePart(part);
-        
+
+        // 通过独立短事务保存分片记录，避免长事务占用连接池
+        uploadPartTransactionHelper.savePart(taskId, partNumber, etag, (long) data.length);
+
         return etag;
     }
     

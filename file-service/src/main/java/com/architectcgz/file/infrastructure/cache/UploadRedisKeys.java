@@ -27,6 +27,7 @@ public final class UploadRedisKeys {
 
     private static final String PREFIX = "upload:task";
     private static final String PARTS_SUFFIX = "parts";
+    private static final String PART_LOCK_SUFFIX = "part:lock";
 
     private UploadRedisKeys() {
         // 工具类，禁止实例化
@@ -89,5 +90,31 @@ public final class UploadRedisKeys {
             throw new IllegalArgumentException("Bitmap 位偏移量必须 >= 0，当前值: " + bitOffset);
         }
         return (int) (bitOffset + 1);
+    }
+
+    // ==================== 分片上传分布式锁 ====================
+
+    /**
+     * 分片上传分布式锁
+     *
+     * Key: upload:task:{taskId}:part:lock:{partNumber}
+     * Type: String (SETNX)
+     * TTL: 30 秒（防止死锁）
+     *
+     * 用途：防止同一分片并发上传导致 ETag 不一致
+     *
+     * @param taskId 上传任务ID
+     * @param partNumber 分片编号
+     * @return Redis key
+     * @throws IllegalArgumentException 如果参数无效
+     */
+    public static String partLock(String taskId, int partNumber) {
+        if (taskId == null || taskId.trim().isEmpty()) {
+            throw new IllegalArgumentException("taskId 不能为 null 或空字符串");
+        }
+        if (partNumber < 1) {
+            throw new IllegalArgumentException("分片编号必须 >= 1，当前值: " + partNumber);
+        }
+        return PREFIX + ":" + taskId + ":" + PART_LOCK_SUFFIX + ":" + partNumber;
     }
 }

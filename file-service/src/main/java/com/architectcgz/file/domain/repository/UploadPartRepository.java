@@ -3,6 +3,7 @@ package com.architectcgz.file.domain.repository;
 import com.architectcgz.file.domain.model.UploadPart;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 分片上传仓储接口
@@ -31,6 +32,16 @@ public interface UploadPartRepository {
      * Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 3.1, 3.5, 5.1, 5.2, 5.5
      */
     void savePart(UploadPart part);
+
+    /**
+     * 根据任务ID和分片编号查询单个分片
+     * 用于幂等性检查：重复上传时返回已有分片的 ETag，避免抛异常
+     *
+     * @param taskId 任务ID
+     * @param partNumber 分片编号（从1开始）
+     * @return 分片信息，不存在时返回 empty
+     */
+    Optional<UploadPart> findByTaskIdAndPartNumber(String taskId, int partNumber);
     
     /**
      * 查询已完成的分片数量

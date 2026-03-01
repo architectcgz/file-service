@@ -28,7 +28,7 @@ public interface UploadPartMapper {
     /**
      * 插入上传分片（如果已存在则忽略）
      * 使用 ON CONFLICT DO NOTHING 保证幂等性
-     * 
+     *
      * @param part 上传分片PO
      */
     @Insert("""
@@ -40,6 +40,25 @@ public interface UploadPartMapper {
         ON CONFLICT (task_id, part_number) DO NOTHING
     """)
     void insertOrIgnore(UploadPartPO part);
+
+    /**
+     * 插入或更新上传分片（upsert）
+     * 冲突时更新 etag 和 size，确保幂等查询能获取到最新的 ETag
+     *
+     * @param part 上传分片PO
+     */
+    @Insert("""
+        INSERT INTO upload_parts (
+            id, task_id, part_number, etag, size, uploaded_at
+        ) VALUES (
+            #{id}, #{taskId}, #{partNumber}, #{etag}, #{size}, #{uploadedAt}
+        )
+        ON CONFLICT (task_id, part_number) DO UPDATE SET
+            etag = EXCLUDED.etag,
+            size = EXCLUDED.size,
+            uploaded_at = EXCLUDED.uploaded_at
+    """)
+    void upsert(UploadPartPO part);
     
     /**
      * 批量插入上传分片
@@ -86,8 +105,24 @@ public interface UploadPartMapper {
     List<Integer> findPartNumbersByTaskId(@Param("taskId") String taskId);
     
     /**
+     * 根据任务ID和分片编号查询单个分片
+     * 用于幂等性检查时获取已有分片的 ETag
+     *
+     * @param taskId 任务ID
+     * @param partNumber 分片编号
+     * @return 分片记录，不存在时返回 null
+     */
+    @Select("""
+        SELECT id, task_id, part_number, etag, size, uploaded_at
+        FROM upload_parts
+        WHERE task_id = #{taskId} AND part_number = #{partNumber}
+    """)
+    @ResultMap("uploadPartResult")
+    UploadPartPO selectByTaskIdAndPartNumber(@Param("taskId") String taskId, @Param("partNumber") int partNumber);
+
+    /**
      * 统计任务的已完成分片数量
-     * 
+     *
      * @param taskId 任务ID
      * @return 已完成分片数量
      */
