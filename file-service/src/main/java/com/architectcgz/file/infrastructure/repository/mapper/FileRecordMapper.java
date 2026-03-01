@@ -1,9 +1,9 @@
 package com.architectcgz.file.infrastructure.repository.mapper;
 
-import com.architectcgz.file.application.dto.ContentTypeCount;
 import com.architectcgz.file.application.dto.FileQuery;
-import com.architectcgz.file.application.dto.StorageStatisticsAggregation;
-import com.architectcgz.file.application.dto.TenantStorageAggregation;
+import com.architectcgz.file.domain.model.ContentTypeCount;
+import com.architectcgz.file.domain.model.StorageStatisticsAggregation;
+import com.architectcgz.file.domain.model.TenantStorageAggregation;
 import com.architectcgz.file.infrastructure.repository.po.FileRecordPO;
 import org.apache.ibatis.annotations.*;
 

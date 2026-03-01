@@ -1,9 +1,9 @@
 package com.architectcgz.file.domain.repository;
 
-import com.architectcgz.file.application.dto.ContentTypeCount;
 import com.architectcgz.file.application.dto.FileQuery;
-import com.architectcgz.file.application.dto.StorageStatisticsAggregation;
-import com.architectcgz.file.application.dto.TenantStorageAggregation;
+import com.architectcgz.file.domain.model.ContentTypeCount;
+import com.architectcgz.file.domain.model.StorageStatisticsAggregation;
+import com.architectcgz.file.domain.model.TenantStorageAggregation;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;

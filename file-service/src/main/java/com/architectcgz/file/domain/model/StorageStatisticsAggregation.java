@@ -1,4 +1,4 @@
-package com.architectcgz.file.application.dto;
+package com.architectcgz.file.domain.model;
 
 import lombok.Data;
 
