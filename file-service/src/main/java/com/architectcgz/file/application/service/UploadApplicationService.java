@@ -32,6 +32,8 @@ import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -52,21 +54,29 @@ public class UploadApplicationService {
     private final TenantDomainService tenantDomainService;
     private final TenantUsageRepository tenantUsageRepository;
     private final ImageProcessingProperties imageProperties;
+    private final UploadTransactionHelper uploadTransactionHelper;
     
     /**
      * 上传图片
      *
-     * @param appId 应用ID
-     * @param file 图片文件
+     * 整体流程：校验 -> 图片处理 -> S3 上传 -> 短事务写库 -> 失败补偿
+     * 移除了方法级 @Transactional，避免长事务持有数据库连接期间执行大量 I/O 操作。
+     * 数据库写入由 UploadTransactionHelper 封装为独立短事务；
+     * 若写库失败，则补偿清理已上传的 S3 文件。
+     *
+     * @param appId  应用ID
+     * @param file   图片文件
      * @param userId 上传者ID
      * @return 上传结果
      */
-    @Transactional(rollbackFor = Exception.class)
     public UploadResult uploadImage(String appId, MultipartFile file, String userId) {
         // 临时文件路径，用于 finally 块清理
         Path tempSourceFile = null;
         Path tempProcessedFile = null;
         Path tempThumbnailFile = null;
+
+        // 记录本次上传到 S3 的路径，用于写库失败时的补偿清理
+        List<String> uploadedS3Paths = new ArrayList<>();
 
         try {
             // 0. 检查租户配额
@@ -105,7 +115,8 @@ public class UploadApplicationService {
             imageProcessor.generateThumbnailToFile(
                     tempSourceFile, tempThumbnailFile,
                     imageProperties.getThumbnailWidth(),
-                    imageProperties.getThumbnailHeight()
+                    imageProperties.getThumbnailHeight(),
+                    imageProperties.getThumbnailQuality()
             );
 
             // 4. 基于文件流式计算哈希，避免将处理后图片加载到内存
@@ -118,32 +129,57 @@ public class UploadApplicationService {
             String storageObjectId;
             String imageUrl;
             String thumbnailUrl;
+            String storagePath;
 
             if (existingStorageObject.isPresent()) {
-                // 文件已存在，增加引用计数（秒传）
-                StorageObject storageObject = existingStorageObject.get();
-                storageObjectRepository.incrementReferenceCount(storageObject.getId());
-                storageObjectId = storageObject.getId();
-                imageUrl = storageService.getUrl(storageObject.getStoragePath());
+                // 秒传路径：主图已存在，仅上传缩略图
+                StorageObject existing = existingStorageObject.get();
+                storageObjectId = existing.getId();
+                storagePath = existing.getStoragePath();
+                imageUrl = storageService.getUrl(storagePath);
 
-                // 缩略图仍需上传（因为每个用户可能有不同的缩略图需求）
+                // 缩略图仍需上传（每个用户可能有不同的缩略图需求）
                 String thumbnailPath = generateStoragePath(appId, userId, "thumbnails", "jpg");
                 thumbnailUrl = storageService.uploadFromFile(tempThumbnailFile, thumbnailPath, "image/jpeg");
+                uploadedS3Paths.add(thumbnailPath);
 
                 log.info("Image instant upload (deduplication): fileHash={}, userId={}, originalFilename={}",
                         fileHash, userId, file.getOriginalFilename());
+
+                // 短事务写库：增加引用计数 + 保存 FileRecord + 更新租户用量
+                String fileRecordId = generateFileId();
+                FileRecord fileRecord = buildFileRecord(fileRecordId, appId, userId, storageObjectId,
+                        storagePath, file.getOriginalFilename(), processedSize, contentType, fileHash);
+                try {
+                    uploadTransactionHelper.saveInstantUpload(storageObjectId, fileRecord, processedSize);
+                } catch (Exception dbEx) {
+                    // 写库失败，补偿清理已上传的缩略图
+                    compensateS3Uploads(uploadedS3Paths);
+                    throw dbEx;
+                }
+
+                return buildUploadResult(fileRecordId, imageUrl, thumbnailUrl,
+                        file.getOriginalFilename(), processedSize, contentType);
+
             } else {
-                // 新文件，从临时文件流式上传到存储
+                // 新文件路径：上传主图和缩略图
                 String extension = imageProperties.isConvertToWebp() ? "webp" : getExtensiExcepException(file.getOriginalFilename());
                 String imagePath = generateStoragePath(appId, userId, "images", extension);
                 String thumbnailPath = generateStoragePath(appId, userId, "thumbnails", "jpg");
 
                 imageUrl = storageService.uploadFromFile(tempProcessedFile, imagePath, contentType);
-                thumbnailUrl = storageService.uploadFromFile(tempThumbnailFile, thumbnailPath, "image/jpeg");
+                uploadedS3Paths.add(imagePath);
 
-                // 创建 StorageObject
+                thumbnailUrl = storageService.uploadFromFile(tempThumbnailFile, thumbnailPath, "image/jpeg");
+                uploadedS3Paths.add(thumbnailPath);
+
+                log.info("Image uploaded to S3: imagePath={}, userId={}, originalFilename={}",
+                        imagePath, userId, file.getOriginalFilename());
+
+                // 构建 StorageObject 和 FileRecord
+                String storageObjectNewId = generateFileId();
                 StorageObject storageObject = StorageObject.builder()
-                        .id(generateFileId())
+                        .id(storageObjectNewId)
                         .appId(appId)
                         .fileHash(fileHash)
                         .hashAlgorithm("MD5")
@@ -155,50 +191,24 @@ public class UploadApplicationService {
                         .updatedAt(LocalDateTime.now())
                         .build();
 
-                storageObjectRepository.save(storageObject);
-                storageObjectId = storageObject.getId();
+                String fileRecordId = generateFileId();
+                FileRecord fileRecord = buildFileRecord(fileRecordId, appId, userId, storageObjectNewId,
+                        imagePath, file.getOriginalFilename(), processedSize, contentType, fileHash);
 
-                log.info("Image uploaded successfully: imagePath={}, userId={}, originalFilename={}",
-                        imagePath, userId, file.getOriginalFilename());
+                // 短事务写库：保存 StorageObject + FileRecord + 更新租户用量
+                // 若写库失败，补偿清理已上传的 S3 文件
+                try {
+                    uploadTransactionHelper.saveNewUpload(storageObject, fileRecord, processedSize);
+                } catch (Exception dbEx) {
+                    compensateS3Uploads(uploadedS3Paths);
+                    throw dbEx;
+                }
+
+                log.info("Image upload completed: fileRecordId={}, imagePath={}", fileRecordId, imagePath);
+
+                return buildUploadResult(fileRecordId, imageUrl, thumbnailUrl,
+                        file.getOriginalFilename(), processedSize, contentType);
             }
-
-            // 6. 创建 FileRecord
-            String fileRecordId = generateFileId();
-
-            StorageObject storageObject = storageObjectRepository.findById(storageObjectId)
-                    .orElseThrow(() -> new BusinessException("存储对象不存在"));
-
-            FileRecord fileRecord = FileRecord.builder()
-                    .id(fileRecordId)
-                    .appId(appId)
-                    .userId(userId)
-                    .storageObjectId(storageObjectId)
-                    .originalFilename(file.getOriginalFilename())
-                    .storagePath(storageObject.getStoragePath())
-                    .fileSize(processedSize)
-                    .contentType(contentType)
-                    .fileHash(fileHash)
-                    .hashAlgorithm("MD5")
-                    .accessLevel(AccessLevel.PUBLIC)
-                    .status(FileStatus.COMPLETED)
-                    .createdAt(LocalDateTime.now())
-                    .updatedAt(LocalDateTime.now())
-                    .build();
-
-            fileRecordRepository.save(fileRecord);
-
-            // 7. 更新租户使用统计（原子操作）
-            tenantUsageRepository.incrementUsage(appId, processedSize);
-
-            return UploadResult.builder()
-                    .fileId(fileRecordId)
-                    .url(imageUrl)
-                    .thumbnailUrl(thumbnailUrl)
-                    .originalFilename(file.getOriginalFilename())
-                    .size(processedSize)
-                    .fileType(UploadFile.FileType.IMAGE.name())
-                    .contentType(contentType)
-                    .build();
 
         } catch (IOException e) {
             log.error("Failed to upload image: {}", file.getOriginalFilename(), e);
@@ -208,6 +218,64 @@ public class UploadApplicationService {
             deleteTempFileQuietly(tempSourceFile);
             deleteTempFileQuietly(tempProcessedFile);
             deleteTempFileQuietly(tempThumbnailFile);
+        }
+    }
+
+    /**
+     * 构建 FileRecord 领域对象
+     */
+    private FileRecord buildFileRecord(String fileRecordId, String appId, String userId,
+                                       String storageObjectId, String storagePath,
+                                       String originalFilename, long fileSize,
+                                       String contentType, String fileHash) {
+        return FileRecord.builder()
+                .id(fileRecordId)
+                .appId(appId)
+                .userId(userId)
+                .storageObjectId(storageObjectId)
+                .originalFilename(originalFilename)
+                .storagePath(storagePath)
+                .fileSize(fileSize)
+                .contentType(contentType)
+                .fileHash(fileHash)
+                .hashAlgorithm("MD5")
+                .accessLevel(AccessLevel.PUBLIC)
+                .status(FileStatus.COMPLETED)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+    }
+
+    /**
+     * 构建上传结果 DTO
+     */
+    private UploadResult buildUploadResult(String fileRecordId, String imageUrl, String thumbnailUrl,
+                                           String originalFilename, long processedSize, String contentType) {
+        return UploadResult.builder()
+                .fileId(fileRecordId)
+                .url(imageUrl)
+                .thumbnailUrl(thumbnailUrl)
+                .originalFilename(originalFilename)
+                .size(processedSize)
+                .fileType(UploadFile.FileType.IMAGE.name())
+                .contentType(contentType)
+                .build();
+    }
+
+    /**
+     * S3 补偿清理：写库失败后删除已上传的 S3 文件
+     * 补偿失败仅记录警告日志，不抛出异常（避免掩盖原始异常）
+     *
+     * @param s3Paths 需要清理的 S3 路径列表
+     */
+    private void compensateS3Uploads(List<String> s3Paths) {
+        for (String path : s3Paths) {
+            try {
+                storageService.delete(path);
+                log.warn("S3 compensation cleanup: deleted path={}", path);
+            } catch (Exception cleanupEx) {
+                log.error("S3 compensation cleanup failed: path={}", path, cleanupEx);
+            }
         }
     }
     
