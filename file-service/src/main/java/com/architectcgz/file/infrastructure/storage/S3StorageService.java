@@ -21,6 +21,7 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 
 import jakarta.annotation.PostConstruct;
 import java.net.URI;
+import java.nio.file.Path;
 import java.time.Duration;
 
 /**
@@ -78,6 +79,30 @@ public class S3StorageService implements StorageService {
         }
     }
     
+    @Override
+    public String uploadFromFile(Path file, String storagePath, String contentType) {
+        try {
+            PutObjectRequest putRequest = PutObjectRequest.builder()
+                    .bucket(properties.getBucket())
+                    .key(storagePath)
+                    .contentType(contentType)
+                    .build();
+
+            s3Client.putObject(putRequest, RequestBody.fromFile(file));
+            log.debug("File uploaded to S3 from local file: bucket={}, key={}", properties.getBucket(), storagePath);
+
+            return getUrl(storagePath);
+        } catch (S3Exception e) {
+            log.error("Failed to upload file to S3 from local file: bucket={}, key={}, error={}",
+                    properties.getBucket(), storagePath, e.getMessage(), e);
+            throw new BusinessException("文件上传失败: " + e.getMessage(), e);
+        } catch (SdkClientException e) {
+            log.error("S3 client error during file upload: bucket={}, key={}, error={}",
+                    properties.getBucket(), storagePath, e.getMessage(), e);
+            throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
+        }
+    }
+
     @Override
     public String uploadToPublicBucket(byte[] data, String path, String contentType) {
         try {

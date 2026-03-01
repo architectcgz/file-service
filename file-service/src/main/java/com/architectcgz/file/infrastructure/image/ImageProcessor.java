@@ -13,7 +13,9 @@ import javax.imageio.stream.ImageInputStream;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Iterator;
 
 /**
@@ -211,20 +213,103 @@ public class ImageProcessor {
     public byte[] resize(byte[] imageData, int width, int height) {
         try {
             ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            
+
             Thumbnails.of(new ByteArrayInputStream(imageData))
                     .size(width, height)
                     .keepAspectRatio(true)
                     .outputFormat("jpg")
                     .toOutputStream(outputStream);
-            
+
             byte[] result = outputStream.toByteArray();
             log.debug("Image resized to {}x{}: {} bytes", width, height, result.length);
-            
+
             return result;
         } catch (IOException e) {
             log.error("Failed to resize image", e);
             throw new BusinessException(String.format(FileServiceErrorMessages.IMAGE_RESIZE_FAILED, e.getMessage()));
+        }
+    }
+
+    /**
+     * 基于文件处理图片（压缩、调整大小、转换格式），避免内存中持有完整 byte[]
+     * 读取源文件 -> 处理 -> 写入目标文件，内存中仅保留 BufferedImage 和流式缓冲区
+     *
+     * @param sourceFile 源图片文件路径
+     * @param outputFile 输出图片文件路径
+     * @param config 处理配置
+     * @return 处理后文件的字节数
+     */
+    public long processToFile(Path sourceFile, Path outputFile, ImageProcessConfig config) {
+        try {
+            File source = sourceFile.toFile();
+            BufferedImage originalImage = ImageIO.read(source);
+            if (originalImage == null) {
+                throw new BusinessException("无法读取图片数据");
+            }
+
+            int originalWidth = originalImage.getWidth();
+            int originalHeight = originalImage.getHeight();
+            // 释放 BufferedImage 引用，后续由 Thumbnailator 重新读取文件
+            originalImage = null;
+
+            // 计算目标尺寸
+            int targetWidth = originalWidth;
+            int targetHeight = originalHeight;
+
+            if (originalWidth > config.getMaxWidth() || originalHeight > config.getMaxHeight()) {
+                double widthRatio = (double) config.getMaxWidth() / originalWidth;
+                double heightRatio = (double) config.getMaxHeight() / originalHeight;
+                double ratio = Math.min(widthRatio, heightRatio);
+
+                targetWidth = (int) (originalWidth * ratio);
+                targetHeight = (int) (originalHeight * ratio);
+            }
+
+            String outputFormat = config.isConvertToWebP() ? "webp" : "jpg";
+
+            Thumbnails.of(source)
+                    .size(targetWidth, targetHeight)
+                    .outputQuality(config.getQuality())
+                    .outputFormat(outputFormat)
+                    .toFile(outputFile.toFile());
+
+            long resultSize = java.nio.file.Files.size(outputFile);
+            log.debug("Image processed to file: {}x{} -> {}x{}, size: {} -> {} bytes, format: {}",
+                    originalWidth, originalHeight, targetWidth, targetHeight,
+                    java.nio.file.Files.size(sourceFile), resultSize, outputFormat);
+
+            return resultSize;
+        } catch (IOException e) {
+            log.error("Failed to process image to file: {}", sourceFile, e);
+            throw new BusinessException("图片处理失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 基于文件生成缩略图，避免内存中持有完整 byte[]
+     *
+     * @param sourceFile 源图片文件路径
+     * @param outputFile 输出缩略图文件路径
+     * @param width 缩略图宽度
+     * @param height 缩略图高度
+     * @param quality 缩略图压缩质量（0.0-1.0），由外部配置注入，禁止硬编码
+     * @return 缩略图文件的字节数
+     */
+    public long generateThumbnailToFile(Path sourceFile, Path outputFile, int width, int height, double quality) {
+        try {
+            Thumbnails.of(sourceFile.toFile())
+                    .size(width, height)
+                    .outputQuality(quality)
+                    .outputFormat("jpg")
+                    .toFile(outputFile.toFile());
+
+            long resultSize = java.nio.file.Files.size(outputFile);
+            log.debug("Thumbnail generated to file: {}x{}, size: {} bytes", width, height, resultSize);
+
+            return resultSize;
+        } catch (IOException e) {
+            log.error("Failed to generate thumbnail to file: {}", sourceFile, e);
+            throw new BusinessException("缩略图生成失败: " + e.getMessage());
         }
     }
 }

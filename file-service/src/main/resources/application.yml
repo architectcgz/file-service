@@ -176,6 +176,7 @@ upload:
     thumbnail-width: 200
     thumbnail-height: 200
     convert-to-webp: true
+    temp-file-prefix: ${IMAGE_TEMP_FILE_PREFIX:img-upload-}
 
 # 租户配置
 tenant:

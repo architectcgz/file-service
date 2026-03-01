@@ -49,20 +49,41 @@ public class LocalStorageService implements StorageService {
     public String upload(byte[] data, String path, String contentType) {
         try {
             Path filePath = Paths.get(basePath, path);
-            
+
             // 确保父目录存或
             Path parentDir = filePath.getParent();
             if (parentDir != null && !Files.exists(parentDir)) {
                 Files.createDirectories(parentDir);
             }
-            
+
             Files.write(filePath, data);
             log.debug("File uploaded to local storage: {}", filePath);
-            
+
             return getUrl(path);
         } catch (IOException e) {
             log.error("Failed to upload file to local storage: {}", path, e);
             throw new BusinessException(String.format(FileServiceErrorMessages.FILE_UPLOAD_FAILED, e.getMessage()));
+        }
+    }
+
+    @Override
+    public String uploadFromFile(Path file, String storagePath, String contentType) {
+        try {
+            Path targetPath = Paths.get(basePath, storagePath);
+
+            // 确保父目录存在
+            Path parentDir = targetPath.getParent();
+            if (parentDir != null && !Files.exists(parentDir)) {
+                Files.createDirectories(parentDir);
+            }
+
+            Files.copy(file, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            log.debug("File uploaded to local storage from file: {}", targetPath);
+
+            return getUrl(storagePath);
+        } catch (IOException e) {
+            log.error("Failed to upload file to local storage from file: {}", storagePath, e);
+            throw new BusinessException("文件上传失败: " + e.getMessage());
         }
     }
     
