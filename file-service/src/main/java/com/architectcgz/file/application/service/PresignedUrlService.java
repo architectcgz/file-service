@@ -9,6 +9,7 @@ import com.architectcgz.file.domain.model.FileStatus;
 import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.StorageObjectRepository;
+import com.architectcgz.file.infrastructure.storage.ObjectMetadata;
 import com.architectcgz.file.infrastructure.storage.S3StorageService;
 import com.architectcgz.file.infrastructure.storage.StorageService;
 import com.github.f4b6a3.uuid.UuidCreator;
@@ -123,12 +124,14 @@ public class PresignedUrlService {
         log.info("Confirming upload: userId={}, storagePath={}, fileHash={}", 
                 userId, request.getStoragePath(), request.getFileHash());
         
-        // 1. 验证文件是否存在于 S3
-        if (!storageService.exists(request.getStoragePath())) {
-            log.error("File not found in S3: storagePath={}", request.getStoragePath());
-            throw new BusinessException("文件不存在，请先上传文件");
-        }
-        
+        // 1. 通过 HeadObject 验证文件存在并获取真实元数据（fileSize、contentType）
+        ObjectMetadata metadata = storageService.getObjectMetadata(request.getStoragePath());
+        long realFileSize = metadata.getFileSize();
+        String realContentType = metadata.getContentType();
+
+        log.info("Got object metadata from storage: storagePath={}, fileSize={}, contentType={}",
+                request.getStoragePath(), realFileSize, realContentType);
+
         // 2. 检查是否存在相同 hash 的 StorageObject（去重）
         Optional<StorageObject> existingStorageObject = storageObjectRepository.findByFileHash(appId, request.getFileHash());
         
@@ -145,19 +148,15 @@ public class PresignedUrlService {
             log.info("File deduplication: fileHash={}, storageObjectId={}, referenceCount={}", 
                     request.getFileHash(), storageObjectId, storageObject.getReferenceCount() + 1);
         } else {
-            // 新文件，创建 StorageObject
-            // 注意：我们无法直接获取文件大小和 contentType，需要从请求中获取或从 S3 查询
-            // 这里简化处理，假设客户端在确认时提供了这些信息
-            // 实际生产环境中，应该从 S3 HeadObject 获取这些信息
-            
+            // 新文件，创建 StorageObject，使用从 HeadObject 获取的真实元数据
             StorageObject storageObject = StorageObject.builder()
                     .id(generateFileId())
                     .appId(request.getAppId())
                     .fileHash(request.getFileHash())
                     .hashAlgorithm("MD5")
                     .storagePath(request.getStoragePath())
-                    .fileSize(0L) // TODO: 从 S3 HeadObject 获取
-                    .contentType("application/octet-stream") // TODO: 从 S3 HeadObject 获取
+                    .fileSize(realFileSize)
+                    .contentType(realContentType)
                     .referenceCount(1)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
@@ -180,8 +179,8 @@ public class PresignedUrlService {
                 .storageObjectId(storageObjectId)
                 .originalFilename(request.getOriginalFilename())
                 .storagePath(request.getStoragePath())
-                .fileSize(0L) // TODO: 从 S3 HeadObject 获取
-                .contentType("application/octet-stream") // TODO: 从 S3 HeadObject 获取
+                .fileSize(realFileSize)
+                .contentType(realContentType)
                 .fileHash(request.getFileHash())
                 .hashAlgorithm("MD5")
                 .status(FileStatus.COMPLETED)

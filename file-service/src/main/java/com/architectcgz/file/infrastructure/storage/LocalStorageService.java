@@ -120,4 +120,34 @@ public class LocalStorageService implements StorageService {
     public boolean exists(String path) {
         return Files.exists(Paths.get(basePath, path));
     }
+
+    @Override
+    public ObjectMetadata getObjectMetadata(String path) {
+        try {
+            Path filePath = Paths.get(basePath, path);
+            if (!Files.exists(filePath)) {
+                throw new BusinessException("文件不存在: " + path);
+            }
+
+            long fileSize = Files.size(filePath);
+            String contentType = Files.probeContentType(filePath);
+            if (contentType == null) {
+                contentType = "application/octet-stream";
+            }
+
+            log.debug("Got object metadata from local storage: path={}, size={}, contentType={}",
+                    path, fileSize, contentType);
+
+            return ObjectMetadata.builder()
+                    .fileSize(fileSize)
+                    .contentType(contentType)
+                    .build();
+        } catch (BusinessException e) {
+            throw e;
+        } catch (IOException e) {
+            log.error("Failed to get object metadata from local storage: path={}, error={}",
+                    path, e.getMessage(), e);
+            throw new BusinessException("获取文件元数据失败: " + e.getMessage(), e);
+        }
+    }
 }
