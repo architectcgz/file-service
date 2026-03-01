@@ -1,6 +1,9 @@
 package com.architectcgz.file.domain.repository;
 
 import com.architectcgz.file.application.dto.FileQuery;
+import com.architectcgz.file.domain.model.ContentTypeCount;
+import com.architectcgz.file.domain.model.StorageStatisticsAggregation;
+import com.architectcgz.file.domain.model.TenantStorageAggregation;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
@@ -91,4 +94,27 @@ public interface FileRecordRepository {
      * @return 是否删除成功
      */
     boolean deleteById(String id);
+
+    /**
+     * 存储统计聚合查询（SQL 层完成 COUNT/SUM）
+     *
+     * @param appId 应用ID（可选，为 null 时查询所有租户）
+     * @return 聚合统计结果
+     */
+    StorageStatisticsAggregation getStorageStatisticsAggregation(String appId);
+
+    /**
+     * 按内容类型分组统计文件数量（SQL 层完成 GROUP BY）
+     *
+     * @param appId 应用ID（可选，为 null 时查询所有租户）
+     * @return 各内容类型的文件计数列表
+     */
+    List<ContentTypeCount> getFileCountByContentType(String appId);
+
+    /**
+     * 按租户分组统计存储空间（SQL 层完成 GROUP BY）
+     *
+     * @return 各租户的存储空间聚合列表
+     */
+    List<TenantStorageAggregation> getStorageByTenant();
 }

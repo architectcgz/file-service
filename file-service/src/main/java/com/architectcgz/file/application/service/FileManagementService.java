@@ -152,50 +152,37 @@ public class FileManagementService {
     
     /**
      * 获取存储统计
-     * 
+     * 聚合计算下推到 SQL 层，避免全量加载文件记录到内存导致 OOM
+     *
      * @return 存储统计信息
      */
     public StorageStatistics getStorageStatistics() {
-        log.debug("Getting storage statistics");
-        
-        // 查询所有文件
-        FileQuery query = new FileQuery();
-        query.setSize(Integer.MAX_VALUE);
-        List<FileRecord> allFiles = fileRecordRepository.findByQuery(query);
-        
-        // 统计总文件数和总存储空间
-        long totalFiles = allFiles.size();
-        long totalStorageBytes = allFiles.stream()
-                .mapToLong(FileRecord::getFileSize)
-                .sum();
-        
-        // 统计公开和私有文件数量
-        long publicFiles = allFiles.stream()
-                .filter(f -> f.getAccessLevel() == AccessLevel.PUBLIC)
-                .count();
-        long privateFiles = allFiles.stream()
-                .filter(f -> f.getAccessLevel() == AccessLevel.PRIVATE)
-                .count();
-        
-        // 统计按文件类型分布
-        Map<String, Long> filesByType = allFiles.stream()
-                .collect(Collectors.groupingBy(
-                        FileRecord::getContentType,
-                        Collectors.counting()
+        log.debug("Getting storage statistics via SQL aggregation");
+
+        // 1. SQL 聚合：总文件数、总存储空间、公开/私有文件数（null 表示不过滤租户）
+        StorageStatisticsAggregation aggregation = fileRecordRepository.getStorageStatisticsAggregation(null);
+
+        // 2. SQL 聚合：按 content_type 分组计数（null 表示不过滤租户）
+        List<ContentTypeCount> typeCounts = fileRecordRepository.getFileCountByContentType(null);
+        Map<String, Long> filesByType = typeCounts.stream()
+                .collect(Collectors.toMap(
+                        ContentTypeCount::getContentType,
+                        ContentTypeCount::getFileCount
                 ));
-        
-        // 统计按租户存储空间分布
-        Map<String, Long> storageByTenant = allFiles.stream()
-                .collect(Collectors.groupingBy(
-                        FileRecord::getAppId,
-                        Collectors.summingLong(FileRecord::getFileSize)
+
+        // 3. SQL 聚合：按租户分组统计存储空间
+        List<TenantStorageAggregation> tenantAggregations = fileRecordRepository.getStorageByTenant();
+        Map<String, Long> storageByTenant = tenantAggregations.stream()
+                .collect(Collectors.toMap(
+                        TenantStorageAggregation::getAppId,
+                        TenantStorageAggregation::getStorageBytes
                 ));
-        
+
         return StorageStatistics.builder()
-                .totalFiles(totalFiles)
-                .totalStorageBytes(totalStorageBytes)
-                .publicFiles(publicFiles)
-                .privateFiles(privateFiles)
+                .totalFiles(aggregation.getTotalFiles())
+                .totalStorageBytes(aggregation.getTotalStorageBytes())
+                .publicFiles(aggregation.getPublicFiles())
+                .privateFiles(aggregation.getPrivateFiles())
                 .filesByType(filesByType)
                 .storageByTenant(storageByTenant)
                 .statisticsTime(LocalDateTime.now())
