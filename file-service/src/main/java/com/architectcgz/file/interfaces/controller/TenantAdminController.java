@@ -5,6 +5,8 @@ import com.architectcgz.file.application.dto.TenantDetailResponse;
 import com.architectcgz.file.application.dto.UpdateTenantRequest;
 import com.architectcgz.file.application.dto.UpdateTenantStatusRequest;
 import com.architectcgz.file.application.service.TenantManagementService;
+import com.architectcgz.file.common.context.AdminContext;
+import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.result.ApiResponse;
 import com.architectcgz.file.domain.model.Tenant;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +30,7 @@ public class TenantAdminController {
      */
     @PostMapping
     public ApiResponse<Tenant> createTenant(@RequestBody CreateTenantRequest request) {
+        requireAdminUserId();
         log.info("Creating tenant: {}", request.getTenantId());
         Tenant tenant = tenantManagementService.createTenant(request);
         return ApiResponse.success(tenant);
@@ -38,6 +41,7 @@ public class TenantAdminController {
      */
     @GetMapping
     public ApiResponse<List<Tenant>> listTenants() {
+        requireAdminUserId();
         log.info("Listing all tenants");
         List<Tenant> tenants = tenantManagementService.listTenants();
         return ApiResponse.success(tenants);
@@ -48,6 +52,7 @@ public class TenantAdminController {
      */
     @GetMapping("/{tenantId}")
     public ApiResponse<TenantDetailResponse> getTenantDetail(@PathVariable String tenantId) {
+        requireAdminUserId();
         log.info("Getting tenant detail: {}", tenantId);
         TenantDetailResponse detail = tenantManagementService.getTenantDetail(tenantId);
         return ApiResponse.success(detail);
@@ -60,6 +65,7 @@ public class TenantAdminController {
     public ApiResponse<Tenant> updateTenant(
             @PathVariable String tenantId,
             @RequestBody UpdateTenantRequest request) {
+        requireAdminUserId();
         log.info("Updating tenant: {}", tenantId);
         Tenant tenant = tenantManagementService.updateTenant(tenantId, request);
         return ApiResponse.success(tenant);
@@ -72,6 +78,7 @@ public class TenantAdminController {
     public ApiResponse<Void> updateTenantStatus(
             @PathVariable String tenantId,
             @RequestBody UpdateTenantStatusRequest request) {
+        requireAdminUserId();
         log.info("Updating tenant status: {} -> {}", tenantId, request.getStatus());
         tenantManagementService.updateTenantStatus(tenantId, request.getStatus());
         return ApiResponse.success(null);
@@ -82,8 +89,17 @@ public class TenantAdminController {
      */
     @DeleteMapping("/{tenantId}")
     public ApiResponse<Void> deleteTenant(@PathVariable String tenantId) {
+        requireAdminUserId();
         log.info("Deleting tenant: {}", tenantId);
         tenantManagementService.deleteTenant(tenantId);
         return ApiResponse.success(null);
+    }
+
+    private String requireAdminUserId() {
+        String adminUserId = AdminContext.getAdminUser();
+        if (adminUserId == null || adminUserId.isBlank()) {
+            throw new AccessDeniedException("未获取到管理员身份");
+        }
+        return adminUserId;
     }
 }

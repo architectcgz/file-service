@@ -5,11 +5,14 @@ import com.architectcgz.file.application.dto.TenantDetailResponse;
 import com.architectcgz.file.application.dto.UpdateTenantRequest;
 import com.architectcgz.file.application.dto.UpdateTenantStatusRequest;
 import com.architectcgz.file.application.service.TenantManagementService;
+import com.architectcgz.file.common.context.AdminContext;
 import com.architectcgz.file.common.exception.TenantNotFoundException;
 import com.architectcgz.file.config.WebMvcTestConfig;
 import com.architectcgz.file.domain.model.Tenant;
 import com.architectcgz.file.domain.model.TenantStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,8 +29,9 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -50,6 +54,16 @@ class TenantAdminControllerTest {
     
     @MockBean
     private TenantManagementService tenantManagementService;
+
+    @BeforeEach
+    void setUp() {
+        AdminContext.setAdminUser("admin-1");
+    }
+
+    @AfterEach
+    void tearDown() {
+        AdminContext.clear();
+    }
     
     /**
      * 测试创建租户接口
@@ -353,5 +367,18 @@ class TenantAdminControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-App-Id", "test-app"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void testListTenantsWithoutAdminIdentityReturnsForbidden() throws Exception {
+        AdminContext.clear();
+
+        mockMvc.perform(get("/api/v1/admin/tenants")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-App-Id", "test-app"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+
+        verifyNoInteractions(tenantManagementService);
     }
 }
