@@ -41,16 +41,13 @@ public class PresignedController {
     @PostMapping("/presign")
     public ApiResponse<PresignedUploadResponse> getPresignedUploadUrl(
             @Valid @RequestBody PresignedUploadRequest request,
-            HttpServletRequest httpRequest,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            HttpServletRequest httpRequest) {
         
         String appId = (String) httpRequest.getAttribute("appId");
+        String userId = resolveUserId();
         
         log.info("Get presigned URL - appId: {}, userId: {}, fileName: {}, fileSize: {}", 
                 appId, userId, request.getFileName(), request.getFileSize());
-        
-        userId = resolveUserId(userId);
-        
         PresignedUploadResponse response = presignedUrlService.getPresignedUploadUrl(appId, request, userId);
         
         log.info("Get presigned URL success - appId: {}, userId: {}, storagePath: {}", 
@@ -71,16 +68,13 @@ public class PresignedController {
     @PostMapping("/confirm")
     public ApiResponse<ConfirmUploadResponse> confirmUpload(
             @Valid @RequestBody ConfirmUploadRequest request,
-            HttpServletRequest httpRequest,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            HttpServletRequest httpRequest) {
         
         String appId = (String) httpRequest.getAttribute("appId");
+        String userId = resolveUserId();
         
         log.info("Confirm upload - appId: {}, userId: {}, storagePath: {}", 
                 appId, userId, request.getStoragePath());
-        
-        userId = resolveUserId(userId);
-        
         Map<String, String> result = presignedUrlService.confirmUpload(appId, request, userId);
         
         ConfirmUploadResponse response = new ConfirmUploadResponse(
@@ -94,11 +88,8 @@ public class PresignedController {
         return ApiResponse.success(response);
     }
 
-    private String resolveUserId(String headerUserId) {
+    private String resolveUserId() {
         String userId = UserContext.getUserId();
-        if (userId == null || userId.isBlank()) {
-            userId = headerUserId;
-        }
         if (userId == null || userId.isBlank()) {
             throw new AccessDeniedException("未获取到用户身份");
         }

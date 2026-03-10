@@ -3,6 +3,7 @@ package com.architectcgz.file.interfaces.controller;
 import com.architectcgz.file.application.dto.*;
 import com.architectcgz.file.application.service.FileManagementService;
 import com.architectcgz.file.common.context.AdminContext;
+import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.result.ApiResponse;
 import com.architectcgz.file.common.result.PageResponse;
 import com.architectcgz.file.domain.model.AccessLevel;
@@ -104,7 +105,7 @@ public class FileAdminController {
     public ApiResponse<Void> deleteFile(@PathVariable String fileId) {
         log.info("Admin deleting file: {}", fileId);
         
-        String adminUserId = AdminContext.getAdminUser();
+        String adminUserId = resolveAdminUserId();
         
         fileManagementService.deleteFile(fileId, adminUserId);
         return ApiResponse.success(null);
@@ -120,10 +121,18 @@ public class FileAdminController {
     public ApiResponse<BatchDeleteResult> batchDeleteFiles(@RequestBody BatchDeleteRequest request) {
         log.info("Admin batch deleting {} files", request.getFileIds().size());
         
-        String adminUserId = AdminContext.getAdminUser();
+        String adminUserId = resolveAdminUserId();
         
         BatchDeleteResult result = fileManagementService.batchDeleteFiles(request.getFileIds(), adminUserId);
         return ApiResponse.success(result);
+    }
+
+    private String resolveAdminUserId() {
+        String adminUserId = AdminContext.getAdminUser();
+        if (adminUserId == null || adminUserId.isBlank()) {
+            throw new AccessDeniedException("未获取到管理员身份");
+        }
+        return adminUserId;
     }
     
     /**

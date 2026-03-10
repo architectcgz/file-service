@@ -41,16 +41,13 @@ public class MultipartController {
     @PostMapping("/init")
     public ApiResponse<InitUploadResponse> initUpload(
             @Valid @RequestBody InitUploadRequest request,
-            HttpServletRequest httpRequest,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            HttpServletRequest httpRequest) {
         
         String appId = (String) httpRequest.getAttribute("appId");
+        String userId = resolveUserId();
         
         log.info("Init multipart upload - appId: {}, userId: {}, fileName: {}, fileSize: {}", 
                 appId, userId, request.getFileName(), request.getFileSize());
-        
-        userId = resolveUserId(userId);
-        
         InitUploadResponse response = multipartUploadService.initUpload(appId, request, userId);
         
         log.info("Init multipart upload success - appId: {}, userId: {}, taskId: {}", 
@@ -74,16 +71,13 @@ public class MultipartController {
             @PathVariable String taskId,
             @PathVariable int partNumber,
             @RequestBody byte[] data,
-            HttpServletRequest httpRequest,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            HttpServletRequest httpRequest) {
         
         String appId = (String) httpRequest.getAttribute("appId");
+        String userId = resolveUserId();
         
         log.info("Upload part - appId: {}, userId: {}, taskId: {}, partNumber: {}, size: {}", 
                 appId, userId, taskId, partNumber, data.length);
-        
-        userId = resolveUserId(userId);
-        
         String etag = multipartUploadService.uploadPart(taskId, partNumber, data, userId);
         
         return ApiResponse.success(etag);
@@ -100,16 +94,13 @@ public class MultipartController {
     @PostMapping("/{taskId}/complete")
     public ApiResponse<CompleteUploadResponse> completeUpload(
             @PathVariable String taskId,
-            HttpServletRequest httpRequest,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            HttpServletRequest httpRequest) {
         
         String appId = (String) httpRequest.getAttribute("appId");
+        String userId = resolveUserId();
         
         log.info("Complete multipart upload - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
-        
-        userId = resolveUserId(userId);
-        
         String fileId = multipartUploadService.completeUpload(taskId, userId);
         FileUrlResponse fileUrl = fileAccessService.getFileUrl(appId, fileId, userId);
         String url = fileUrl.getUrl();
@@ -133,16 +124,13 @@ public class MultipartController {
     @DeleteMapping("/{taskId}")
     public ApiResponse<Void> abortUpload(
             @PathVariable String taskId,
-            HttpServletRequest httpRequest,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            HttpServletRequest httpRequest) {
         
         String appId = (String) httpRequest.getAttribute("appId");
+        String userId = resolveUserId();
         
         log.info("Abort multipart upload - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
-        
-        userId = resolveUserId(userId);
-        
         multipartUploadService.abortUpload(taskId, userId);
         
         log.info("Abort multipart upload success - appId: {}, userId: {}, taskId: {}", 
@@ -162,16 +150,13 @@ public class MultipartController {
     @GetMapping("/{taskId}/progress")
     public ApiResponse<UploadProgressResponse> getProgress(
             @PathVariable String taskId,
-            HttpServletRequest httpRequest,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            HttpServletRequest httpRequest) {
         
         String appId = (String) httpRequest.getAttribute("appId");
+        String userId = resolveUserId();
         
         log.info("Get upload progress - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
-        
-        userId = resolveUserId(userId);
-        
         UploadProgressResponse response = multipartUploadService.getProgress(taskId, userId);
         
         return ApiResponse.success(response);
@@ -186,25 +171,19 @@ public class MultipartController {
      */
     @GetMapping("/tasks")
     public ApiResponse<List<UploadTask>> listTasks(
-            HttpServletRequest httpRequest,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            HttpServletRequest httpRequest) {
         
         String appId = (String) httpRequest.getAttribute("appId");
+        String userId = resolveUserId();
         
         log.info("List upload tasks - appId: {}, userId: {}", appId, userId);
-        
-        userId = resolveUserId(userId);
-        
         List<UploadTask> tasks = multipartUploadService.listTasks(appId, userId);
         
         return ApiResponse.success(tasks);
     }
 
-    private String resolveUserId(String headerUserId) {
+    private String resolveUserId() {
         String userId = UserContext.getUserId();
-        if (userId == null || userId.isBlank()) {
-            userId = headerUserId;
-        }
         if (userId == null || userId.isBlank()) {
             throw new AccessDeniedException("未获取到用户身份");
         }

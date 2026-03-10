@@ -25,6 +25,7 @@ logs/
 # Temp
 *.tmp
 *.swp
+.jqwik-database
 
 # Docs
 /docs/

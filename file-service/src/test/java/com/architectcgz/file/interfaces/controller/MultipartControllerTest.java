@@ -5,8 +5,11 @@ import com.architectcgz.file.application.dto.InitUploadRequest;
 import com.architectcgz.file.application.dto.InitUploadResponse;
 import com.architectcgz.file.application.service.FileAccessService;
 import com.architectcgz.file.application.service.MultipartUploadService;
+import com.architectcgz.file.common.context.UserContext;
+import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.config.WebMvcTestConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,12 +19,13 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.ArrayList;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -48,6 +52,11 @@ class MultipartControllerTest {
 
     @MockBean
     private FileAccessService fileAccessService;
+
+    @AfterEach
+    void tearDown() {
+        UserContext.clear();
+    }
     
     @Test
     void testInitUpload() throws Exception {
@@ -68,12 +77,12 @@ class MultipartControllerTest {
         
         when(multipartUploadService.initUpload(anyString(), any(InitUploadRequest.class), anyString()))
                 .thenReturn(response);
+        UserContext.setUserId("1");
         
         // 执行测试
         mockMvc.perform(post("/api/v1/multipart/init")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-App-Id", "test-app")
-                        .header("X-User-Id", "1")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -93,13 +102,13 @@ class MultipartControllerTest {
         
         when(multipartUploadService.uploadPart(eq(taskId), eq(partNumber), any(byte[].class), anyString()))
                 .thenReturn(etag);
+        UserContext.setUserId("1");
         
         // 执行测试 - send raw bytes as request body
         mockMvc.perform(put("/api/v1/multipart/{taskId}/parts/{partNumber}", taskId, partNumber)
                         .contentType(MediaType.APPLICATION_OCTET_STREAM)
                         .content(data)
-                        .header("X-App-Id", "test-app")
-                        .header("X-User-Id", "1"))
+                        .header("X-App-Id", "test-app"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data").value(etag));
@@ -113,15 +122,64 @@ class MultipartControllerTest {
         byte[] data = "test data".getBytes();
         
         when(multipartUploadService.uploadPart(eq(taskId), eq(partNumber), any(byte[].class), anyString()))
-                .thenThrow(new RuntimeException("Upload task not found"));
+                .thenThrow(new BusinessException("UPLOAD_TASK_NOT_FOUND", "Upload task not found"));
+        UserContext.setUserId("1");
         
         // Execute test - should return error
         mockMvc.perform(put("/api/v1/multipart/{taskId}/parts/{partNumber}", taskId, partNumber)
                         .contentType(MediaType.APPLICATION_OCTET_STREAM)
                         .content(data)
+                        .header("X-App-Id", "test-app"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400));
+    }
+
+    @Test
+    void testInitUploadUsesUserContextBeforeHeader() throws Exception {
+        InitUploadRequest request = new InitUploadRequest();
+        request.setFileName("test-video.mp4");
+        request.setFileSize(104857600L);
+        request.setFileHash("d41d8cd98f00b204e9800998ecf8427e");
+        request.setContentType("video/mp4");
+
+        InitUploadResponse response = InitUploadResponse.builder()
+                .taskId("test-task-id")
+                .uploadId("test-upload-id")
+                .chunkSize(5242880)
+                .totalParts(20)
+                .completedParts(new ArrayList<>())
+                .build();
+
+        UserContext.setUserId("context-user");
+        when(multipartUploadService.initUpload(anyString(), any(InitUploadRequest.class), anyString()))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/v1/multipart/init")
+                        .contentType(MediaType.APPLICATION_JSON)
                         .header("X-App-Id", "test-app")
-                        .header("X-User-Id", "1"))
-                .andExpect(status().is5xxServerError());
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        verify(multipartUploadService).initUpload(anyString(), any(InitUploadRequest.class), eq("context-user"));
+    }
+
+    @Test
+    void testInitUploadWithoutIdentityReturnsForbidden() throws Exception {
+        InitUploadRequest request = new InitUploadRequest();
+        request.setFileName("test-video.mp4");
+        request.setFileSize(104857600L);
+        request.setFileHash("d41d8cd98f00b204e9800998ecf8427e");
+        request.setContentType("video/mp4");
+
+        mockMvc.perform(post("/api/v1/multipart/init")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-App-Id", "test-app")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+
+        verifyNoInteractions(multipartUploadService);
     }
 
     @Test
@@ -132,10 +190,10 @@ class MultipartControllerTest {
                         .url("https://cdn.example.com/files/file-001")
                         .permanent(true)
                         .build());
+        UserContext.setUserId("1");
 
         mockMvc.perform(post("/api/v1/multipart/{taskId}/complete", "task-001")
-                        .header("X-App-Id", "test-app")
-                        .header("X-User-Id", "1"))
+                        .header("X-App-Id", "test-app"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.fileId").value("file-001"))

@@ -6,7 +6,10 @@ import com.architectcgz.file.application.dto.DirectUploadInitResponse;
 import com.architectcgz.file.application.dto.DirectUploadPartUrlRequest;
 import com.architectcgz.file.application.dto.DirectUploadPartUrlResponse;
 import com.architectcgz.file.application.service.DirectUploadService;
+import com.architectcgz.file.common.context.UserContext;
+import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.result.ApiResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,9 +41,10 @@ public class DirectUploadController {
      */
     @PostMapping("/init")
     public ApiResponse<DirectUploadInitResponse> initUpload(
-            @RequestHeader("X-App-Id") String appId,
-            @RequestHeader("X-User-Id") String userId,
+            HttpServletRequest httpRequest,
             @Valid @RequestBody DirectUploadInitRequest request) {
+        String appId = (String) httpRequest.getAttribute("appId");
+        String userId = resolveUserId();
         
         log.info("初始化直传上传: appId={}, userId={}, fileName={}", 
                 appId, userId, request.getFileName());
@@ -61,8 +65,8 @@ public class DirectUploadController {
      */
     @PostMapping("/part-urls")
     public ApiResponse<DirectUploadPartUrlResponse> getPartUploadUrls(
-            @RequestHeader("X-User-Id") String userId,
             @Valid @RequestBody DirectUploadPartUrlRequest request) {
+        String userId = resolveUserId();
         
         log.info("获取分片上传URL: userId={}, taskId={}, partCount={}", 
                 userId, request.getTaskId(), request.getPartNumbers().size());
@@ -83,13 +87,21 @@ public class DirectUploadController {
      */
     @PostMapping("/complete")
     public ApiResponse<String> completeUpload(
-            @RequestHeader("X-User-Id") String userId,
             @Valid @RequestBody DirectUploadCompleteRequest request) {
+        String userId = resolveUserId();
         
         log.info("完成直传上传: userId={}, taskId={}", userId, request.getTaskId());
         
         String fileId = directUploadService.completeDirectUpload(request, userId);
         
         return ApiResponse.success(fileId);
+    }
+
+    private String resolveUserId() {
+        String userId = UserContext.getUserId();
+        if (userId == null || userId.isBlank()) {
+            throw new AccessDeniedException("未获取到用户身份");
+        }
+        return userId;
     }
 }

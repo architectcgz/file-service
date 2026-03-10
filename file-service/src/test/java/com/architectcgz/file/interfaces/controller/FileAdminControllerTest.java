@@ -2,6 +2,7 @@ package com.architectcgz.file.interfaces.controller;
 
 import com.architectcgz.file.application.dto.*;
 import com.architectcgz.file.application.service.FileManagementService;
+import com.architectcgz.file.common.context.AdminContext;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.common.result.PageResponse;
 import com.architectcgz.file.config.WebMvcTestConfig;
@@ -9,6 +10,7 @@ import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,8 +26,10 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -49,6 +53,11 @@ class FileAdminControllerTest {
     
     @MockBean
     private FileManagementService fileManagementService;
+
+    @AfterEach
+    void tearDown() {
+        AdminContext.clear();
+    }
     
     @Test
     void testListFilesWithoutFilters() throws Exception {
@@ -245,6 +254,7 @@ class FileAdminControllerTest {
     
     @Test
     void testDeleteFile() throws Exception {
+        AdminContext.setAdminUser("admin-1");
         mockMvc.perform(delete("/api/v1/admin/files/file-1")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(200));
@@ -252,15 +262,39 @@ class FileAdminControllerTest {
     
     @Test
     void testDeleteFileNotFound() throws Exception {
+        AdminContext.setAdminUser("admin-1");
         doThrow(new BusinessException("FILE_NOT_FOUND", "File not found: non-existent"))
-                .when(fileManagementService).deleteFile(eq("non-existent"), nullable(String.class));
+                .when(fileManagementService).deleteFile(eq("non-existent"), eq("admin-1"));
         mockMvc.perform(delete("/api/v1/admin/files/non-existent")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app"))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void testDeleteFileWithoutAdminIdentityReturnsForbidden() throws Exception {
+        mockMvc.perform(delete("/api/v1/admin/files/file-1")
+                        .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+
+        verifyNoInteractions(fileManagementService);
+    }
+
+    @Test
+    void testDeleteFileUsesAdminContext() throws Exception {
+        AdminContext.setAdminUser("admin-ctx");
+
+        mockMvc.perform(delete("/api/v1/admin/files/file-1")
+                        .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        verify(fileManagementService).deleteFile("file-1", "admin-ctx");
+    }
     
     @Test
     void testBatchDeleteFilesAllSuccess() throws Exception {
+        AdminContext.setAdminUser("admin-1");
         BatchDeleteRequest request = new BatchDeleteRequest();
         request.setFileIds(Arrays.asList("file-1", "file-2", "file-3"));
         BatchDeleteResult result = new BatchDeleteResult();
@@ -268,7 +302,7 @@ class FileAdminControllerTest {
         result.setSuccessCount(3);
         result.setFailureCount(0);
         result.setFailures(Collections.emptyList());
-        when(fileManagementService.batchDeleteFiles(anyList(), nullable(String.class))).thenReturn(result);
+        when(fileManagementService.batchDeleteFiles(anyList(), eq("admin-1"))).thenReturn(result);
         mockMvc.perform(post("/api/v1/admin/files/batch-delete")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app")
                         .content(objectMapper.writeValueAsString(request)))
@@ -282,6 +316,7 @@ class FileAdminControllerTest {
     
     @Test
     void testBatchDeleteFilesPartialFailure() throws Exception {
+        AdminContext.setAdminUser("admin-1");
         BatchDeleteRequest request = new BatchDeleteRequest();
         request.setFileIds(Arrays.asList("file-1", "file-2", "file-3"));
         BatchDeleteResult.DeleteFailure failure = new BatchDeleteResult.DeleteFailure();
@@ -292,7 +327,7 @@ class FileAdminControllerTest {
         result.setSuccessCount(2);
         result.setFailureCount(1);
         result.setFailures(Arrays.asList(failure));
-        when(fileManagementService.batchDeleteFiles(anyList(), nullable(String.class))).thenReturn(result);
+        when(fileManagementService.batchDeleteFiles(anyList(), eq("admin-1"))).thenReturn(result);
         mockMvc.perform(post("/api/v1/admin/files/batch-delete")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app")
                         .content(objectMapper.writeValueAsString(request)))
@@ -307,6 +342,7 @@ class FileAdminControllerTest {
     
     @Test
     void testBatchDeleteFilesEmptyList() throws Exception {
+        AdminContext.setAdminUser("admin-1");
         BatchDeleteRequest request = new BatchDeleteRequest();
         request.setFileIds(Collections.emptyList());
         BatchDeleteResult result = new BatchDeleteResult();
@@ -314,7 +350,7 @@ class FileAdminControllerTest {
         result.setSuccessCount(0);
         result.setFailureCount(0);
         result.setFailures(Collections.emptyList());
-        when(fileManagementService.batchDeleteFiles(anyList(), nullable(String.class))).thenReturn(result);
+        when(fileManagementService.batchDeleteFiles(anyList(), eq("admin-1"))).thenReturn(result);
         mockMvc.perform(post("/api/v1/admin/files/batch-delete")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app")
                         .content(objectMapper.writeValueAsString(request)))
@@ -322,6 +358,20 @@ class FileAdminControllerTest {
                 .andExpect(jsonPath("$.data.totalRequested").value(0))
                 .andExpect(jsonPath("$.data.successCount").value(0))
                 .andExpect(jsonPath("$.data.failureCount").value(0));
+    }
+
+    @Test
+    void testBatchDeleteFilesWithoutAdminIdentityReturnsForbidden() throws Exception {
+        BatchDeleteRequest request = new BatchDeleteRequest();
+        request.setFileIds(Collections.singletonList("file-1"));
+
+        mockMvc.perform(post("/api/v1/admin/files/batch-delete")
+                        .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+
+        verifyNoInteractions(fileManagementService);
     }
     
     @Test
