@@ -23,11 +23,11 @@ public interface FileRecordMapper {
      */
     @Insert("""
         INSERT INTO file_records (
-            id, app_id, user_id, storage_object_id, original_name, storage_path, file_size, 
-            content_type, file_hash, access_level, status, created_at, updated_at
+            id, app_id, user_id, storage_object_id, original_name, storage_path, file_size,
+            content_type, file_hash, hash_algorithm, access_level, status, created_at, updated_at
         ) VALUES (
             #{id}, #{appId}, #{userId}, #{storageObjectId}, #{originalFilename}, #{storagePath}, #{fileSize},
-            #{contentType}, #{fileHash}, #{accessLevel}, #{status}, #{createdAt}, #{updatedAt}
+            #{contentType}, #{fileHash}, #{hashAlgorithm}, #{accessLevel}, #{status}, #{createdAt}, #{updatedAt}
         )
     """)
     void insert(FileRecordPO fileRecord);
@@ -40,7 +40,7 @@ public interface FileRecordMapper {
      */
     @Select("""
         SELECT id, app_id, user_id, storage_object_id, original_name, storage_path, file_size,
-               content_type, file_hash, access_level, status, created_at, updated_at
+               content_type, file_hash, hash_algorithm, access_level, status, created_at, updated_at
         FROM file_records
         WHERE id = #{id}
     """)
@@ -54,6 +54,7 @@ public interface FileRecordMapper {
         @Result(property = "fileSize", column = "file_size"),
         @Result(property = "contentType", column = "content_type"),
         @Result(property = "fileHash", column = "file_hash"),
+        @Result(property = "hashAlgorithm", column = "hash_algorithm"),
         @Result(property = "accessLevel", column = "access_level"),
         @Result(property = "status", column = "status"),
         @Result(property = "createdAt", column = "created_at"),
@@ -71,7 +72,7 @@ public interface FileRecordMapper {
      */
     @Select("""
         SELECT id, app_id, user_id, storage_object_id, original_name, storage_path, file_size,
-               content_type, file_hash, access_level, status, created_at, updated_at
+               content_type, file_hash, hash_algorithm, access_level, status, created_at, updated_at
         FROM file_records
         WHERE app_id = #{appId} AND user_id = #{userId} AND file_hash = #{fileHash}
         ORDER BY created_at DESC
@@ -90,7 +91,7 @@ public interface FileRecordMapper {
      */
     @Select("""
         SELECT id, app_id, user_id, storage_object_id, original_name, storage_path, file_size,
-               content_type, file_hash, access_level, status, created_at, updated_at
+               content_type, file_hash, hash_algorithm, access_level, status, created_at, updated_at
         FROM file_records
         WHERE app_id = #{appId} AND file_hash = #{fileHash} AND status = 'COMPLETED'
         ORDER BY created_at DESC

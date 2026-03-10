@@ -7,6 +7,7 @@ import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
+import com.architectcgz.file.infrastructure.cache.FileUrlCacheManager;
 import com.architectcgz.file.infrastructure.config.S3Properties;
 import com.architectcgz.file.infrastructure.storage.StorageService;
 import net.jqwik.api.*;
@@ -51,13 +52,10 @@ class FileAccessServicePropertyTest {
         FileRecordRepository mockRepository = mock(FileRecordRepository.class);
         StorageService mockStorageService = mock(StorageService.class);
         S3Properties mockS3Properties = mock(S3Properties.class);
-        @SuppressWarnings("unchecked")
-        org.springframework.data.redis.core.RedisTemplate<String, String> mockRedisTemplate = 
-                mock(org.springframework.data.redis.core.RedisTemplate.class);
-        com.architectcgz.file.infrastructure.config.CacheProperties mockCacheProperties = 
-                mock(com.architectcgz.file.infrastructure.config.CacheProperties.class);
+        FileUrlCacheManager mockFileUrlCacheManager = mock(FileUrlCacheManager.class);
         
         when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
+        when(mockFileUrlCacheManager.get(fileRecord.getId())).thenReturn(null);
         
         // 公开文件应该调用 getPublicUrl 而不是 generatePresignedUrl
         String expectedPublicUrl = "https://cdn.example.com/" + fileRecord.getStoragePath();
@@ -68,8 +66,7 @@ class FileAccessServicePropertyTest {
                 mockRepository, 
                 mockStorageService, 
                 mockS3Properties,
-                mockRedisTemplate,
-                mockCacheProperties
+                mockFileUrlCacheManager
         );
         ReflectionTestUtils.setField(service, "privateUrlExpireSeconds", 3600);
         
@@ -113,21 +110,17 @@ class FileAccessServicePropertyTest {
         FileRecordRepository mockRepository = mock(FileRecordRepository.class);
         StorageService mockStorageService = mock(StorageService.class);
         S3Properties mockS3Properties = mock(S3Properties.class);
-        @SuppressWarnings("unchecked")
-        org.springframework.data.redis.core.RedisTemplate<String, String> mockRedisTemplate = 
-                mock(org.springframework.data.redis.core.RedisTemplate.class);
-        com.architectcgz.file.infrastructure.config.CacheProperties mockCacheProperties = 
-                mock(com.architectcgz.file.infrastructure.config.CacheProperties.class);
+        FileUrlCacheManager mockFileUrlCacheManager = mock(FileUrlCacheManager.class);
         
         when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
+        when(mockFileUrlCacheManager.get(fileRecord.getId())).thenReturn(null);
         
         // 创建 FileAccessService
         FileAccessService service = new FileAccessService(
                 mockRepository, 
                 mockStorageService, 
                 mockS3Properties,
-                mockRedisTemplate,
-                mockCacheProperties
+                mockFileUrlCacheManager
         );
         ReflectionTestUtils.setField(service, "privateUrlExpireSeconds", 3600);
         
@@ -171,13 +164,10 @@ class FileAccessServicePropertyTest {
         FileRecordRepository mockRepository = mock(FileRecordRepository.class);
         StorageService mockStorageService = mock(StorageService.class);
         S3Properties mockS3Properties = mock(S3Properties.class);
-        @SuppressWarnings("unchecked")
-        org.springframework.data.redis.core.RedisTemplate<String, String> mockRedisTemplate = 
-                mock(org.springframework.data.redis.core.RedisTemplate.class);
-        com.architectcgz.file.infrastructure.config.CacheProperties mockCacheProperties = 
-                mock(com.architectcgz.file.infrastructure.config.CacheProperties.class);
+        FileUrlCacheManager mockFileUrlCacheManager = mock(FileUrlCacheManager.class);
         
         when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
+        when(mockFileUrlCacheManager.get(fileRecord.getId())).thenReturn(null);
         
         // 私有文件应该调用 generatePresignedUrl
         String expectedPresignedUrl = "https://s3.example.com/bucket/" + fileRecord.getStoragePath() + 
@@ -190,8 +180,7 @@ class FileAccessServicePropertyTest {
                 mockRepository, 
                 mockStorageService, 
                 mockS3Properties,
-                mockRedisTemplate,
-                mockCacheProperties
+                mockFileUrlCacheManager
         );
         int expireSeconds = 3600;
         ReflectionTestUtils.setField(service, "privateUrlExpireSeconds", expireSeconds);
@@ -247,17 +236,14 @@ class FileAccessServicePropertyTest {
         FileRecordRepository mockRepository = mock(FileRecordRepository.class);
         StorageService mockStorageService = mock(StorageService.class);
         S3Properties mockS3Properties = mock(S3Properties.class);
-        @SuppressWarnings("unchecked")
-        org.springframework.data.redis.core.RedisTemplate<String, String> mockRedisTemplate =
-                mock(org.springframework.data.redis.core.RedisTemplate.class);
-        com.architectcgz.file.infrastructure.config.CacheProperties mockCacheProperties =
-                mock(com.architectcgz.file.infrastructure.config.CacheProperties.class);
+        FileUrlCacheManager mockFileUrlCacheManager = mock(FileUrlCacheManager.class);
 
         when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
+        when(mockFileUrlCacheManager.get(fileRecord.getId())).thenReturn(null);
 
         FileAccessService service = new FileAccessService(
                 mockRepository, mockStorageService, mockS3Properties,
-                mockRedisTemplate, mockCacheProperties
+                mockFileUrlCacheManager
         );
         ReflectionTestUtils.setField(service, "privateUrlExpireSeconds", 3600);
 

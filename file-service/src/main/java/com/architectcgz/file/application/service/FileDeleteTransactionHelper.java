@@ -1,6 +1,6 @@
 package com.architectcgz.file.application.service;
 
-import com.architectcgz.file.common.constants.FileErrorMessages;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
@@ -93,7 +93,7 @@ public class FileDeleteTransactionHelper {
         // 硬删除 FileRecord
         boolean deleted = fileRecordRepository.deleteById(fileId);
         if (!deleted) {
-            throw new BusinessException(FileErrorMessages.FILE_RECORD_DELETE_FAILED);
+            throw new BusinessException(String.format(FileServiceErrorMessages.FILE_DELETE_FAILED, fileId));
         }
         log.debug("文件记录已删除: fileId={}", fileId);
 

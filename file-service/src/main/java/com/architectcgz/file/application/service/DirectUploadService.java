@@ -10,12 +10,16 @@ import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
+import com.architectcgz.file.domain.model.AccessLevel;
+import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.model.UploadTask;
 import com.architectcgz.file.domain.model.UploadTaskStatus;
 import com.architectcgz.file.domain.model.UploadPart;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
+import com.architectcgz.file.domain.repository.StorageObjectRepository;
 import com.architectcgz.file.domain.repository.UploadTaskRepository;
 import com.architectcgz.file.domain.repository.UploadPartRepository;
+import com.architectcgz.file.domain.service.TenantDomainService;
 import com.architectcgz.file.infrastructure.config.AccessProperties;
 import com.architectcgz.file.infrastructure.config.MultipartProperties;
 import com.architectcgz.file.infrastructure.storage.S3StorageService;
@@ -51,9 +55,12 @@ public class DirectUploadService {
     private final UploadTaskRepository uploadTaskRepository;
     private final UploadPartRepository uploadPartRepository;
     private final FileRecordRepository fileRecordRepository;
+    private final StorageObjectRepository storageObjectRepository;
     private final MultipartProperties multipartProperties;
     private final AccessProperties accessProperties;
     private final FileTypeValidator fileTypeValidator;
+    private final TenantDomainService tenantDomainService;
+    private final UploadTransactionHelper uploadTransactionHelper;
     
     /**
      * 初始化直传上传
@@ -68,10 +75,11 @@ public class DirectUploadService {
      * @param userId 用户ID
      * @return 初始化响应（包含 uploadId 和任务信息，或文件ID和URL）
      */
-    @Transactional
     public DirectUploadInitResponse initDirectUpload(String appId, DirectUploadInitRequest request, String userId) {
         log.info("初始化直传上传: appId={}, userId={}, fileName={}, fileSize={}, fileHash={}", 
                 appId, userId, request.getFileName(), request.getFileSize(), request.getFileHash());
+
+        tenantDomainService.checkQuota(appId, request.getFileSize());
         
         // 验证文件类型
         fileTypeValidator.validateFile(
@@ -83,25 +91,39 @@ public class DirectUploadService {
         // 1. 秒传检查：查询是否存在已完成的文件（基于 fileHash）
         if (request.getFileHash() != null && !request.getFileHash().isEmpty()) {
             log.info("检查秒传: appId={}, fileHash={}", appId, request.getFileHash());
-            
-            // 直接查询应用下是否存在已完成的文件（不区分用户）
-            Optional<FileRecord> existingFile = fileRecordRepository
-                    .findCompletedByAppIdAndFileHash(appId, request.getFileHash());
-            
-            if (existingFile.isPresent()) {
-                FileRecord fileRecord = existingFile.get();
-                
-                log.info("秒传命中: fileId={}, fileHash={}, 原上传用户={}, 当前用户={}", 
-                        fileRecord.getId(), request.getFileHash(), fileRecord.getUserId(), userId);
-                
-                // 生成文件访问URL（公开文件）
-                String fileUrl = s3StorageService.getPublicUrl(fileRecord.getStoragePath());
-                
-                // 返回秒传响应
+
+            Optional<StorageObject> existingStorageObject = storageObjectRepository
+                    .findByFileHash(appId, request.getFileHash());
+
+            if (existingStorageObject.isPresent()) {
+                StorageObject storageObject = existingStorageObject.get();
+                if (!request.getFileSize().equals(storageObject.getFileSize())) {
+                    throw new BusinessException(FileServiceErrorMessages.FILE_SIZE_MISMATCH);
+                }
+
+                FileRecord fileRecord = buildFileRecord(
+                        appId,
+                        userId,
+                        storageObject.getId(),
+                        request.getFileName(),
+                        storageObject.getStoragePath(),
+                        storageObject.getFileSize(),
+                        storageObject.getContentType(),
+                        storageObject.getFileHash()
+                );
+                uploadTransactionHelper.saveInstantUpload(
+                        storageObject.getId(),
+                        fileRecord,
+                        storageObject.getFileSize()
+                );
+
+                log.info("秒传命中并创建新文件记录: newFileId={}, storageObjectId={}, fileHash={}",
+                        fileRecord.getId(), storageObject.getId(), request.getFileHash());
+
                 return DirectUploadInitResponse.builder()
                         .isInstantUpload(true)
                         .fileId(fileRecord.getId())
-                        .fileUrl(fileUrl)
+                        .fileUrl(s3StorageService.getPublicUrl(storageObject.getStoragePath()))
                         .build();
             }
         }
@@ -309,7 +331,6 @@ public class DirectUploadService {
      * @param userId 用户ID
      * @return 文件记录ID
      */
-    @Transactional
     public String completeDirectUpload(DirectUploadCompleteRequest request, String userId) {
         log.info("完成直传上传: taskId={}, parts={}", request.getTaskId(), request.getParts().size());
         
@@ -364,30 +385,35 @@ public class DirectUploadService {
                 completedParts
         );
         log.info("完成 S3 multipart upload: taskId={}", request.getTaskId());
-        
-        // 创建文件记录
-        FileRecord fileRecord = new FileRecord();
-        fileRecord.setId(UuidCreator.getTimeOrderedEpoch().toString());
-        fileRecord.setAppId(task.getAppId());
-        fileRecord.setUserId(userId);
-        fileRecord.setOriginalFilename(task.getFileName());
-        fileRecord.setStoragePath(task.getStoragePath());
-        fileRecord.setFileSize(task.getFileSize());
-        fileRecord.setContentType(request.getContentType());
-        fileRecord.setFileHash(task.getFileHash());
-        fileRecord.setHashAlgorithm("MD5");
-        fileRecord.setStatus(FileStatus.COMPLETED);
-        fileRecord.setCreatedAt(LocalDateTime.now());
-        fileRecord.setUpdatedAt(LocalDateTime.now());
-        
-        fileRecordRepository.save(fileRecord);
-        log.info("创建文件记录: fileId={}", fileRecord.getId());
-        
-        // 更新任务状态
-        task.setStatus(UploadTaskStatus.COMPLETED);
-        task.setUpdatedAt(LocalDateTime.now());
-        uploadTaskRepository.updateStatus(request.getTaskId(), UploadTaskStatus.COMPLETED);
-        
+
+        String fileHash = requireFileHash(task);
+        StorageObject storageObject = buildStorageObject(
+                task.getAppId(),
+                task.getStoragePath(),
+                task.getFileSize(),
+                request.getContentType(),
+                fileHash
+        );
+        FileRecord fileRecord = buildFileRecord(
+                task.getAppId(),
+                userId,
+                storageObject.getId(),
+                task.getFileName(),
+                task.getStoragePath(),
+                task.getFileSize(),
+                request.getContentType(),
+                fileHash
+        );
+
+        try {
+            uploadTransactionHelper.saveCompletedUpload(task, storageObject, fileRecord);
+        } catch (Exception dbEx) {
+            cleanupS3Quietly(task.getStoragePath());
+            throw dbEx;
+        }
+
+        log.info("直传完成后的元数据已落库: taskId={}, fileId={}, storageObjectId={}",
+                task.getId(), fileRecord.getId(), storageObject.getId());
         return fileRecord.getId();
     }
     
@@ -425,5 +451,58 @@ public class DirectUploadService {
             return "bin";
         }
         return fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
+    }
+
+    private FileRecord buildFileRecord(String appId, String userId, String storageObjectId,
+                                       String originalFilename, String storagePath, long fileSize,
+                                       String contentType, String fileHash) {
+        return FileRecord.builder()
+                .id(UuidCreator.getTimeOrderedEpoch().toString())
+                .appId(appId)
+                .userId(userId)
+                .storageObjectId(storageObjectId)
+                .originalFilename(originalFilename)
+                .storagePath(storagePath)
+                .fileSize(fileSize)
+                .contentType(contentType)
+                .fileHash(fileHash)
+                .hashAlgorithm("MD5")
+                .accessLevel(AccessLevel.PUBLIC)
+                .status(FileStatus.COMPLETED)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+    }
+
+    private StorageObject buildStorageObject(String appId, String storagePath, long fileSize,
+                                             String contentType, String fileHash) {
+        return StorageObject.builder()
+                .id(UuidCreator.getTimeOrderedEpoch().toString())
+                .appId(appId)
+                .fileHash(fileHash)
+                .hashAlgorithm("MD5")
+                .storagePath(storagePath)
+                .fileSize(fileSize)
+                .contentType(contentType)
+                .referenceCount(1)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+    }
+
+    private String requireFileHash(UploadTask task) {
+        if (task.getFileHash() == null || task.getFileHash().isBlank()) {
+            throw new BusinessException("上传任务缺少 fileHash，无法建立存储对象");
+        }
+        return task.getFileHash();
+    }
+
+    private void cleanupS3Quietly(String storagePath) {
+        try {
+            s3StorageService.delete(storagePath);
+            log.warn("直传完成后写库失败，已补偿删除 S3 对象: path={}", storagePath);
+        } catch (Exception cleanupEx) {
+            log.error("直传完成后 S3 补偿删除失败: path={}", storagePath, cleanupEx);
+        }
     }
 }

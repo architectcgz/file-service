@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS file_records (
     file_size         BIGINT NOT NULL,
     content_type      VARCHAR(128) NOT NULL DEFAULT 'application/octet-stream',
     file_hash         VARCHAR(64) NOT NULL,
+    hash_algorithm    VARCHAR(16) NOT NULL DEFAULT 'MD5',
     access_level      VARCHAR(16) NOT NULL DEFAULT 'public',
     status            VARCHAR(32) NOT NULL DEFAULT 'completed',
     created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

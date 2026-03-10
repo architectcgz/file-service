@@ -55,6 +55,11 @@ public class FileRecordPO {
      * 文件哈希值(MD5 或SHA256)
      */
     private String fileHash;
+
+    /**
+     * 哈希算法
+     */
+    private String hashAlgorithm;
     
     /**
      * 访问级别 (public, private)

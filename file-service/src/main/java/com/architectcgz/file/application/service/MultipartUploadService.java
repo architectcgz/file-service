@@ -3,17 +3,20 @@ package com.architectcgz.file.application.service;
 import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.exception.BusinessException;
+import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.application.dto.InitUploadRequest;
 import com.architectcgz.file.application.dto.InitUploadResponse;
 import com.architectcgz.file.application.dto.UploadProgressResponse;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
+import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.model.UploadPart;
 import com.architectcgz.file.domain.model.UploadTask;
 import com.architectcgz.file.domain.model.UploadTaskStatus;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.UploadPartRepository;
 import com.architectcgz.file.domain.repository.UploadTaskRepository;
+import com.architectcgz.file.domain.service.TenantDomainService;
 import com.architectcgz.file.infrastructure.config.MultipartProperties;
 import com.architectcgz.file.infrastructure.storage.S3StorageService;
 import com.architectcgz.file.infrastructure.repository.mapper.UploadPartMapper;
@@ -60,6 +63,8 @@ public class MultipartUploadService {
     private final UploadPartMapper uploadPartMapper;
     private final RedisTemplate<String, String> redisTemplate;
     private final UploadPartTransactionHelper uploadPartTransactionHelper;
+    private final TenantDomainService tenantDomainService;
+    private final UploadTransactionHelper uploadTransactionHelper;
     
     /**
      * 初始化分片上传
@@ -73,6 +78,8 @@ public class MultipartUploadService {
     public InitUploadResponse initUpload(String appId, InitUploadRequest request, String userId) {
         log.info("Initializing multipart upload for user: {}, file: {}, size: {}", 
                 userId, request.getFileName(), request.getFileSize());
+
+        tenantDomainService.checkQuota(appId, request.getFileSize());
         
         // 验证文件类型
         fileTypeValidator.validateFile(
@@ -296,7 +303,6 @@ public class MultipartUploadService {
      * @param userId 用户 ID
      * @return 文件记录 ID
      */
-    @Transactional
     public String completeUpload(String taskId, String userId) {
         log.info("Completing multipart upload for task: {}", taskId);
         
@@ -356,30 +362,20 @@ public class MultipartUploadService {
         // 完成 S3 Multipart Upload
         s3StorageService.completeMultipartUpload(task.getStoragePath(), task.getUploadId(), completedParts);
         log.info("Completed S3 multipart upload for task: {}", taskId);
-        
-        // 创建文件记录
-        FileRecord fileRecord = new FileRecord();
-        fileRecord.setId(UuidCreator.getTimeOrderedEpoch().toString());
-        fileRecord.setAppId(task.getAppId());
-        fileRecord.setUserId(userId);
-        fileRecord.setOriginalFilename(task.getFileName());
-        fileRecord.setStoragePath(task.getStoragePath());  // 使用任务中的存储路径
-        fileRecord.setFileSize(task.getFileSize());
-        fileRecord.setContentType(task.getContentType()); // 从上传任务元数据获取，不再硬编码
-        fileRecord.setFileHash(task.getFileHash());
-        fileRecord.setHashAlgorithm("MD5");
-        fileRecord.setStatus(FileStatus.COMPLETED);
-        fileRecord.setCreatedAt(LocalDateTime.now());
-        fileRecord.setUpdatedAt(LocalDateTime.now());
-        
-        fileRecordRepository.save(fileRecord);
-        log.info("Created file record: {}", fileRecord.getId());
-        
-        // 更新任务状态
-        task.setStatus(UploadTaskStatus.COMPLETED);
-        task.setUpdatedAt(LocalDateTime.now());
-        uploadTaskRepository.updateStatus(taskId, UploadTaskStatus.COMPLETED);
-        
+
+        String fileHash = requireFileHash(task);
+        StorageObject storageObject = buildStorageObject(task, fileHash);
+        FileRecord fileRecord = buildFileRecord(task, userId, storageObject.getId(), fileHash);
+
+        try {
+            uploadTransactionHelper.saveCompletedUpload(task, storageObject, fileRecord);
+        } catch (Exception dbEx) {
+            cleanupS3Quietly(task.getStoragePath());
+            throw dbEx;
+        }
+
+        log.info("Multipart upload metadata persisted: taskId={}, fileId={}, storageObjectId={}",
+                taskId, fileRecord.getId(), storageObject.getId());
         return fileRecord.getId();
     }
     
@@ -507,6 +503,56 @@ public class MultipartUploadService {
             return "bin";
         }
         return fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
+    }
+
+    private StorageObject buildStorageObject(UploadTask task, String fileHash) {
+        return StorageObject.builder()
+                .id(UuidCreator.getTimeOrderedEpoch().toString())
+                .appId(task.getAppId())
+                .fileHash(fileHash)
+                .hashAlgorithm("MD5")
+                .storagePath(task.getStoragePath())
+                .fileSize(task.getFileSize())
+                .contentType(task.getContentType())
+                .referenceCount(1)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+    }
+
+    private FileRecord buildFileRecord(UploadTask task, String userId, String storageObjectId, String fileHash) {
+        return FileRecord.builder()
+                .id(UuidCreator.getTimeOrderedEpoch().toString())
+                .appId(task.getAppId())
+                .userId(userId)
+                .storageObjectId(storageObjectId)
+                .originalFilename(task.getFileName())
+                .storagePath(task.getStoragePath())
+                .fileSize(task.getFileSize())
+                .contentType(task.getContentType())
+                .fileHash(fileHash)
+                .hashAlgorithm("MD5")
+                .accessLevel(AccessLevel.PUBLIC)
+                .status(FileStatus.COMPLETED)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+    }
+
+    private String requireFileHash(UploadTask task) {
+        if (task.getFileHash() == null || task.getFileHash().isBlank()) {
+            throw new BusinessException("上传任务缺少 fileHash，无法建立存储对象");
+        }
+        return task.getFileHash();
+    }
+
+    private void cleanupS3Quietly(String storagePath) {
+        try {
+            s3StorageService.delete(storagePath);
+            log.warn("分片合并后写库失败，已补偿删除 S3 对象: path={}", storagePath);
+        } catch (Exception cleanupEx) {
+            log.error("分片合并后 S3 补偿删除失败: path={}", storagePath, cleanupEx);
+        }
     }
 }
 

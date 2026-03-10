@@ -118,7 +118,10 @@ public class FileRecordRepositoryImpl implements FileRecordRepository {
         po.setFileSize(fileRecord.getFileSize());
         po.setContentType(fileRecord.getContentType());
         po.setFileHash(fileRecord.getFileHash());
-        po.setAccessLevel("public"); // 默认公开访问，后续任务会实现访问控制
+        po.setHashAlgorithm(fileRecord.getHashAlgorithm());
+        po.setAccessLevel(fileRecord.getAccessLevel() != null
+                ? fileRecord.getAccessLevel().name().toLowerCase()
+                : AccessLevel.PUBLIC.name().toLowerCase());
         po.setStatus(fileRecord.getStatus() != null ? fileRecord.getStatus().name() : FileStatus.COMPLETED.name());
         po.setCreatedAt(fileRecord.getCreatedAt());
         po.setUpdatedAt(fileRecord.getUpdatedAt());
@@ -144,7 +147,10 @@ public class FileRecordRepositoryImpl implements FileRecordRepository {
                 .fileSize(po.getFileSize())
                 .contentType(po.getContentType())
                 .fileHash(po.getFileHash())
-                .hashAlgorithm("MD5") // 默认MD5，后续任务会实现
+                .hashAlgorithm(po.getHashAlgorithm() != null ? po.getHashAlgorithm() : "MD5")
+                .accessLevel(po.getAccessLevel() != null
+                        ? AccessLevel.valueOf(po.getAccessLevel().toUpperCase())
+                        : AccessLevel.PUBLIC)
                 .status(FileStatus.valueOf(po.getStatus()))
                 .createdAt(po.getCreatedAt())
                 .updatedAt(po.getUpdatedAt())

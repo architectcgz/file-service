@@ -5,6 +5,9 @@ import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.StorageObjectRepository;
 import com.architectcgz.file.domain.repository.TenantUsageRepository;
+import com.architectcgz.file.domain.repository.UploadTaskRepository;
+import com.architectcgz.file.domain.model.UploadTask;
+import com.architectcgz.file.domain.model.UploadTaskStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -27,6 +30,7 @@ public class UploadTransactionHelper {
     private final StorageObjectRepository storageObjectRepository;
     private final FileRecordRepository fileRecordRepository;
     private final TenantUsageRepository tenantUsageRepository;
+    private final UploadTaskRepository uploadTaskRepository;
 
     /**
      * 新文件上传的数据库写入事务
@@ -68,5 +72,27 @@ public class UploadTransactionHelper {
 
         tenantUsageRepository.incrementUsage(fileRecord.getAppId(), fileSize);
         log.debug("Tenant usage incremented: appId={}, delta={}", fileRecord.getAppId(), fileSize);
+    }
+
+    /**
+     * 分片/直传完成后的数据库写入事务。
+     * 保存 StorageObject、FileRecord、更新租户用量，并将 UploadTask 标记为完成。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void saveCompletedUpload(UploadTask task, StorageObject storageObject, FileRecord fileRecord) {
+        storageObjectRepository.save(storageObject);
+        log.debug("StorageObject saved for completed upload: id={}, path={}",
+                storageObject.getId(), storageObject.getStoragePath());
+
+        fileRecordRepository.save(fileRecord);
+        log.debug("FileRecord saved for completed upload: id={}, storageObjectId={}",
+                fileRecord.getId(), fileRecord.getStorageObjectId());
+
+        tenantUsageRepository.incrementUsage(task.getAppId(), fileRecord.getFileSize());
+        log.debug("Tenant usage incremented for completed upload: appId={}, delta={}",
+                task.getAppId(), fileRecord.getFileSize());
+
+        uploadTaskRepository.updateStatus(task.getId(), UploadTaskStatus.COMPLETED);
+        log.debug("UploadTask marked completed in transaction: taskId={}", task.getId());
     }
 }

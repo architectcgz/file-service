@@ -13,6 +13,7 @@
         <result property="fileSize" column="file_size"/>
         <result property="contentType" column="content_type"/>
         <result property="fileHash" column="file_hash"/>
+        <result property="hashAlgorithm" column="hash_algorithm"/>
         <result property="accessLevel" column="access_level"/>
         <result property="status" column="status"/>
         <result property="createdAt" column="created_at"/>
@@ -52,7 +53,7 @@
     <!-- 根据查询条件查找文件记录列表 -->
     <select id="selectByQuery" resultMap="fileRecordResultMap">
         SELECT id, app_id, user_id, storage_object_id, original_name, storage_path, file_size,
-               content_type, file_hash, access_level, status, created_at, updated_at
+               content_type, file_hash, hash_algorithm, access_level, status, created_at, updated_at
         FROM file_records
         <include refid="queryConditions"/>
         <if test="sortBy != null and sortBy != ''">
