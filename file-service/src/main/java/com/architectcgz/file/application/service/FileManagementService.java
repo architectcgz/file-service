@@ -2,6 +2,7 @@ package com.architectcgz.file.application.service;
 
 import com.architectcgz.file.application.dto.*;
 import com.architectcgz.file.common.context.AdminContext;
+import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.exception.FileNotFoundException;
 import com.architectcgz.file.common.result.PageResponse;
 import com.architectcgz.file.domain.model.*;
@@ -75,6 +76,7 @@ public class FileManagementService {
      * @param adminUserId 管理员用户ID
      */
     public void deleteFile(String fileId, String adminUserId) {
+        adminUserId = requireAdminUserId(adminUserId);
         log.info("管理员删除文件: fileId={}, adminUserId={}", fileId, adminUserId);
 
         // 查询文件记录
@@ -117,6 +119,7 @@ public class FileManagementService {
      * @return 批量删除结果
      */
     public BatchDeleteResult batchDeleteFiles(List<String> fileIds, String adminUserId) {
+        adminUserId = requireAdminUserId(adminUserId);
         log.info("Batch deleting {} files by admin: {}", fileIds.size(), adminUserId);
         
         BatchDeleteResult result = BatchDeleteResult.builder()
@@ -247,7 +250,7 @@ public class FileManagementService {
         details.put("storagePath", fileRecord.getStoragePath());
         
         AuditLog auditLog = AuditLog.builder()
-                .adminUserId(adminUserId != null ? adminUserId : AdminContext.getAdminUser())
+                .adminUserId(adminUserId)
                 .action(AuditAction.DELETE_FILE)
                 .targetType(TargetType.FILE)
                 .targetId(fileId)
@@ -270,7 +273,7 @@ public class FileManagementService {
         details.put("fileIds", fileIds);
         
         AuditLog auditLog = AuditLog.builder()
-                .adminUserId(adminUserId != null ? adminUserId : AdminContext.getAdminUser())
+                .adminUserId(adminUserId)
                 .action(AuditAction.BATCH_DELETE_FILES)
                 .targetType(TargetType.FILE)
                 .targetId(String.format("batch_%d_files", fileIds.size()))
@@ -279,5 +282,12 @@ public class FileManagementService {
                 .build();
         
         auditLogService.log(auditLog);
+    }
+
+    private String requireAdminUserId(String adminUserId) {
+        if (adminUserId == null || adminUserId.isBlank()) {
+            throw new AccessDeniedException("未获取到管理员身份");
+        }
+        return adminUserId;
     }
 }
