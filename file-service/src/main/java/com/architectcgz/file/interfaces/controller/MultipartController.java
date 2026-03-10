@@ -1,9 +1,13 @@
 package com.architectcgz.file.interfaces.controller;
 
+import com.architectcgz.file.application.dto.FileUrlResponse;
 import com.architectcgz.file.common.result.ApiResponse;
+import com.architectcgz.file.common.context.UserContext;
+import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.application.dto.InitUploadRequest;
 import com.architectcgz.file.application.dto.InitUploadResponse;
 import com.architectcgz.file.application.dto.UploadProgressResponse;
+import com.architectcgz.file.application.service.FileAccessService;
 import com.architectcgz.file.application.service.MultipartUploadService;
 import com.architectcgz.file.domain.model.UploadTask;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +28,7 @@ import java.util.List;
 public class MultipartController {
     
     private final MultipartUploadService multipartUploadService;
+    private final FileAccessService fileAccessService;
     
     /**
      * 初始化分片上传
@@ -44,11 +49,7 @@ public class MultipartController {
         log.info("Init multipart upload - appId: {}, userId: {}, fileName: {}, fileSize: {}", 
                 appId, userId, request.getFileName(), request.getFileSize());
         
-        // TODO: 从 JWT Token 中获取真实的 userId
-        // 目前使用请求头传递，生产环境应从 SecurityContext 获取
-        if (userId == null) {
-            userId = "1"; // 默认用户 ID，仅用于测试
-        }
+        userId = resolveUserId(userId);
         
         InitUploadResponse response = multipartUploadService.initUpload(appId, request, userId);
         
@@ -81,10 +82,7 @@ public class MultipartController {
         log.info("Upload part - appId: {}, userId: {}, taskId: {}, partNumber: {}, size: {}", 
                 appId, userId, taskId, partNumber, data.length);
         
-        // TODO: 从 JWT Token 中获取真实的 userId
-        if (userId == null) {
-            userId = "1"; // 默认用户 ID，仅用于测试
-        }
+        userId = resolveUserId(userId);
         
         String etag = multipartUploadService.uploadPart(taskId, partNumber, data, userId);
         
@@ -110,15 +108,11 @@ public class MultipartController {
         log.info("Complete multipart upload - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
         
-        // TODO: 从 JWT Token 中获取真实的 userId
-        if (userId == null) {
-            userId = "1"; // 默认用户 ID，仅用于测试
-        }
+        userId = resolveUserId(userId);
         
         String fileId = multipartUploadService.completeUpload(taskId, userId);
-        
-        // TODO: 生成文件访问 URL
-        String url = "/api/v1/files/" + fileId;
+        FileUrlResponse fileUrl = fileAccessService.getFileUrl(appId, fileId, userId);
+        String url = fileUrl.getUrl();
         
         CompleteUploadResponse response = new CompleteUploadResponse(fileId, url);
         
@@ -147,10 +141,7 @@ public class MultipartController {
         log.info("Abort multipart upload - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
         
-        // TODO: 从 JWT Token 中获取真实的 userId
-        if (userId == null) {
-            userId = "1"; // 默认用户 ID，仅用于测试
-        }
+        userId = resolveUserId(userId);
         
         multipartUploadService.abortUpload(taskId, userId);
         
@@ -179,10 +170,7 @@ public class MultipartController {
         log.info("Get upload progress - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
         
-        // TODO: 从 JWT Token 中获取真实的 userId
-        if (userId == null) {
-            userId = "1"; // 默认用户 ID，仅用于测试
-        }
+        userId = resolveUserId(userId);
         
         UploadProgressResponse response = multipartUploadService.getProgress(taskId, userId);
         
@@ -205,14 +193,22 @@ public class MultipartController {
         
         log.info("List upload tasks - appId: {}, userId: {}", appId, userId);
         
-        // TODO: 从 JWT Token 中获取真实的 userId
-        if (userId == null) {
-            userId = "1"; // 默认用户 ID，仅用于测试
-        }
+        userId = resolveUserId(userId);
         
         List<UploadTask> tasks = multipartUploadService.listTasks(appId, userId);
         
         return ApiResponse.success(tasks);
+    }
+
+    private String resolveUserId(String headerUserId) {
+        String userId = UserContext.getUserId();
+        if (userId == null || userId.isBlank()) {
+            userId = headerUserId;
+        }
+        if (userId == null || userId.isBlank()) {
+            throw new AccessDeniedException("未获取到用户身份");
+        }
+        return userId;
     }
     
     /**

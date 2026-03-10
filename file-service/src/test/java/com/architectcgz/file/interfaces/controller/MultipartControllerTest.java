@@ -1,7 +1,9 @@
 package com.architectcgz.file.interfaces.controller;
 
+import com.architectcgz.file.application.dto.FileUrlResponse;
 import com.architectcgz.file.application.dto.InitUploadRequest;
 import com.architectcgz.file.application.dto.InitUploadResponse;
+import com.architectcgz.file.application.service.FileAccessService;
 import com.architectcgz.file.application.service.MultipartUploadService;
 import com.architectcgz.file.config.WebMvcTestConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,6 +45,9 @@ class MultipartControllerTest {
     
     @MockBean
     private MultipartUploadService multipartUploadService;
+
+    @MockBean
+    private FileAccessService fileAccessService;
     
     @Test
     void testInitUpload() throws Exception {
@@ -117,5 +122,23 @@ class MultipartControllerTest {
                         .header("X-App-Id", "test-app")
                         .header("X-User-Id", "1"))
                 .andExpect(status().is5xxServerError());
+    }
+
+    @Test
+    void testCompleteUploadReturnsResolvedFileUrl() throws Exception {
+        when(multipartUploadService.completeUpload("task-001", "1")).thenReturn("file-001");
+        when(fileAccessService.getFileUrl("test-app", "file-001", "1"))
+                .thenReturn(FileUrlResponse.builder()
+                        .url("https://cdn.example.com/files/file-001")
+                        .permanent(true)
+                        .build());
+
+        mockMvc.perform(post("/api/v1/multipart/{taskId}/complete", "task-001")
+                        .header("X-App-Id", "test-app")
+                        .header("X-User-Id", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.fileId").value("file-001"))
+                .andExpect(jsonPath("$.data.url").value("https://cdn.example.com/files/file-001"));
     }
 }

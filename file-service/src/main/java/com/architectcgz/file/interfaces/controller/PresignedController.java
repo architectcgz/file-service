@@ -1,6 +1,8 @@
 package com.architectcgz.file.interfaces.controller;
 
 import com.architectcgz.file.common.result.ApiResponse;
+import com.architectcgz.file.common.context.UserContext;
+import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.application.dto.ConfirmUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadResponse;
@@ -47,11 +49,7 @@ public class PresignedController {
         log.info("Get presigned URL - appId: {}, userId: {}, fileName: {}, fileSize: {}", 
                 appId, userId, request.getFileName(), request.getFileSize());
         
-        // TODO: 从 JWT Token 中获取真实的 userId
-        // 目前使用请求头传递，生产环境应从 SecurityContext 获取
-        if (userId == null) {
-            userId = "1"; // 默认用户 ID，仅用于测试
-        }
+        userId = resolveUserId(userId);
         
         PresignedUploadResponse response = presignedUrlService.getPresignedUploadUrl(appId, request, userId);
         
@@ -81,11 +79,7 @@ public class PresignedController {
         log.info("Confirm upload - appId: {}, userId: {}, storagePath: {}", 
                 appId, userId, request.getStoragePath());
         
-        // TODO: 从 JWT Token 中获取真实的 userId
-        // 目前使用请求头传递，生产环境应从 SecurityContext 获取
-        if (userId == null) {
-            userId = "1"; // 默认用户 ID，仅用于测试
-        }
+        userId = resolveUserId(userId);
         
         Map<String, String> result = presignedUrlService.confirmUpload(appId, request, userId);
         
@@ -98,6 +92,17 @@ public class PresignedController {
                 appId, userId, response.getFileId());
         
         return ApiResponse.success(response);
+    }
+
+    private String resolveUserId(String headerUserId) {
+        String userId = UserContext.getUserId();
+        if (userId == null || userId.isBlank()) {
+            userId = headerUserId;
+        }
+        if (userId == null || userId.isBlank()) {
+            throw new AccessDeniedException("未获取到用户身份");
+        }
+        return userId;
     }
     
     /**

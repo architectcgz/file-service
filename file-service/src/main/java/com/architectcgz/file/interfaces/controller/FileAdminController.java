@@ -2,6 +2,7 @@ package com.architectcgz.file.interfaces.controller;
 
 import com.architectcgz.file.application.dto.*;
 import com.architectcgz.file.application.service.FileManagementService;
+import com.architectcgz.file.common.context.AdminContext;
 import com.architectcgz.file.common.result.ApiResponse;
 import com.architectcgz.file.common.result.PageResponse;
 import com.architectcgz.file.domain.model.AccessLevel;
@@ -103,8 +104,7 @@ public class FileAdminController {
     public ApiResponse<Void> deleteFile(@PathVariable String fileId) {
         log.info("Admin deleting file: {}", fileId);
         
-        // TODO: 从认证上下文获取管理员用户ID
-        String adminUserId = "admin";
+        String adminUserId = AdminContext.getAdminUser();
         
         fileManagementService.deleteFile(fileId, adminUserId);
         return ApiResponse.success(null);
@@ -120,8 +120,7 @@ public class FileAdminController {
     public ApiResponse<BatchDeleteResult> batchDeleteFiles(@RequestBody BatchDeleteRequest request) {
         log.info("Admin batch deleting {} files", request.getFileIds().size());
         
-        // TODO: 从认证上下文获取管理员用户ID
-        String adminUserId = "admin";
+        String adminUserId = AdminContext.getAdminUser();
         
         BatchDeleteResult result = fileManagementService.batchDeleteFiles(request.getFileIds(), adminUserId);
         return ApiResponse.success(result);

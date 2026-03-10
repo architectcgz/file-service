@@ -253,7 +253,7 @@ class FileAdminControllerTest {
     @Test
     void testDeleteFileNotFound() throws Exception {
         doThrow(new BusinessException("FILE_NOT_FOUND", "File not found: non-existent"))
-                .when(fileManagementService).deleteFile(eq("non-existent"), anyString());
+                .when(fileManagementService).deleteFile(eq("non-existent"), nullable(String.class));
         mockMvc.perform(delete("/api/v1/admin/files/non-existent")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app"))
                 .andExpect(status().isBadRequest());
@@ -268,7 +268,7 @@ class FileAdminControllerTest {
         result.setSuccessCount(3);
         result.setFailureCount(0);
         result.setFailures(Collections.emptyList());
-        when(fileManagementService.batchDeleteFiles(anyList(), anyString())).thenReturn(result);
+        when(fileManagementService.batchDeleteFiles(anyList(), nullable(String.class))).thenReturn(result);
         mockMvc.perform(post("/api/v1/admin/files/batch-delete")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app")
                         .content(objectMapper.writeValueAsString(request)))
@@ -292,7 +292,7 @@ class FileAdminControllerTest {
         result.setSuccessCount(2);
         result.setFailureCount(1);
         result.setFailures(Arrays.asList(failure));
-        when(fileManagementService.batchDeleteFiles(anyList(), anyString())).thenReturn(result);
+        when(fileManagementService.batchDeleteFiles(anyList(), nullable(String.class))).thenReturn(result);
         mockMvc.perform(post("/api/v1/admin/files/batch-delete")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app")
                         .content(objectMapper.writeValueAsString(request)))
@@ -314,7 +314,7 @@ class FileAdminControllerTest {
         result.setSuccessCount(0);
         result.setFailureCount(0);
         result.setFailures(Collections.emptyList());
-        when(fileManagementService.batchDeleteFiles(anyList(), anyString())).thenReturn(result);
+        when(fileManagementService.batchDeleteFiles(anyList(), nullable(String.class))).thenReturn(result);
         mockMvc.perform(post("/api/v1/admin/files/batch-delete")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app")
                         .content(objectMapper.writeValueAsString(request)))
