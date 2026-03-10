@@ -1,6 +1,7 @@
 package com.architectcgz.file.interfaces.controller;
 
 import com.architectcgz.file.common.context.UserContext;
+import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.result.ApiResponse;
 import com.architectcgz.file.application.service.UploadApplicationService;
 import com.architectcgz.file.interfaces.dto.UploadResult;
@@ -34,7 +35,7 @@ public class UploadController {
             @RequestParam("file") MultipartFile file,
             HttpServletRequest request) {
         String appId = (String) request.getAttribute("appId");
-        String userId = UserContext.getUserId();
+        String userId = resolveUserId();
         
         log.info("Upload image request - appId: {}, userId: {}, fileName: {}, size: {}", 
                 appId, userId, file.getOriginalFilename(), file.getSize());
@@ -59,7 +60,7 @@ public class UploadController {
             @RequestParam("file") MultipartFile file,
             HttpServletRequest request) {
         String appId = (String) request.getAttribute("appId");
-        String userId = UserContext.getUserId();
+        String userId = resolveUserId();
         
         log.info("Upload file request - appId: {}, userId: {}, fileName: {}, size: {}", 
                 appId, userId, file.getOriginalFilename(), file.getSize());
@@ -84,7 +85,7 @@ public class UploadController {
             @PathVariable String fileRecordId,
             HttpServletRequest request) {
         String appId = (String) request.getAttribute("appId");
-        String userId = UserContext.getUserId();
+        String userId = resolveUserId();
         
         log.info("Delete file request - appId: {}, userId: {}, fileId: {}", 
                 appId, userId, fileRecordId);
@@ -95,5 +96,13 @@ public class UploadController {
                 appId, userId, fileRecordId);
         
         return ApiResponse.success(null);
+    }
+
+    private String resolveUserId() {
+        String userId = UserContext.getUserId();
+        if (userId == null || userId.isBlank()) {
+            throw new AccessDeniedException("未获取到用户身份");
+        }
+        return userId;
     }
 }

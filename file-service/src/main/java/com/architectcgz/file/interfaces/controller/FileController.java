@@ -1,6 +1,7 @@
 package com.architectcgz.file.interfaces.controller;
 
 import com.architectcgz.file.common.context.UserContext;
+import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.result.ApiResponse;
 import com.architectcgz.file.application.dto.FileDetailResponse;
 import com.architectcgz.file.application.dto.FileUrlResponse;
@@ -40,7 +41,7 @@ public class FileController {
             @PathVariable String fileId,
             HttpServletRequest request) {
         String appId = (String) request.getAttribute("appId");
-        String userId = UserContext.getUserId();
+        String userId = resolveUserId();
         
         log.info("Get file URL request - appId: {}, userId: {}, fileId: {}", 
                 appId, userId, fileId);
@@ -64,7 +65,7 @@ public class FileController {
             @PathVariable String fileId,
             HttpServletRequest request) {
         String appId = (String) request.getAttribute("appId");
-        String userId = UserContext.getUserId();
+        String userId = resolveUserId();
         
         log.info("Get file detail request - appId: {}, userId: {}, fileId: {}", 
                 appId, userId, fileId);
@@ -90,7 +91,7 @@ public class FileController {
             HttpServletRequest request,
             @Valid @RequestBody UpdateAccessLevelRequest updateRequest) {
         String appId = (String) request.getAttribute("appId");
-        String userId = UserContext.getUserId();
+        String userId = resolveUserId();
         
         log.info("Update access level request - appId: {}, userId: {}, fileId: {}, newLevel: {}", 
                 appId, userId, fileId, updateRequest.getAccessLevel());
@@ -101,5 +102,13 @@ public class FileController {
                 appId, userId, fileId);
         
         return ApiResponse.success();
+    }
+
+    private String resolveUserId() {
+        String userId = UserContext.getUserId();
+        if (userId == null || userId.isBlank()) {
+            throw new AccessDeniedException("未获取到用户身份");
+        }
+        return userId;
     }
 }
