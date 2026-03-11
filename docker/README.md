@@ -9,6 +9,7 @@ File Service 拥有独立的 Docker 环境，包含：
 - **PostgreSQL**: 独立数据库 `file_service`
 - **RustFS/MinIO**: S3 兼容对象存储
 - **File Service**: 文件服务应用
+- **File Gateway Service**: 文件访问网关，前端统一访问入口
 
 ## 目录结构
 
@@ -80,6 +81,11 @@ RUSTFS_BUCKET=platform-files
 FILE_SERVICE_PORT=8089
 FILE_SERVICE_PROFILE=docker
 
+# File Gateway 配置
+FILE_GATEWAY_PORT=8090
+FILE_GATEWAY_SIGNING_SECRET=change-me-before-production
+FILE_GATEWAY_ALLOW_HEADER_IDENTITY=true
+
 # 网络配置
 NETWORK_NAME=file-service-network
 ```
@@ -117,6 +123,7 @@ NAME                    STATUS              PORTS
 file-service-postgres   Up 30 seconds       0.0.0.0:5432->5432/tcp
 file-service-rustfs     Up 30 seconds       0.0.0.0:9001->9001/tcp, 0.0.0.0:9002->9002/tcp
 file-service-app        Up 10 seconds       0.0.0.0:8089->8089/tcp
+file-gateway-app        Up 10 seconds       0.0.0.0:8090->8090/tcp
 ```
 
 ### 5. 健康检查
@@ -133,6 +140,12 @@ curl http://localhost:8089/actuator/health
 {
   "status": "UP"
 }
+```
+
+检查 File Gateway 健康状态：
+
+```bash
+curl http://localhost:8090/actuator/health
 ```
 
 ## 服务详情
@@ -231,6 +244,22 @@ Bucket: platform-files
 **依赖服务**:
 - PostgreSQL: 必需，等待健康检查通过
 - RustFS: 必需，等待健康检查通过
+
+### File Gateway Service
+
+**端口**: 8090
+
+**访问端点**:
+- Base URL: http://localhost:8090
+- 文件访问: `GET /api/v1/files/{fileId}/content`
+- Health: http://localhost:8090/actuator/health
+
+**身份传递方式**:
+- 受信任服务：`X-App-Id`、`X-User-Id`
+- 前端原生访问：`appId`、`userId`、`expiresAt`、`signature`
+
+**依赖服务**:
+- File Service: 必需，等待健康检查通过
 
 ## Docker Compose 配置
 

@@ -4,6 +4,7 @@ import com.architectcgz.file.application.dto.FileDetailResponse;
 import com.architectcgz.file.application.dto.FileUrlResponse;
 import com.architectcgz.file.application.dto.UpdateAccessLevelRequest;
 import com.architectcgz.file.application.service.FileAccessService;
+import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.context.UserContext;
 import com.architectcgz.file.config.WebMvcTestConfig;
 import com.architectcgz.file.domain.model.AccessLevel;
@@ -110,23 +111,51 @@ class FileControllerTest {
     }
 
     @Test
-    void testAccessFileContentWithoutIdentityReturnsForbidden() throws Exception {
+    void testAccessFileContentWithoutIdentityAllowsPublicFile() throws Exception {
+        when(fileAccessService.getFileUrl(eq("test-app"), eq("file-001"), eq(null)))
+                .thenReturn(FileUrlResponse.builder()
+                        .url("https://cdn.example.com/public-file")
+                        .permanent(true)
+                        .build());
+
+        mockMvc.perform(get("/api/v1/files/{fileId}/content", "file-001")
+                        .header("X-App-Id", "test-app"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "https://cdn.example.com/public-file"));
+
+        verify(fileAccessService).getFileUrl("test-app", "file-001", null);
+    }
+
+    @Test
+    void testGetFileDetailWithoutIdentityAllowsPublicFile() throws Exception {
+        when(fileAccessService.getFileDetail(eq("test-app"), eq("file-001"), eq(null)))
+                .thenReturn(FileDetailResponse.builder()
+                        .fileId("file-001")
+                        .originalFilename("public.jpg")
+                        .status(FileStatus.COMPLETED)
+                        .accessLevel(AccessLevel.PUBLIC)
+                        .createdAt(LocalDateTime.of(2026, 3, 10, 21, 0))
+                        .updatedAt(LocalDateTime.of(2026, 3, 10, 21, 0))
+                        .build());
+
+        mockMvc.perform(get("/api/v1/files/{fileId}", "file-001")
+                        .header("X-App-Id", "test-app"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.fileId").value("file-001"));
+
+        verify(fileAccessService).getFileDetail("test-app", "file-001", null);
+    }
+
+    @Test
+    void testAccessPrivateFileContentWithoutIdentityReturnsForbidden() throws Exception {
+        when(fileAccessService.getFileUrl(eq("test-app"), eq("file-001"), eq(null)))
+                .thenThrow(new AccessDeniedException("无权访问文件"));
+
         mockMvc.perform(get("/api/v1/files/{fileId}/content", "file-001")
                         .header("X-App-Id", "test-app"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403));
-
-        verifyNoInteractions(fileAccessService);
-    }
-
-    @Test
-    void testGetFileDetailWithoutIdentityReturnsForbidden() throws Exception {
-        mockMvc.perform(get("/api/v1/files/{fileId}", "file-001")
-                        .header("X-App-Id", "test-app"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(403));
-
-        verifyNoInteractions(fileAccessService);
     }
 
     @Test

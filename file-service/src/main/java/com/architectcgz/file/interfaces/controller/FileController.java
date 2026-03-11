@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
+import org.springframework.util.StringUtils;
 
 /**
  * 文件访问控制器
@@ -45,7 +46,7 @@ public class FileController {
             @PathVariable String fileId,
             HttpServletRequest request) {
         String appId = (String) request.getAttribute("appId");
-        String userId = resolveUserId();
+        String userId = resolveOptionalUserId();
         
         log.info("Get file URL request - appId: {}, userId: {}, fileId: {}", 
                 appId, userId, fileId);
@@ -69,7 +70,7 @@ public class FileController {
             @PathVariable String fileId,
             HttpServletRequest request) {
         String appId = (String) request.getAttribute("appId");
-        String userId = resolveUserId();
+        String userId = resolveOptionalUserId();
 
         log.info("Access file content via gateway - appId: {}, userId: {}, fileId: {}",
                 appId, userId, fileId);
@@ -98,7 +99,7 @@ public class FileController {
             @PathVariable String fileId,
             HttpServletRequest request) {
         String appId = (String) request.getAttribute("appId");
-        String userId = resolveUserId();
+        String userId = resolveOptionalUserId();
         
         log.info("Get file detail request - appId: {}, userId: {}, fileId: {}", 
                 appId, userId, fileId);
@@ -124,7 +125,7 @@ public class FileController {
             HttpServletRequest request,
             @Valid @RequestBody UpdateAccessLevelRequest updateRequest) {
         String appId = (String) request.getAttribute("appId");
-        String userId = resolveUserId();
+        String userId = requireUserId();
         
         log.info("Update access level request - appId: {}, userId: {}, fileId: {}, newLevel: {}", 
                 appId, userId, fileId, updateRequest.getAccessLevel());
@@ -137,9 +138,14 @@ public class FileController {
         return ApiResponse.success();
     }
 
-    private String resolveUserId() {
+    private String resolveOptionalUserId() {
         String userId = UserContext.getUserId();
-        if (userId == null || userId.isBlank()) {
+        return StringUtils.hasText(userId) ? userId : null;
+    }
+
+    private String requireUserId() {
+        String userId = UserContext.getUserId();
+        if (!StringUtils.hasText(userId)) {
             throw new AccessDeniedException("未获取到用户身份");
         }
         return userId;

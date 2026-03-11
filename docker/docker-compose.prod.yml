@@ -223,6 +223,41 @@ services:
       - minio
 
   # =====================================================
+  # File Gateway 应用 (MinIO)
+  # =====================================================
+  file-gateway-minio-app:
+    build:
+      context: ../file-gateway-service
+      dockerfile: Dockerfile
+    image: file-gateway-service:latest
+    container_name: file-gateway-prod-app
+    environment:
+      - SERVER_PORT=${FILE_GATEWAY_PORT:-8090}
+      - SPRING_PROFILES_ACTIVE=prod
+      - FILE_SERVICE_BASE_URL=http://file-service-minio-app:8089
+      - FILE_GATEWAY_ALLOW_HEADER_IDENTITY=${FILE_GATEWAY_ALLOW_HEADER_IDENTITY:-true}
+      - FILE_GATEWAY_SIGNING_SECRET=${FILE_GATEWAY_SIGNING_SECRET:-change-me-before-production}
+      - FILE_GATEWAY_CONNECT_TIMEOUT=${FILE_GATEWAY_CONNECT_TIMEOUT:-3s}
+      - FILE_GATEWAY_READ_TIMEOUT=${FILE_GATEWAY_READ_TIMEOUT:-5s}
+      - JAVA_OPTS=${FILE_GATEWAY_JAVA_OPTS:--Xms128m -Xmx256m -XX:+UseG1GC}
+    ports:
+      - "${FILE_GATEWAY_PORT:-8090}:8090"
+    networks:
+      - file-service-prod
+    depends_on:
+      file-service-minio-app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    profiles:
+      - minio
+
+  # =====================================================
   # File Service 应用 (RustFS)
   # =====================================================
   file-service-rustfs-app:
@@ -278,6 +313,41 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    restart: unless-stopped
+    profiles:
+      - rustfs
+
+  # =====================================================
+  # File Gateway 应用 (RustFS)
+  # =====================================================
+  file-gateway-rustfs-app:
+    build:
+      context: ../file-gateway-service
+      dockerfile: Dockerfile
+    image: file-gateway-service:latest
+    container_name: file-gateway-prod-app
+    environment:
+      - SERVER_PORT=${FILE_GATEWAY_PORT:-8090}
+      - SPRING_PROFILES_ACTIVE=prod
+      - FILE_SERVICE_BASE_URL=http://file-service-rustfs-app:8089
+      - FILE_GATEWAY_ALLOW_HEADER_IDENTITY=${FILE_GATEWAY_ALLOW_HEADER_IDENTITY:-true}
+      - FILE_GATEWAY_SIGNING_SECRET=${FILE_GATEWAY_SIGNING_SECRET:-change-me-before-production}
+      - FILE_GATEWAY_CONNECT_TIMEOUT=${FILE_GATEWAY_CONNECT_TIMEOUT:-3s}
+      - FILE_GATEWAY_READ_TIMEOUT=${FILE_GATEWAY_READ_TIMEOUT:-5s}
+      - JAVA_OPTS=${FILE_GATEWAY_JAVA_OPTS:--Xms128m -Xmx256m -XX:+UseG1GC}
+    ports:
+      - "${FILE_GATEWAY_PORT:-8090}:8090"
+    networks:
+      - file-service-prod
+    depends_on:
+      file-service-rustfs-app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
     profiles:
       - rustfs
