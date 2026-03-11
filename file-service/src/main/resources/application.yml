@@ -61,31 +61,22 @@ storage:
   local:
     base-path: ${LOCAL_STORAGE_PATH:./uploads}
     base-url: ${LOCAL_STORAGE_URL:http://localhost:8089/files}
-  # S3兼容存储配置 (支持 MinIO/RustFS/OSS)
-  # 
-  # MinIO 配置说明 (推荐):
-  # - endpoint: MinIO API 端点，容器内部访问使用 http://file-service-minio:9000
-  # - public-endpoint: 浏览器访问端点，用于生成预签名 URL，使用 http://localhost:9000
-  # - access-key: MinIO 访问密钥，默认 fileservice
-  # - secret-key: MinIO 密钥，默认 fileservice123
-  # - region: 区域设置，MinIO 使用 us-east-1
+  # S3兼容存储配置
+  #
+  # 当前默认部署方案使用 MinIO:
+  # - endpoint: 容器内部访问端点，使用 http://file-service-minio:9000
+  # - public-endpoint: 浏览器访问端点，使用 http://localhost:9000
+  # - access-key / secret-key: MinIO 凭证
+  # - region: MinIO 默认使用 us-east-1
   # - 端口配置: API 端口 9000, 控制台端口 9001
-  # 
-  # RustFS 配置说明 (备选):
-  # - endpoint: RustFS API 端点，容器内部访问使用 http://file-service-rustfs:9000
-  # - public-endpoint: 浏览器访问端点，使用 http://localhost:9001
-  # - 端口配置: API 端口 9001, 控制台端口 9002
-  # 
-  # 注意: MinIO 和 RustFS 通过 Docker Compose profiles 切换，不能同时运行
   s3:
     # S3 端点配置
-    # Docker 环境: 使用容器名称 (file-service-minio:9000 或 file-service-rustfs:9000)
-    # 本地开发: 使用 localhost (MinIO: localhost:9000, RustFS: localhost:9001)
+    # Docker 环境: 使用容器名称 file-service-minio:9000
+    # 本地开发: 使用 localhost:9000
     endpoint: ${S3_ENDPOINT:http://localhost:9000}
     
     # 公开端点配置 - 用于生成浏览器可访问的预签名 URL
     # MinIO: http://localhost:9000
-    # RustFS: http://localhost:9001
     public-endpoint: ${S3_PUBLIC_ENDPOINT:http://localhost:9000}
     
     # 访问凭证配置
@@ -98,7 +89,7 @@ storage:
     public-bucket: ${S3_PUBLIC_BUCKET:platform-files-public}
     private-bucket: ${S3_PRIVATE_BUCKET:platform-files-private}
     
-    # 区域配置 - MinIO 和 RustFS 都使用 us-east-1
+    # 区域配置 - MinIO 默认使用 us-east-1
     region: ${S3_REGION:us-east-1}
     
     # CDN 域名配置（可选）- 用于公开文件的 CDN 加速访问

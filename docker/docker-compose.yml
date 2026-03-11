@@ -2,7 +2,7 @@
 # File Service Docker Environment (共享模式)
 # =====================================================
 # 基础服务(PostgreSQL/Redis)已迁移至公共 infra
-# 本文件仅保留 File Service 特有服务(MinIO/RustFS)和应用
+# 本文件仅保留 File Service 特有服务(MinIO)和应用
 # =====================================================
 #
 # 使用说明:
@@ -12,14 +12,11 @@
 # 2. 使用 MinIO (推荐):
 #    docker compose --profile minio up -d
 #
-# 3. 使用 RustFS (备选):
-#    docker compose --profile rustfs up -d
-#
 # 共享服务连接信息:
 #   PostgreSQL: shared-postgres:5432 / db=file_service
 #   Redis:      shared-redis:6379   / db=2
 #
-# 注意: MinIO 和 RustFS 不能同时运行
+# 当前推荐使用 MinIO profile
 # =====================================================
 
 services:
@@ -92,7 +89,7 @@ services:
       - minio
 
   # =====================================================
-  # RustFS - S3 Compatible Object Storage (备选)
+  # 兼容保留：历史 rustfs profile
   # =====================================================
   file-service-rustfs:
     image: rustfs/rustfs:latest
@@ -212,7 +209,7 @@ services:
       - minio
 
   # =====================================================
-  # File Service Application (RustFS Profile)
+  # 兼容保留：File Service 的历史 rustfs profile
   # =====================================================
   file-service-rustfs-app:
     build:
@@ -268,7 +265,7 @@ services:
       - rustfs
 
   # =====================================================
-  # File Gateway Application (RustFS Profile)
+  # 兼容保留：File Gateway 的历史 rustfs profile
   # =====================================================
   file-gateway-rustfs-app:
     build:

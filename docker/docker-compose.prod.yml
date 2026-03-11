@@ -7,8 +7,6 @@
 #   使用 MinIO (推荐):
 #     docker compose -f docker-compose.prod.yml --profile minio up -d
 #
-#   使用 RustFS (备选):
-#     docker compose -f docker-compose.prod.yml --profile rustfs up -d
 # =====================================================
 
 services:
@@ -134,7 +132,7 @@ services:
       - minio
 
   # =====================================================
-  # RustFS - S3 兼容对象存储 (备选)
+  # 兼容保留：历史 rustfs profile
   # =====================================================
   rustfs:
     image: rustfs/rustfs:latest
@@ -258,7 +256,7 @@ services:
       - minio
 
   # =====================================================
-  # File Service 应用 (RustFS)
+  # 兼容保留：File Service 的历史 rustfs profile
   # =====================================================
   file-service-rustfs-app:
     build:
@@ -318,7 +316,7 @@ services:
       - rustfs
 
   # =====================================================
-  # File Gateway 应用 (RustFS)
+  # 兼容保留：File Gateway 的历史 rustfs profile
   # =====================================================
   file-gateway-rustfs-app:
     build:

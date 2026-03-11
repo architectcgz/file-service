@@ -10,7 +10,7 @@ File Service 是从 `blog-upload` 重构而来的通用文件服务，提供：
 - **文件去重**: 同一应用内相同文件自动去重，节省存储空间
 - **多种上传方式**: 支持直接上传、分片上传、预签名 URL 上传、秒传
 - **独立部署**: 拥有独立数据库和存储，与其他服务完全解耦
-- **S3 兼容存储**: 支持 MinIO、AWS S3 等 S3 兼容对象存储
+- **S3 兼容存储**: 当前默认使用 MinIO，也兼容标准 S3 接口
 
 ## 核心特性
 
@@ -120,7 +120,7 @@ spring:
 
 - Java 17+
 - PostgreSQL 14+
-- MinIO 或 S3 兼容存储
+- MinIO
 - Maven 3.8+
 
 ### 本地开发
@@ -134,7 +134,9 @@ docker-compose up -d
 
 这将启动：
 - PostgreSQL (端口 5432)
-- RustFS/MinIO (端口 9001)
+- MinIO API (端口 9000)
+- MinIO Console (端口 9001)
+- File Gateway (端口 8090)
 
 2. **配置应用**:
 
