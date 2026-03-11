@@ -21,6 +21,12 @@ public class FileUrlResponse {
      * 文件访问 URL
      */
     private String url;
+
+    /**
+     * 网关访问 URL
+     * 前端应优先访问该地址，由 file-service 完成鉴权后再跳转到真实存储地址
+     */
+    private String gatewayUrl;
     
     /**
      * 是否为永久URL

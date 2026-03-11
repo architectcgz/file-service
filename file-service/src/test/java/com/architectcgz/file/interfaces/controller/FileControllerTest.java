@@ -31,6 +31,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -69,9 +70,53 @@ class FileControllerTest {
                         .header("X-App-Id", "test-app"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.url").value("https://cdn.example.com/file-001"));
+                .andExpect(jsonPath("$.data.url").value("https://cdn.example.com/file-001"))
+                .andExpect(jsonPath("$.data.gatewayUrl").value("/api/v1/files/file-001/content"));
 
         verify(fileAccessService).getFileUrl("test-app", "file-001", "context-user");
+    }
+
+    @Test
+    void testAccessFileContentRedirectsToResolvedUrl() throws Exception {
+        UserContext.setUserId("context-user");
+        when(fileAccessService.getFileUrl(eq("test-app"), eq("file-001"), eq("context-user")))
+                .thenReturn(FileUrlResponse.builder()
+                        .url("https://cdn.example.com/file-001")
+                        .permanent(true)
+                        .build());
+
+        mockMvc.perform(get("/api/v1/files/{fileId}/content", "file-001")
+                        .header("X-App-Id", "test-app"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "https://cdn.example.com/file-001"));
+
+        verify(fileAccessService).getFileUrl("test-app", "file-001", "context-user");
+    }
+
+    @Test
+    void testAccessPrivateFileContentAddsNoStoreHeader() throws Exception {
+        UserContext.setUserId("context-user");
+        when(fileAccessService.getFileUrl(eq("test-app"), eq("file-001"), eq("context-user")))
+                .thenReturn(FileUrlResponse.builder()
+                        .url("https://s3.example.com/presigned")
+                        .permanent(false)
+                        .build());
+
+        mockMvc.perform(get("/api/v1/files/{fileId}/content", "file-001")
+                        .header("X-App-Id", "test-app"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "https://s3.example.com/presigned"))
+                .andExpect(header().string("Cache-Control", "no-store"));
+    }
+
+    @Test
+    void testAccessFileContentWithoutIdentityReturnsForbidden() throws Exception {
+        mockMvc.perform(get("/api/v1/files/{fileId}/content", "file-001")
+                        .header("X-App-Id", "test-app"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+
+        verifyNoInteractions(fileAccessService);
     }
 
     @Test

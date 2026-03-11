@@ -9,10 +9,14 @@ import com.architectcgz.file.application.dto.UpdateAccessLevelRequest;
 import com.architectcgz.file.application.service.FileAccessService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.net.URI;
 
 /**
  * 文件访问控制器
@@ -47,8 +51,37 @@ public class FileController {
                 appId, userId, fileId);
         
         FileUrlResponse response = fileAccessService.getFileUrl(appId, fileId, userId);
+        response.setGatewayUrl(buildGatewayUrl(fileId));
         
         return ApiResponse.success(response);
+    }
+
+    /**
+     * 通过网关访问文件
+     * 前端统一请求 file-service，由 file-service 完成访问控制后重定向到真实对象地址。
+     *
+     * @param fileId 文件记录ID
+     * @param request HTTP请求对象
+     * @return 302 重定向响应
+     */
+    @GetMapping("/{fileId}/content")
+    public ResponseEntity<Void> accessFileContent(
+            @PathVariable String fileId,
+            HttpServletRequest request) {
+        String appId = (String) request.getAttribute("appId");
+        String userId = resolveUserId();
+
+        log.info("Access file content via gateway - appId: {}, userId: {}, fileId: {}",
+                appId, userId, fileId);
+
+        FileUrlResponse response = fileAccessService.getFileUrl(appId, fileId, userId);
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(response.getUrl()));
+
+        if (Boolean.FALSE.equals(response.getPermanent())) {
+            builder.cacheControl(CacheControl.noStore());
+        }
+        return builder.build();
     }
     
     /**
@@ -110,5 +143,9 @@ public class FileController {
             throw new AccessDeniedException("未获取到用户身份");
         }
         return userId;
+    }
+
+    private String buildGatewayUrl(String fileId) {
+        return String.format("/api/v1/files/%s/content", fileId);
     }
 }
