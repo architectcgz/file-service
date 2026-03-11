@@ -164,7 +164,13 @@ services:
       file-service-minio-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8089/actuator/health"]
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:8089/actuator/health').status == 200 else 1)",
+        ]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -199,7 +205,13 @@ services:
       file-service-minio-app:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/actuator/health"]
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/actuator/health').status == 200 else 1)",
+        ]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -255,7 +267,13 @@ services:
       file-service-rustfs:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8089/actuator/health"]
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:8089/actuator/health').status == 200 else 1)",
+        ]
       interval: 30s
       timeout: 10s
       retries: 5
