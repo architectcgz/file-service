@@ -17,8 +17,11 @@ file-service/docker/
 ├── docker-compose.yml          # Docker Compose 配置
 ├── .env.example                # 环境变量示例
 ├── .env                        # 环境变量配置（需创建）
-├── postgres-init/              # 数据库初始化脚本
+├── postgres-init/              # 数据库初始化脚本（只建库）
 │   └── init-file-service-db.sql
+├── migrations/                 # 轻量数据库迁移
+│   ├── migrate.sh
+│   └── sql/
 ├── rustfs/                     # RustFS 配置（如果使用）
 │   └── config.toml
 ├── scripts/                    # 辅助脚本
@@ -178,7 +181,12 @@ docker exec -it file-service-postgres psql -U postgres -d file_service -c "SHOW 
 
 **初始化脚本**:
 - 位置: `postgres-init/init-file-service-db.sql`
-- 自动执行: 首次启动时自动创建数据库和表
+- 自动执行: 首次启动时自动创建数据库
+
+**迁移执行**:
+- 位置: `migrations/migrate.sh`
+- 方式: Docker 中独立 `file-service-db-migrate` 容器使用 `psql` 顺序执行 `migrations/sql/*.sql`
+- 特点: 不引入 Flyway/Liquibase，仅依赖版本表 `schema_migrations`
 
 ### RustFS/MinIO
 

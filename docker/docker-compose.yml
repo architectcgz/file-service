@@ -23,6 +23,26 @@
 # =====================================================
 
 services:
+  file-service-db-migrate:
+    image: postgres:16-alpine
+    container_name: file-service-db-migrate
+    environment:
+      - DB_HOST=shared-postgres
+      - DB_PORT=5432
+      - DB_NAME=file_service
+      - DB_USERNAME=${DB_USERNAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres123456}
+      - S3_BUCKET=${S3_BUCKET:-platform-files}
+    volumes:
+      - ./migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "/migrations/migrate.sh"]
+    networks:
+      - shared-infra
+    restart: "no"
+    profiles:
+      - minio
+      - rustfs
+
   # =====================================================
   # MinIO - S3 Compatible Object Storage (推荐)
   # =====================================================
@@ -140,6 +160,8 @@ services:
     networks:
       - shared-infra
     depends_on:
+      file-service-db-migrate:
+        condition: service_completed_successfully
       file-service-minio:
         condition: service_healthy
       file-service-minio-init:
@@ -196,6 +218,8 @@ services:
     networks:
       - shared-infra
     depends_on:
+      file-service-db-migrate:
+        condition: service_completed_successfully
       file-service-rustfs:
         condition: service_healthy
     healthcheck:

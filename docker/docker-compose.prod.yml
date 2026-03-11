@@ -12,6 +12,29 @@
 # =====================================================
 
 services:
+  file-service-db-migrate:
+    image: postgres:16-alpine
+    container_name: file-service-prod-db-migrate
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=file_service
+      - DB_USERNAME=${POSTGRES_USER:-postgres}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-postgres123456}
+      - S3_BUCKET=${S3_BUCKET:-platform-files}
+    volumes:
+      - ./migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "/migrations/migrate.sh"]
+    networks:
+      - file-service-prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    profiles:
+      - minio
+      - rustfs
+
   # =====================================================
   # PostgreSQL
   # =====================================================
@@ -179,6 +202,8 @@ services:
     networks:
       - file-service-prod
     depends_on:
+      file-service-db-migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -239,6 +264,8 @@ services:
     networks:
       - file-service-prod
     depends_on:
+      file-service-db-migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:

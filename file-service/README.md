@@ -273,12 +273,9 @@ spring:
     url: jdbc:postgresql://localhost:5432/file_service
     username: postgres
     password: postgres
-  
-  flyway:
-    enabled: true
-    baseline-on-migrate: true
-    locations: classpath:db/migration
 ```
+
+数据库迁移不依赖 Flyway。开发和部署环境使用 Docker 中的轻量迁移容器执行 `docker/migrations/sql/*.sql`。
 
 ### 时区配置
 
