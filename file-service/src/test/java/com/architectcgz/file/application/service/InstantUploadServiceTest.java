@@ -64,6 +64,7 @@ class InstantUploadServiceTest {
                 .fileHash("d41d8cd98f00b204e9800998ecf8427e")
                 .hashAlgorithm("MD5")
                 .storagePath("2026/01/19/12345/images/file.jpg")
+                .bucketName("public-bucket")
                 .fileSize(1024L)
                 .contentType("image/jpeg")
                 .referenceCount(1)
@@ -119,7 +120,8 @@ class InstantUploadServiceTest {
         // Given
         when(fileRecordRepository.findByUserIdAndFileHash("blog", userId, request.getFileHash()))
                 .thenReturn(Optional.of(fileRecord));
-        when(storageService.getUrl(fileRecord.getStoragePath()))
+        when(storageObjectRepository.findById("storage-obj-123")).thenReturn(Optional.of(storageObject));
+        when(storageService.getUrl("public-bucket", storageObject.getStoragePath()))
                 .thenReturn("https://cdn.example.com/2026/01/19/12345/images/file.jpg");
         
         // When
@@ -133,7 +135,7 @@ class InstantUploadServiceTest {
         assertThat(response.getUrl()).isEqualTo("https://cdn.example.com/2026/01/19/12345/images/file.jpg");
         
         verify(fileRecordRepository).findByUserIdAndFileHash("blog", userId, request.getFileHash());
-        verify(storageService).getUrl(fileRecord.getStoragePath());
+        verify(storageService).getUrl("public-bucket", storageObject.getStoragePath());
         verify(fileRecordRepository, never()).save(any());
         verify(storageObjectRepository, never()).incrementReferenceCount(anyString());
     }
@@ -146,7 +148,7 @@ class InstantUploadServiceTest {
                 .thenReturn(Optional.of(storageObject));
         when(fileRecordRepository.findByUserIdAndFileHash("blog", userId, request.getFileHash()))
                 .thenReturn(Optional.empty());
-        when(storageService.getUrl(storageObject.getStoragePath()))
+        when(storageService.getUrl("public-bucket", storageObject.getStoragePath()))
                 .thenReturn("https://cdn.example.com/2026/01/19/12345/images/file.jpg");
         when(fileRecordRepository.save(any(FileRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -173,7 +175,7 @@ class InstantUploadServiceTest {
                 fr.getStatus() == FileStatus.COMPLETED
         ));
         verify(storageObjectRepository).incrementReferenceCount(storageObject.getId());
-        verify(storageService).getUrl(storageObject.getStoragePath());
+        verify(storageService).getUrl("public-bucket", storageObject.getStoragePath());
     }
     
     @Test
@@ -200,7 +202,7 @@ class InstantUploadServiceTest {
                 .thenReturn(Optional.of(storageObject));
         when(fileRecordRepository.findByUserIdAndFileHash("blog", userId, request.getFileHash()))
                 .thenReturn(Optional.of(deletedFileRecord));
-        when(storageService.getUrl(storageObject.getStoragePath()))
+        when(storageService.getUrl("public-bucket", storageObject.getStoragePath()))
                 .thenReturn("https://cdn.example.com/2026/01/19/12345/images/file.jpg");
         when(fileRecordRepository.save(any(FileRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -221,7 +223,7 @@ class InstantUploadServiceTest {
         verify(fileRecordRepository).findByUserIdAndFileHash("blog", userId, request.getFileHash());
         verify(fileRecordRepository).save(any(FileRecord.class));
         verify(storageObjectRepository).incrementReferenceCount(storageObject.getId());
-        verify(storageService).getUrl(storageObject.getStoragePath());
+        verify(storageService).getUrl("public-bucket", storageObject.getStoragePath());
     }
     
     @Test
@@ -239,7 +241,7 @@ class InstantUploadServiceTest {
                 .thenReturn(Optional.of(storageObject));
         when(fileRecordRepository.findByUserIdAndFileHash("blog", userId, requestWithoutContentType.getFileHash()))
                 .thenReturn(Optional.empty());
-        when(storageService.getUrl(storageObject.getStoragePath()))
+        when(storageService.getUrl("public-bucket", storageObject.getStoragePath()))
                 .thenReturn("https://cdn.example.com/2026/01/19/12345/images/file.jpg");
         when(fileRecordRepository.save(any(FileRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -266,7 +268,7 @@ class InstantUploadServiceTest {
                 .thenReturn(Optional.of(storageObject));
         when(fileRecordRepository.findByUserIdAndFileHash("blog", userId, request.getFileHash()))
                 .thenReturn(Optional.empty());
-        when(storageService.getUrl(storageObject.getStoragePath()))
+        when(storageService.getUrl("public-bucket", storageObject.getStoragePath()))
                 .thenReturn("https://cdn.example.com/2026/01/19/12345/images/file.jpg");
         when(fileRecordRepository.save(any(FileRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -285,7 +287,6 @@ class InstantUploadServiceTest {
         verify(fileRecordRepository).findByUserIdAndFileHash("blog", userId, request.getFileHash());
         verify(fileRecordRepository).save(any(FileRecord.class));
         verify(storageObjectRepository).incrementReferenceCount(storageObject.getId());
-        verify(storageService).getUrl(storageObject.getStoragePath());
+        verify(storageService).getUrl("public-bucket", storageObject.getStoragePath());
     }
 }
-

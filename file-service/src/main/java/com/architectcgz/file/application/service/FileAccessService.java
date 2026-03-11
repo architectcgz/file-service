@@ -9,6 +9,7 @@ import com.architectcgz.file.common.exception.FileNotFoundException;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
+import com.architectcgz.file.domain.repository.StorageObjectRepository;
 import com.architectcgz.file.infrastructure.cache.FileUrlCacheManager;
 import com.architectcgz.file.infrastructure.config.S3Properties;
 import com.architectcgz.file.infrastructure.storage.StorageService;
@@ -33,6 +34,7 @@ import java.time.LocalDateTime;
 public class FileAccessService {
     
     private final FileRecordRepository fileRecordRepository;
+    private final StorageObjectRepository storageObjectRepository;
     private final StorageService storageService;
     private final S3Properties s3Properties;
     private final FileUrlCacheManager fileUrlCacheManager;
@@ -80,10 +82,11 @@ public class FileAccessService {
         String url;
         boolean isPermanent;
         LocalDateTime expiresAt;
+        String bucketName = resolveBucketName(file);
 
         if (file.getAccessLevel() == AccessLevel.PUBLIC) {
             // 公开文件：返回公开URL
-            url = storageService.getPublicUrl(file.getStoragePath());
+            url = storageService.getPublicUrl(bucketName, file.getStoragePath());
             isPermanent = true;
             expiresAt = null;
 
@@ -92,6 +95,7 @@ public class FileAccessService {
         } else {
             // 私有文件：返回预签名URL（不缓存）
             url = storageService.generatePresignedUrl(
+                    bucketName,
                     file.getStoragePath(),
                     Duration.ofSeconds(privateUrlExpireSeconds)
             );
@@ -104,6 +108,19 @@ public class FileAccessService {
                 .permanent(isPermanent)
                 .expiresAt(expiresAt)
                 .build();
+    }
+
+    private String resolveBucketName(FileRecord file) {
+        if (file.getStorageObjectId() == null || file.getStorageObjectId().isBlank()) {
+            return null;
+        }
+        return storageObjectRepository.findById(file.getStorageObjectId())
+                .map(storageObject -> storageObject.getBucketName())
+                .orElseGet(() -> {
+                    log.warn("StorageObject not found when resolving bucket, fallback to default bucket: fileId={}, storageObjectId={}",
+                            file.getId(), file.getStorageObjectId());
+                    return null;
+                });
     }
     
     

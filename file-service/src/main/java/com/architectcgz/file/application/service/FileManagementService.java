@@ -86,17 +86,17 @@ public class FileManagementService {
 
         // 1. 事务外预判：查询 StorageObject，判断引用计数是否为最后一个（递减后归零需删 S3）
         String storageObjectId = fileRecord.getStorageObjectId();
-        boolean needDeleteS3 = deleteTransactionHelper
-                .findStorageObjectIfLastReference(storageObjectId)
-                .isPresent();
+        Optional<StorageObject> storageObjectToDelete = deleteTransactionHelper
+                .findStorageObjectIfLastReference(storageObjectId);
+        boolean needDeleteS3 = storageObjectToDelete.isPresent();
 
         // 2. 如果引用计数将归零，先执行 S3 删除；S3 删除失败则整个操作中止，数据库保持不变
         if (needDeleteS3) {
-            String storagePath = fileRecord.getStoragePath();
-            log.info("引用计数将归零，先删除 S3 对象: storageObjectId={}, path={}",
-                    storageObjectId, storagePath);
-            storageService.delete(storagePath);
-            log.info("S3 对象删除成功: path={}", storagePath);
+            StorageObject storageObject = storageObjectToDelete.get();
+            log.info("引用计数将归零，先删除 S3 对象: storageObjectId={}, bucket={}, path={}",
+                    storageObjectId, storageObject.getBucketName(), storageObject.getStoragePath());
+            storageService.delete(storageObject.getBucketName(), storageObject.getStoragePath());
+            log.info("S3 对象删除成功: path={}", storageObject.getStoragePath());
         }
 
         // 3. S3 删除成功后，短事务内原子更新数据库（硬删 FileRecord、递减引用计数、删 StorageObject 记录）

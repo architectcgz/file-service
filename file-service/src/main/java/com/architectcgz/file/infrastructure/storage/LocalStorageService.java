@@ -20,6 +20,8 @@ import java.nio.file.Paths;
 @Service
 @ConditionalOnProperty(name = "storage.type", havingValue = "local", matchIfMissing = true)
 public class LocalStorageService implements StorageService {
+
+    private static final String LOCAL_BUCKET = "local";
     
     @Value("${storage.local.base-path:./uploads}")
     private String basePath;
@@ -38,6 +40,16 @@ public class LocalStorageService implements StorageService {
         } catch (IOException e) {
             throw new BusinessException(String.format(FileServiceErrorMessages.LOCAL_DIR_CREATE_FAILED, e.getMessage()));
         }
+    }
+
+    @Override
+    public String getDefaultBucketName() {
+        return LOCAL_BUCKET;
+    }
+
+    @Override
+    public String getBucketName(com.architectcgz.file.domain.model.AccessLevel accessLevel) {
+        return LOCAL_BUCKET;
     }
     
     @Override

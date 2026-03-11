@@ -28,6 +28,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
@@ -72,9 +73,11 @@ class FileAccessServiceTest {
         // 准备测试数据
         storageObject = StorageObject.builder()
                 .id("storage-001")
+                .appId("blog")
                 .fileHash("abc123")
                 .hashAlgorithm("MD5")
                 .storagePath("2026/01/19/123/test-file.jpg")
+                .bucketName("public-bucket")
                 .fileSize(1024L)
                 .contentType("image/jpeg")
                 .referenceCount(1)
@@ -121,8 +124,9 @@ class FileAccessServiceTest {
     void testGetFileUrl_PublicFile_returnsPermanentUrl() {
         // Given
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
-        lenient().when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(storageObject));
-        when(storageService.getPublicUrl(anyString())).thenReturn("https://cdn.example.com/2026/01/19/123/test-file.jpg");
+        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(storageObject));
+        when(storageService.getPublicUrl("public-bucket", publicFileRecord.getStoragePath()))
+                .thenReturn("https://cdn.example.com/2026/01/19/123/test-file.jpg");
         
         // When
         FileUrlResponse response = fileAccessService.getFileUrl("blog", "file-001", "123");
@@ -138,8 +142,8 @@ class FileAccessServiceTest {
     void testGetFileUrl_PrivateFile_Owner_returnsTemporaryUrl() {
         // Given
         when(fileRecordRepository.findById("file-002")).thenReturn(Optional.of(privateFileRecord));
-        lenient().when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(storageObject));
-        when(storageService.generatePresignedUrl(anyString(), any(Duration.class)))
+        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(storageObject));
+        when(storageService.generatePresignedUrl(eq("public-bucket"), eq(privateFileRecord.getStoragePath()), any(Duration.class)))
                 .thenReturn("https://s3.example.com/bucket/path?X-Amz-Signature=...");
         
         // When
@@ -157,7 +161,6 @@ class FileAccessServiceTest {
     void testGetFileUrl_PrivateFile_NonOwner_ThrowsException() {
         // Given
         when(fileRecordRepository.findById("file-002")).thenReturn(Optional.of(privateFileRecord));
-        lenient().when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(storageObject));
         
         // When & Then
         BusinessException exception = assertThrows(BusinessException.class, () -> {

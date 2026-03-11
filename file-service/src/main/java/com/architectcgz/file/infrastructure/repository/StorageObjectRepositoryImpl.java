@@ -82,6 +82,7 @@ public class StorageObjectRepositoryImpl implements StorageObjectRepository {
         po.setFileHash(storageObject.getFileHash());
         po.setHashAlgorithm(storageObject.getHashAlgorithm());
         po.setStoragePath(storageObject.getStoragePath());
+        po.setBucketName(storageObject.getBucketName());
         po.setFileSize(storageObject.getFileSize());
         po.setContentType(storageObject.getContentType());
         po.setReferenceCount(storageObject.getReferenceCount());
@@ -105,6 +106,7 @@ public class StorageObjectRepositoryImpl implements StorageObjectRepository {
                 .fileHash(po.getFileHash())
                 .hashAlgorithm(po.getHashAlgorithm())
                 .storagePath(po.getStoragePath())
+                .bucketName(po.getBucketName())
                 .fileSize(po.getFileSize())
                 .contentType(po.getContentType())
                 .referenceCount(po.getReferenceCount())

@@ -23,6 +23,8 @@ import jakarta.annotation.PostConstruct;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * S3 兼容存储服务实现
@@ -49,6 +51,16 @@ public class S3StorageService implements StorageService {
     public void init() {
         ensureBucketExists();
     }
+
+    @Override
+    public String getDefaultBucketName() {
+        return properties.getBucket();
+    }
+
+    @Override
+    public String getBucketName(com.architectcgz.file.domain.model.AccessLevel accessLevel) {
+        return properties.getBucketByAccessLevel(accessLevel);
+    }
     
     @Override
     public String upload(byte[] data, String path) {
@@ -58,16 +70,17 @@ public class S3StorageService implements StorageService {
     @Override
     public String upload(byte[] data, String path, String contentType) {
         try {
+            String bucketName = resolveBucket(null);
             PutObjectRequest putRequest = PutObjectRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(bucketName)
                     .key(path)
                     .contentType(contentType)
                     .build();
             
             s3Client.putObject(putRequest, RequestBody.fromBytes(data));
-            log.debug("File uploaded to S3: bucket={}, key={}", properties.getBucket(), path);
+            log.debug("File uploaded to S3: bucket={}, key={}", bucketName, path);
             
-            return getUrl(path);
+            return getUrl(bucketName, path);
         } catch (S3Exception e) {
             log.error("Failed to upload file to S3: bucket={}, key={}, error={}", 
                     properties.getBucket(), path, e.getMessage(), e);
@@ -82,16 +95,17 @@ public class S3StorageService implements StorageService {
     @Override
     public String uploadFromFile(Path file, String storagePath, String contentType) {
         try {
+            String bucketName = resolveBucket(null);
             PutObjectRequest putRequest = PutObjectRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(bucketName)
                     .key(storagePath)
                     .contentType(contentType)
                     .build();
 
             s3Client.putObject(putRequest, RequestBody.fromFile(file));
-            log.debug("File uploaded to S3 from local file: bucket={}, key={}", properties.getBucket(), storagePath);
+            log.debug("File uploaded to S3 from local file: bucket={}, key={}", bucketName, storagePath);
 
-            return getUrl(storagePath);
+            return getUrl(bucketName, storagePath);
         } catch (S3Exception e) {
             log.error("Failed to upload file to S3 from local file: bucket={}, key={}, error={}",
                     properties.getBucket(), storagePath, e.getMessage(), e);
@@ -106,7 +120,7 @@ public class S3StorageService implements StorageService {
     @Override
     public String uploadToPublicBucket(byte[] data, String path, String contentType) {
         try {
-            String publicBucket = properties.getPublicBucket();
+            String publicBucket = resolveBucket(properties.getPublicBucket());
             PutObjectRequest putRequest = PutObjectRequest.builder()
                     .bucket(publicBucket)
                     .key(path)
@@ -116,7 +130,7 @@ public class S3StorageService implements StorageService {
             s3Client.putObject(putRequest, RequestBody.fromBytes(data));
             log.debug("File uploaded to public bucket: bucket={}, key={}", publicBucket, path);
             
-            return getPublicUrl(path);
+            return getPublicUrl(publicBucket, path);
         } catch (S3Exception e) {
             log.error("Failed to upload file to public bucket: bucket={}, key={}, error={}", 
                     properties.getPublicBucket(), path, e.getMessage(), e);
@@ -131,7 +145,7 @@ public class S3StorageService implements StorageService {
     @Override
     public String uploadToPrivateBucket(byte[] data, String path, String contentType) {
         try {
-            String privateBucket = properties.getPrivateBucket();
+            String privateBucket = resolveBucket(properties.getPrivateBucket());
             PutObjectRequest putRequest = PutObjectRequest.builder()
                     .bucket(privateBucket)
                     .key(path)
@@ -166,27 +180,38 @@ public class S3StorageService implements StorageService {
     
     @Override
     public void delete(String path) {
+        delete(null, path);
+    }
+
+    @Override
+    public void delete(String bucketName, String path) {
         try {
+            String resolvedBucket = resolveBucket(bucketName);
             DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(resolvedBucket)
                     .key(path)
                     .build();
             
             s3Client.deleteObject(deleteRequest);
-            log.debug("File deleted from S3: bucket={}, key={}", properties.getBucket(), path);
+            log.debug("File deleted from S3: bucket={}, key={}", resolvedBucket, path);
         } catch (S3Exception e) {
             log.error("Failed to delete file from S3: bucket={}, key={}, error={}", 
-                    properties.getBucket(), path, e.getMessage(), e);
+                    resolveBucket(bucketName), path, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.FILE_DELETE_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during delete: bucket={}, key={}, error={}", 
-                    properties.getBucket(), path, e.getMessage(), e);
+                    resolveBucket(bucketName), path, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
     
     @Override
     public String getUrl(String path) {
+        return getUrl(null, path);
+    }
+
+    @Override
+    public String getUrl(String bucketName, String path) {
         // 如果配置或CDN domain，优先返或CDN URL
         if (StringUtils.hasText(properties.getCdnDomain())) {
             String cdnDomain = properties.getCdnDomain();
@@ -203,11 +228,16 @@ public class S3StorageService implements StorageService {
         if (endpoint.endsWith("/")) {
             endpoint = endpoint.substring(0, endpoint.length() - 1);
         }
-        return endpoint + "/" + properties.getBucket() + "/" + path;
+        return endpoint + "/" + resolveBucket(bucketName) + "/" + path;
     }
     
     @Override
     public String getPublicUrl(String path) {
+        return getPublicUrl(properties.getPublicBucket(), path);
+    }
+
+    @Override
+    public String getPublicUrl(String bucketName, String path) {
         // 如果配置了CDN domain，优先返回CDN URL
         if (StringUtils.hasText(properties.getCdnDomain())) {
             String cdnDomain = properties.getCdnDomain();
@@ -224,13 +254,18 @@ public class S3StorageService implements StorageService {
         if (endpoint.endsWith("/")) {
             endpoint = endpoint.substring(0, endpoint.length() - 1);
         }
-        return endpoint + "/" + properties.getPublicBucket() + "/" + path;
+        return endpoint + "/" + resolveBucket(bucketName) + "/" + path;
     }
     
     @Override
     public String generatePresignedUrl(String path, Duration expiration) {
+        return generatePresignedUrl(properties.getPrivateBucket(), path, expiration);
+    }
+
+    @Override
+    public String generatePresignedUrl(String bucketName, String path, Duration expiration) {
         try {
-            String privateBucket = properties.getPrivateBucket();
+            String privateBucket = resolveBucket(bucketName);
             GetObjectRequest getRequest = GetObjectRequest.builder()
                     .bucket(privateBucket)
                     .key(path)
@@ -260,9 +295,15 @@ public class S3StorageService implements StorageService {
     
     @Override
     public boolean exists(String path) {
+        return exists(null, path);
+    }
+
+    @Override
+    public boolean exists(String bucketName, String path) {
         try {
+            String resolvedBucket = resolveBucket(bucketName);
             HeadObjectRequest headRequest = HeadObjectRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(resolvedBucket)
                     .key(path)
                     .build();
 
@@ -273,27 +314,33 @@ public class S3StorageService implements StorageService {
             return false;
         } catch (S3Exception e) {
             log.error("Failed to check file existence in S3: bucket={}, key={}, error={}",
-                    properties.getBucket(), path, e.getMessage(), e);
+                    resolveBucket(bucketName), path, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_EXISTS_CHECK_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during exists check: bucket={}, key={}, error={}",
-                    properties.getBucket(), path, e.getMessage(), e);
+                    resolveBucket(bucketName), path, e.getMessage(), e);
             throw new BusinessException("S3 客户端错误: " + e.getMessage(), e);
         }
     }
 
     @Override
     public ObjectMetadata getObjectMetadata(String path) {
+        return getObjectMetadata(null, path);
+    }
+
+    @Override
+    public ObjectMetadata getObjectMetadata(String bucketName, String path) {
         try {
+            String resolvedBucket = resolveBucket(bucketName);
             HeadObjectRequest headRequest = HeadObjectRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(resolvedBucket)
                     .key(path)
                     .build();
 
             HeadObjectResponse response = s3Client.headObject(headRequest);
 
             log.debug("Got object metadata from S3: bucket={}, key={}, size={}, contentType={}",
-                    properties.getBucket(), path, response.contentLength(), response.contentType());
+                    resolvedBucket, path, response.contentLength(), response.contentType());
 
             return ObjectMetadata.builder()
                     .fileSize(response.contentLength() != null ? response.contentLength() : 0L)
@@ -301,15 +348,15 @@ public class S3StorageService implements StorageService {
                     .build();
         } catch (NoSuchKeyException e) {
             log.error("File not found in S3 when getting metadata: bucket={}, key={}",
-                    properties.getBucket(), path);
+                    resolveBucket(bucketName), path);
             throw new BusinessException("文件不存在: " + path, e);
         } catch (S3Exception e) {
             log.error("Failed to get object metadata from S3: bucket={}, key={}, error={}",
-                    properties.getBucket(), path, e.getMessage(), e);
+                    resolveBucket(bucketName), path, e.getMessage(), e);
             throw new BusinessException("获取文件元数据失败: " + e.getMessage(), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during head object: bucket={}, key={}, error={}",
-                    properties.getBucket(), path, e.getMessage(), e);
+                    resolveBucket(bucketName), path, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
@@ -351,23 +398,35 @@ public class S3StorageService implements StorageService {
      * 确保 bucket 存在，不存在则创或
      */
     private void ensureBucketExists() {
+        Set<String> buckets = new LinkedHashSet<>();
+        buckets.add(resolveBucket(properties.getBucket()));
+        buckets.add(resolveBucket(properties.getPublicBucket()));
+        buckets.add(resolveBucket(properties.getPrivateBucket()));
+
+        for (String bucketName : buckets) {
+            ensureBucketExists(bucketName, bucketName.equals(resolveBucket(properties.getPublicBucket())));
+        }
+    }
+
+    private void ensureBucketExists(String bucketName, boolean publicRead) {
         try {
             HeadBucketRequest headBucketRequest = HeadBucketRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(bucketName)
                     .build();
-            
+
             s3Client.headBucket(headBucketRequest);
-            log.info("S3 bucket exists: {}", properties.getBucket());
+            log.info("S3 bucket exists: {}", bucketName);
+            if (publicRead) {
+                setBucketPublicReadPolicy(bucketName);
+            }
         } catch (NoSuchBucketException e) {
-            // Bucket 不存在，创建或
-            log.info("S3 bucket does not exist, creating: {}", properties.getBucket());
-            createBucket();
+            log.info("S3 bucket does not exist, creating: {}", bucketName);
+            createBucket(bucketName, publicRead);
         } catch (S3Exception e) {
-            log.error("Failed to check S3 bucket: {}, error={}", properties.getBucket(), e.getMessage(), e);
+            log.error("Failed to check S3 bucket: {}, error={}", bucketName, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_INIT_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
-            log.error("S3 client error during bucket check: bucket={}, error={}", 
-                    properties.getBucket(), e.getMessage(), e);
+            log.error("S3 client error during bucket check: bucket={}, error={}", bucketName, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
@@ -375,24 +434,25 @@ public class S3StorageService implements StorageService {
     /**
      * 创建 bucket 并设置公开访问策略
      */
-    private void createBucket() {
+    private void createBucket(String bucketName, boolean publicRead) {
         try {
             CreateBucketRequest createBucketRequest = CreateBucketRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(bucketName)
                     .build();
             
             s3Client.createBucket(createBucketRequest);
-            log.info("S3 bucket created successfully: {}", properties.getBucket());
+            log.info("S3 bucket created successfully: {}", bucketName);
             
-            // 设置bucket为公开读取
-            setBucketPublicReadPolicy();
+            if (publicRead) {
+                setBucketPublicReadPolicy(bucketName);
+            }
             
         } catch (S3Exception e) {
-            log.error("Failed to create S3 bucket: {}, error={}", properties.getBucket(), e.getMessage(), e);
+            log.error("Failed to create S3 bucket: {}, error={}", bucketName, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_BUCKET_CREATE_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during bucket creation: bucket={}, error={}", 
-                    properties.getBucket(), e.getMessage(), e);
+                    bucketName, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
@@ -401,7 +461,7 @@ public class S3StorageService implements StorageService {
      * 设置bucket为公开读取策略
      * 允许所有人读取bucket中的对象
      */
-    private void setBucketPublicReadPolicy() {
+    private void setBucketPublicReadPolicy(String bucketName) {
         try {
             String policyJson = String.format(
                 "{\n" +
@@ -416,16 +476,16 @@ public class S3StorageService implements StorageService {
                 "    }\n" +
                 "  ]\n" +
                 "}", 
-                properties.getBucket()
+                bucketName
             );
             
             PutBucketPolicyRequest policyRequest = PutBucketPolicyRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(bucketName)
                     .policy(policyJson)
                     .build();
             
             s3Client.putBucketPolicy(policyRequest);
-            log.info("S3 bucket policy set to public read: {}", properties.getBucket());
+            log.info("S3 bucket policy set to public read: {}", bucketName);
             
         } catch (S3Exception e) {
             log.warn("Failed to set bucket policy (may not be supported by storage service): {}", e.getMessage());
@@ -433,6 +493,10 @@ public class S3StorageService implements StorageService {
         } catch (SdkClientException e) {
             log.warn("S3 client error during bucket policy setup: {}", e.getMessage());
         }
+    }
+
+    private String resolveBucket(String bucketName) {
+        return StringUtils.hasText(bucketName) ? bucketName : properties.getBucket();
     }
     
     /**

@@ -482,6 +482,7 @@ public class DirectUploadService {
                 .fileHash(fileHash)
                 .hashAlgorithm("MD5")
                 .storagePath(storagePath)
+                .bucketName(s3StorageService.getDefaultBucketName())
                 .fileSize(fileSize)
                 .contentType(contentType)
                 .referenceCount(1)

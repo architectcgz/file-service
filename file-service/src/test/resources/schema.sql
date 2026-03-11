@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS storage_objects (
     file_hash       VARCHAR(64) NOT NULL,
     hash_algorithm  VARCHAR(16) NOT NULL DEFAULT 'MD5',
     storage_path    VARCHAR(512) NOT NULL,
+    bucket_name     VARCHAR(128),
     file_size       BIGINT NOT NULL,
     content_type    VARCHAR(128) NOT NULL DEFAULT 'application/octet-stream',
     reference_count INT NOT NULL DEFAULT 1,

@@ -140,7 +140,7 @@ public class UploadApplicationService {
                 StorageObject existing = existingStorageObject.get();
                 storageObjectId = existing.getId();
                 storagePath = existing.getStoragePath();
-                imageUrl = storageService.getUrl(storagePath);
+                imageUrl = storageService.getUrl(existing.getBucketName(), storagePath);
 
                 // 缩略图仍需上传（每个用户可能有不同的缩略图需求）
                 String thumbnailPath = generateStoragePath(appId, userId, "thumbnails", "jpg");
@@ -188,6 +188,7 @@ public class UploadApplicationService {
                         .fileHash(fileHash)
                         .hashAlgorithm("MD5")
                         .storagePath(imagePath)
+                        .bucketName(storageService.getDefaultBucketName())
                         .fileSize(processedSize)
                         .contentType(contentType)
                         .referenceCount(1)
@@ -326,7 +327,7 @@ public class UploadApplicationService {
                 StorageObject storageObject = existingStorageObject.get();
                 storageObjectRepository.incrementReferenceCount(storageObject.getId());
                 storageObjectId = storageObject.getId();
-                fileUrl = storageService.getUrl(storageObject.getStoragePath());
+                fileUrl = storageService.getUrl(storageObject.getBucketName(), storageObject.getStoragePath());
                 
                 log.info("File instant upload (deduplication): fileHash={}, userId={}, originalFilename={}", 
                         fileHash, userId, file.getOriginalFilename());
@@ -344,6 +345,7 @@ public class UploadApplicationService {
                         .fileHash(fileHash)
                         .hashAlgorithm("MD5")
                         .storagePath(filePath)
+                        .bucketName(storageService.getDefaultBucketName())
                         .fileSize(file.getSize())
                         .contentType(file.getContentType())
                         .referenceCount(1)
@@ -431,20 +433,18 @@ public class UploadApplicationService {
 
         // 4. 事务外预判：查询 StorageObject，判断引用计数是否为最后一个（递减后归零需删 S3）
         String storageObjectId = fileRecord.getStorageObjectId();
-        boolean needDeleteS3 = deleteTransactionHelper
-                .findStorageObjectIfLastReference(storageObjectId)
-                .isPresent();
+        Optional<StorageObject> storageObjectToDelete = deleteTransactionHelper
+                .findStorageObjectIfLastReference(storageObjectId);
+        boolean needDeleteS3 = storageObjectToDelete.isPresent();
 
         // 5. 如果引用计数将归零，先执行 S3 删除；S3 删除失败则整个操作中止，数据库保持不变
         if (needDeleteS3) {
-            String storagePath = storageObjectRepository.findById(storageObjectId)
-                    .map(StorageObject::getStoragePath)
-                    .orElse(null);
-            if (storagePath != null) {
-                log.info("引用计数将归零，先删除 S3 对象: storageObjectId={}, path={}",
-                        storageObjectId, storagePath);
-                storageService.delete(storagePath);
-                log.info("S3 对象删除成功: path={}", storagePath);
+            StorageObject storageObject = storageObjectToDelete.get();
+            if (storageObject.getStoragePath() != null) {
+                log.info("引用计数将归零，先删除 S3 对象: storageObjectId={}, bucket={}, path={}",
+                        storageObjectId, storageObject.getBucketName(), storageObject.getStoragePath());
+                storageService.delete(storageObject.getBucketName(), storageObject.getStoragePath());
+                log.info("S3 对象删除成功: path={}", storageObject.getStoragePath());
             }
         }
 

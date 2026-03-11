@@ -512,6 +512,7 @@ public class MultipartUploadService {
                 .fileHash(fileHash)
                 .hashAlgorithm("MD5")
                 .storagePath(task.getStoragePath())
+                .bucketName(s3StorageService.getDefaultBucketName())
                 .fileSize(task.getFileSize())
                 .contentType(task.getContentType())
                 .referenceCount(1)

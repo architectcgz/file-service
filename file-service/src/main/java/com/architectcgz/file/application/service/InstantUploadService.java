@@ -50,7 +50,7 @@ public class InstantUploadService {
         if (existingFileRecord.isPresent() && !existingFileRecord.get().isDeleted()) {
             // 用户已有该文件，直接返回已存在的文件信息
             FileRecord fileRecord = existingFileRecord.get();
-            String fileUrl = storageService.getUrl(fileRecord.getStoragePath());
+            String fileUrl = resolveFileUrl(fileRecord.getStorageObjectId(), fileRecord.getStoragePath());
             
             log.info("Instant upload: user already has file with same hash: userId={}, fileHash={}, fileId={}", 
                     userId, request.getFileHash(), fileRecord.getId());
@@ -91,7 +91,7 @@ public class InstantUploadService {
             
             fileRecordRepository.save(fileRecord);
             
-            String fileUrl = storageService.getUrl(storageObject.getStoragePath());
+            String fileUrl = storageService.getUrl(storageObject.getBucketName(), storageObject.getStoragePath());
             
             log.info("Instant upload successful: fileHash={}, userId={}, fileId={}, storageObjectId={}", 
                     request.getFileHash(), userId, fileRecordId, storageObject.getId());
@@ -118,5 +118,11 @@ public class InstantUploadService {
      */
     private String generateFileId() {
         return UuidCreator.getTimeOrderedEpoch().toString();
+    }
+
+    private String resolveFileUrl(String storageObjectId, String storagePath) {
+        return storageObjectRepository.findById(storageObjectId)
+                .map(storageObject -> storageService.getUrl(storageObject.getBucketName(), storageObject.getStoragePath()))
+                .orElseGet(() -> storageService.getUrl(storagePath));
     }
 }

@@ -19,10 +19,10 @@ public interface StorageObjectMapper {
      */
     @Insert("""
         INSERT INTO storage_objects (
-            id, app_id, file_hash, hash_algorithm, storage_path, file_size, 
+            id, app_id, file_hash, hash_algorithm, storage_path, bucket_name, file_size,
             content_type, reference_count, created_at, updated_at
         ) VALUES (
-            #{id}, #{appId}, #{fileHash}, #{hashAlgorithm}, #{storagePath}, #{fileSize},
+            #{id}, #{appId}, #{fileHash}, #{hashAlgorithm}, #{storagePath}, #{bucketName}, #{fileSize},
             #{contentType}, #{referenceCount}, #{createdAt}, #{updatedAt}
         )
         """)
@@ -36,7 +36,7 @@ public interface StorageObjectMapper {
      * @return 存储对象PO
      */
     @Select("""
-        SELECT id, app_id, file_hash, hash_algorithm, storage_path, file_size,
+        SELECT id, app_id, file_hash, hash_algorithm, storage_path, bucket_name, file_size,
                content_type, reference_count, created_at, updated_at
         FROM storage_objects
         WHERE app_id = #{appId} AND file_hash = #{fileHash}
@@ -47,6 +47,7 @@ public interface StorageObjectMapper {
         @Result(property = "fileHash", column = "file_hash"),
         @Result(property = "hashAlgorithm", column = "hash_algorithm"),
         @Result(property = "storagePath", column = "storage_path"),
+        @Result(property = "bucketName", column = "bucket_name"),
         @Result(property = "fileSize", column = "file_size"),
         @Result(property = "contentType", column = "content_type"),
         @Result(property = "referenceCount", column = "reference_count"),
@@ -59,7 +60,7 @@ public interface StorageObjectMapper {
      * 根据ID查询存储对象
      */
     @Select("""
-        SELECT id, app_id, file_hash, hash_algorithm, storage_path, file_size,
+        SELECT id, app_id, file_hash, hash_algorithm, storage_path, bucket_name, file_size,
                content_type, reference_count, created_at, updated_at
         FROM storage_objects
         WHERE id = #{id}
@@ -104,7 +105,7 @@ public interface StorageObjectMapper {
      * @return 孤立存储对象列表
      */
     @Select("""
-        SELECT id, app_id, file_hash, hash_algorithm, storage_path, file_size,
+        SELECT id, app_id, file_hash, hash_algorithm, storage_path, bucket_name, file_size,
                content_type, reference_count, created_at, updated_at
         FROM storage_objects
         WHERE reference_count <= 0

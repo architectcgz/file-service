@@ -42,6 +42,12 @@ public class StorageObject {
      * S3 存储路径
      */
     private String storagePath;
+
+    /**
+     * 存储桶名称
+     * 用于在多桶部署下精确定位对象，避免后续操作回退到默认桶
+     */
+    private String bucketName;
     
     /**
      * 文件大小（字节）

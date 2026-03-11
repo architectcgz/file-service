@@ -163,7 +163,7 @@ public class OrphanedObjectCleanupScheduler {
 
         // 1. 直接删除 S3 对象（S3 deleteObject 本身是幂等的，无需先 exists 检查）
         try {
-            storageService.delete(storagePath);
+            storageService.delete(storageObject.getBucketName(), storagePath);
             log.info("S3 孤立对象已删除: path={}", storagePath);
         } catch (Exception e) {
             // S3 删除失败时保留数据库记录，等待下次调度重试

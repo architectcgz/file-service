@@ -7,6 +7,7 @@ import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
+import com.architectcgz.file.domain.repository.StorageObjectRepository;
 import com.architectcgz.file.infrastructure.cache.FileUrlCacheManager;
 import com.architectcgz.file.infrastructure.config.S3Properties;
 import com.architectcgz.file.infrastructure.storage.StorageService;
@@ -46,6 +47,8 @@ class FileAccessServiceCacheTest {
 
     @Mock
     private FileRecordRepository fileRecordRepository;
+    @Mock
+    private StorageObjectRepository storageObjectRepository;
     @Mock
     private StorageService storageService;
     @Mock
@@ -97,6 +100,7 @@ class FileAccessServiceCacheTest {
     void testCacheHit_ReturnsUrlFromCache() {
         String cachedUrl = "https://cdn.example.com/2026/02/10/user-123/test.jpg";
         when(fileUrlCacheManager.get("file-001")).thenReturn(cachedUrl);
+        when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
 
         FileUrlResponse response = fileAccessService.getFileUrl("blog", "file-001", "user-123");
 
@@ -104,8 +108,8 @@ class FileAccessServiceCacheTest {
         assertEquals(cachedUrl, response.getUrl());
         assertTrue(response.getPermanent());
         assertNull(response.getExpiresAt());
-        verify(fileRecordRepository, never()).findById(any());
-        verify(storageService, never()).getPublicUrl(any());
+        verify(fileRecordRepository).findById("file-001");
+        verify(storageService, never()).getPublicUrl(anyString(), anyString());
     }
 
     // ========== 缓存未命中测试 ==========
@@ -116,7 +120,8 @@ class FileAccessServiceCacheTest {
         String publicUrl = "https://cdn.example.com/2026/02/10/user-123/test.jpg";
         when(fileUrlCacheManager.get("file-001")).thenReturn(null);
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
-        when(storageService.getPublicUrl(publicFileRecord.getStoragePath())).thenReturn(publicUrl);
+        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.empty());
+        when(storageService.getPublicUrl((String) isNull(), eq(publicFileRecord.getStoragePath()))).thenReturn(publicUrl);
 
         FileUrlResponse response = fileAccessService.getFileUrl("blog", "file-001", "user-123");
 
@@ -135,7 +140,8 @@ class FileAccessServiceCacheTest {
         String presignedUrl = "https://s3.example.com/bucket/path?X-Amz-Signature=...";
         when(fileUrlCacheManager.get("file-002")).thenReturn(null);
         when(fileRecordRepository.findById("file-002")).thenReturn(Optional.of(privateFileRecord));
-        when(storageService.generatePresignedUrl(eq(privateFileRecord.getStoragePath()), any(Duration.class)))
+        when(storageObjectRepository.findById("storage-002")).thenReturn(Optional.empty());
+        when(storageService.generatePresignedUrl((String) isNull(), eq(privateFileRecord.getStoragePath()), any(Duration.class)))
                 .thenReturn(presignedUrl);
 
         FileUrlResponse response = fileAccessService.getFileUrl("blog", "file-002", "user-123");
@@ -155,7 +161,8 @@ class FileAccessServiceCacheTest {
         String publicUrl = "https://cdn.example.com/2026/02/10/user-123/test.jpg";
         when(fileUrlCacheManager.get("file-001")).thenReturn(null);
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
-        when(storageService.getPublicUrl(publicFileRecord.getStoragePath())).thenReturn(publicUrl);
+        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.empty());
+        when(storageService.getPublicUrl((String) isNull(), eq(publicFileRecord.getStoragePath()))).thenReturn(publicUrl);
 
         FileUrlResponse response = fileAccessService.getFileUrl("blog", "file-001", "user-123");
 
@@ -183,9 +190,9 @@ class FileAccessServiceCacheTest {
         when(fileUrlCacheManager.get("file-001")).thenReturn(null);
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
 
-        AccessDeniedException ex = assertThrows(AccessDeniedException.class,
+        BusinessException ex = assertThrows(BusinessException.class,
                 () -> fileAccessService.getFileUrl("wrong-app", "file-001", "user-123"));
-        assertEquals("文件不属于该应用", ex.getMessage());
+        assertEquals("文件不存在: file-001", ex.getMessage());
     }
 
     @Test

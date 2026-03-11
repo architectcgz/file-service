@@ -4,6 +4,7 @@ import com.architectcgz.file.common.exception.FileNotFoundException;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
+import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.TenantRepository;
 import com.architectcgz.file.domain.repository.TenantUsageRepository;
@@ -49,11 +50,14 @@ class FileManagementServiceCacheTest {
     private AuditLogService auditLogService;
     @Mock
     private FileUrlCacheManager fileUrlCacheManager;
+    @Mock
+    private FileDeleteTransactionHelper deleteTransactionHelper;
 
     @InjectMocks
     private FileManagementService fileManagementService;
 
     private FileRecord testFileRecord;
+    private StorageObject testStorageObject;
 
     @BeforeEach
     void setUp() {
@@ -65,6 +69,20 @@ class FileManagementServiceCacheTest {
                 .status(FileStatus.COMPLETED).accessLevel(AccessLevel.PUBLIC)
                 .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now())
                 .build();
+
+        testStorageObject = StorageObject.builder()
+                .id("storage-001")
+                .appId("blog")
+                .storagePath(testFileRecord.getStoragePath())
+                .bucketName("public-bucket")
+                .fileHash("abc123")
+                .hashAlgorithm("MD5")
+                .fileSize(testFileRecord.getFileSize())
+                .contentType(testFileRecord.getContentType())
+                .referenceCount(1)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
     }
 
     // ========== 缓存清除测试 ==========
@@ -73,34 +91,33 @@ class FileManagementServiceCacheTest {
     @DisplayName("文件删除 - 通过 FileUrlCacheManager 清除缓存")
     void testDeleteFile_EvictsCacheViaManager() {
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(testFileRecord));
-        when(fileRecordRepository.deleteById("file-001")).thenReturn(true);
-        doNothing().when(storageService).delete(anyString());
-        doNothing().when(tenantUsageRepository).decrementUsage(anyString(), anyLong());
+        when(deleteTransactionHelper.findStorageObjectIfLastReference("storage-001")).thenReturn(Optional.of(testStorageObject));
+        doNothing().when(storageService).delete("public-bucket", testFileRecord.getStoragePath());
+        doNothing().when(deleteTransactionHelper).commitAdminDelete("file-001", testFileRecord);
         doNothing().when(auditLogService).log(any());
 
         fileManagementService.deleteFile("file-001", "admin-001");
 
         verify(fileUrlCacheManager).evict("file-001");
-        verify(fileRecordRepository).deleteById("file-001");
-        verify(storageService).delete(testFileRecord.getStoragePath());
+        verify(deleteTransactionHelper).commitAdminDelete("file-001", testFileRecord);
+        verify(storageService).delete("public-bucket", testFileRecord.getStoragePath());
     }
 
     @Test
     @DisplayName("文件删除 - 缓存清除失败不影响文件删除")
     void testDeleteFile_CacheEvictFailureDoesNotAffectDeletion() {
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(testFileRecord));
-        when(fileRecordRepository.deleteById("file-001")).thenReturn(true);
-        doNothing().when(storageService).delete(anyString());
-        doNothing().when(tenantUsageRepository).decrementUsage(anyString(), anyLong());
+        when(deleteTransactionHelper.findStorageObjectIfLastReference("storage-001")).thenReturn(Optional.of(testStorageObject));
+        doNothing().when(storageService).delete("public-bucket", testFileRecord.getStoragePath());
+        doNothing().when(deleteTransactionHelper).commitAdminDelete("file-001", testFileRecord);
         doNothing().when(auditLogService).log(any());
         // FileUrlCacheManager.evict 内部已 catch 异常，这里模拟不抛出
         doNothing().when(fileUrlCacheManager).evict(anyString());
 
         assertDoesNotThrow(() -> fileManagementService.deleteFile("file-001", "admin-001"));
 
-        verify(fileRecordRepository).deleteById("file-001");
-        verify(storageService).delete(testFileRecord.getStoragePath());
-        verify(tenantUsageRepository).decrementUsage(testFileRecord.getAppId(), testFileRecord.getFileSize());
+        verify(deleteTransactionHelper).commitAdminDelete("file-001", testFileRecord);
+        verify(storageService).delete("public-bucket", testFileRecord.getStoragePath());
     }
 
     // ========== 边界情况测试 ==========
@@ -122,14 +139,15 @@ class FileManagementServiceCacheTest {
     @DisplayName("存储删除失败 - 抛出异常，不清除缓存")
     void testDeleteFile_StorageDeletionFails() {
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(testFileRecord));
+        when(deleteTransactionHelper.findStorageObjectIfLastReference("storage-001")).thenReturn(Optional.of(testStorageObject));
         doThrow(new RuntimeException("Storage deletion failed"))
-                .when(storageService).delete(anyString());
+                .when(storageService).delete("public-bucket", testFileRecord.getStoragePath());
 
         RuntimeException ex = assertThrows(RuntimeException.class,
                 () -> fileManagementService.deleteFile("file-001", "admin-001"));
 
-        assertTrue(ex.getMessage().contains("Failed to delete file"));
-        verify(fileRecordRepository, never()).deleteById(anyString());
+        assertTrue(ex.getMessage().contains("Storage deletion failed"));
+        verify(deleteTransactionHelper, never()).commitAdminDelete(anyString(), any());
         verify(fileUrlCacheManager, never()).evict(anyString());
     }
 
@@ -149,16 +167,26 @@ class FileManagementServiceCacheTest {
 
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(testFileRecord));
         when(fileRecordRepository.findById("file-002")).thenReturn(Optional.of(file2));
-        when(fileRecordRepository.deleteById(anyString())).thenReturn(true);
-        doNothing().when(storageService).delete(anyString());
-        doNothing().when(tenantUsageRepository).decrementUsage(anyString(), anyLong());
+        StorageObject file2StorageObject = StorageObject.builder()
+                .id("storage-002")
+                .appId("blog")
+                .storagePath(file2.getStoragePath())
+                .bucketName("public-bucket")
+                .referenceCount(1)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        when(deleteTransactionHelper.findStorageObjectIfLastReference("storage-001")).thenReturn(Optional.of(testStorageObject));
+        when(deleteTransactionHelper.findStorageObjectIfLastReference("storage-002")).thenReturn(Optional.of(file2StorageObject));
+        doNothing().when(storageService).delete(eq("public-bucket"), anyString());
+        doNothing().when(deleteTransactionHelper).commitAdminDelete(anyString(), any(FileRecord.class));
         doNothing().when(auditLogService).log(any());
 
         fileManagementService.batchDeleteFiles(Arrays.asList("file-001", "file-002"), "admin-001");
 
         verify(fileUrlCacheManager).evict("file-001");
         verify(fileUrlCacheManager).evict("file-002");
-        verify(fileRecordRepository).deleteById("file-001");
-        verify(fileRecordRepository).deleteById("file-002");
+        verify(deleteTransactionHelper).commitAdminDelete("file-001", testFileRecord);
+        verify(deleteTransactionHelper).commitAdminDelete("file-002", file2);
     }
 }

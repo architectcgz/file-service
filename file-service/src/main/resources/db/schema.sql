@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS storage_objects (
     file_hash VARCHAR(128) NOT NULL,
     hash_algorithm VARCHAR(20) NOT NULL DEFAULT 'MD5',
     storage_path VARCHAR(500) NOT NULL,
+    bucket_name VARCHAR(128),
     file_size BIGINT NOT NULL,
     content_type VARCHAR(100),
     reference_count INT NOT NULL DEFAULT 0,
@@ -184,6 +185,7 @@ COMMENT ON COLUMN file_records.access_level IS '访问级别: public=公开, pri
 -- =====================================================
 
 COMMENT ON COLUMN storage_objects.app_id IS '应用标识符，用于多租户隔离（如：blog, im）';
+COMMENT ON COLUMN storage_objects.bucket_name IS '对象所在存储桶名称，用于多桶部署下的精确定位';
 COMMENT ON COLUMN storage_objects.reference_count IS '引用计数 - 记录有多少文件记录引用此存储对象';
 
 -- =====================================================

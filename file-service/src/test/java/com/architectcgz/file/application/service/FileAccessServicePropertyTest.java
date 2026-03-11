@@ -7,6 +7,7 @@ import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
+import com.architectcgz.file.domain.repository.StorageObjectRepository;
 import com.architectcgz.file.infrastructure.cache.FileUrlCacheManager;
 import com.architectcgz.file.infrastructure.config.S3Properties;
 import com.architectcgz.file.infrastructure.storage.StorageService;
@@ -50,20 +51,23 @@ class FileAccessServicePropertyTest {
         
         // 创建 mock 依赖
         FileRecordRepository mockRepository = mock(FileRecordRepository.class);
+        StorageObjectRepository mockStorageObjectRepository = mock(StorageObjectRepository.class);
         StorageService mockStorageService = mock(StorageService.class);
         S3Properties mockS3Properties = mock(S3Properties.class);
         FileUrlCacheManager mockFileUrlCacheManager = mock(FileUrlCacheManager.class);
         
         when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
+        when(mockStorageObjectRepository.findById(anyString())).thenReturn(Optional.empty());
         when(mockFileUrlCacheManager.get(fileRecord.getId())).thenReturn(null);
         
         // 公开文件应该调用 getPublicUrl 而不是 generatePresignedUrl
         String expectedPublicUrl = "https://cdn.example.com/" + fileRecord.getStoragePath();
-        when(mockStorageService.getPublicUrl(fileRecord.getStoragePath())).thenReturn(expectedPublicUrl);
+        when(mockStorageService.getPublicUrl((String) isNull(), eq(fileRecord.getStoragePath()))).thenReturn(expectedPublicUrl);
         
         // 创建 FileAccessService
         FileAccessService service = new FileAccessService(
                 mockRepository, 
+                mockStorageObjectRepository,
                 mockStorageService, 
                 mockS3Properties,
                 mockFileUrlCacheManager
@@ -81,8 +85,8 @@ class FileAccessServicePropertyTest {
         assertNull(response.getExpiresAt(), "Public file URL should not have expiration time");
         
         // 验证调用了 getPublicUrl 而不是 generatePresignedUrl
-        verify(mockStorageService).getPublicUrl(fileRecord.getStoragePath());
-        verify(mockStorageService, never()).generatePresignedUrl(anyString(), any(Duration.class));
+        verify(mockStorageService).getPublicUrl((String) isNull(), eq(fileRecord.getStoragePath()));
+        verify(mockStorageService, never()).generatePresignedUrl(anyString(), anyString(), any(Duration.class));
     }
 
     /**
@@ -108,16 +112,19 @@ class FileAccessServicePropertyTest {
         
         // 创建 mock 依赖
         FileRecordRepository mockRepository = mock(FileRecordRepository.class);
+        StorageObjectRepository mockStorageObjectRepository = mock(StorageObjectRepository.class);
         StorageService mockStorageService = mock(StorageService.class);
         S3Properties mockS3Properties = mock(S3Properties.class);
         FileUrlCacheManager mockFileUrlCacheManager = mock(FileUrlCacheManager.class);
         
         when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
+        when(mockStorageObjectRepository.findById(anyString())).thenReturn(Optional.empty());
         when(mockFileUrlCacheManager.get(fileRecord.getId())).thenReturn(null);
         
         // 创建 FileAccessService
         FileAccessService service = new FileAccessService(
                 mockRepository, 
+                mockStorageObjectRepository,
                 mockStorageService, 
                 mockS3Properties,
                 mockFileUrlCacheManager
@@ -136,8 +143,8 @@ class FileAccessServicePropertyTest {
                 "Exception message should indicate access denied");
         
         // 验证没有调用 URL 生成方法
-        verify(mockStorageService, never()).getPublicUrl(anyString());
-        verify(mockStorageService, never()).generatePresignedUrl(anyString(), any(Duration.class));
+        verify(mockStorageService, never()).getPublicUrl(anyString(), anyString());
+        verify(mockStorageService, never()).generatePresignedUrl(anyString(), anyString(), any(Duration.class));
     }
 
     /**
@@ -162,22 +169,25 @@ class FileAccessServicePropertyTest {
         
         // 创建 mock 依赖
         FileRecordRepository mockRepository = mock(FileRecordRepository.class);
+        StorageObjectRepository mockStorageObjectRepository = mock(StorageObjectRepository.class);
         StorageService mockStorageService = mock(StorageService.class);
         S3Properties mockS3Properties = mock(S3Properties.class);
         FileUrlCacheManager mockFileUrlCacheManager = mock(FileUrlCacheManager.class);
         
         when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
+        when(mockStorageObjectRepository.findById(anyString())).thenReturn(Optional.empty());
         when(mockFileUrlCacheManager.get(fileRecord.getId())).thenReturn(null);
         
         // 私有文件应该调用 generatePresignedUrl
         String expectedPresignedUrl = "https://s3.example.com/bucket/" + fileRecord.getStoragePath() + 
                 "?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Signature=...";
-        when(mockStorageService.generatePresignedUrl(anyString(), any(Duration.class)))
+        when(mockStorageService.generatePresignedUrl((String) isNull(), anyString(), any(Duration.class)))
                 .thenReturn(expectedPresignedUrl);
         
         // 创建 FileAccessService
         FileAccessService service = new FileAccessService(
                 mockRepository, 
+                mockStorageObjectRepository,
                 mockStorageService, 
                 mockS3Properties,
                 mockFileUrlCacheManager
@@ -207,10 +217,11 @@ class FileAccessServicePropertyTest {
         
         // 验证调用了 generatePresignedUrl 而不是 getPublicUrl
         verify(mockStorageService).generatePresignedUrl(
-                eq(fileRecord.getStoragePath()), 
+                isNull(),
+                eq(fileRecord.getStoragePath()),
                 eq(Duration.ofSeconds(expireSeconds))
         );
-        verify(mockStorageService, never()).getPublicUrl(anyString());
+        verify(mockStorageService, never()).getPublicUrl(anyString(), anyString());
     }
 
     /**
@@ -234,15 +245,17 @@ class FileAccessServicePropertyTest {
 
         // 创建 mock 依赖
         FileRecordRepository mockRepository = mock(FileRecordRepository.class);
+        StorageObjectRepository mockStorageObjectRepository = mock(StorageObjectRepository.class);
         StorageService mockStorageService = mock(StorageService.class);
         S3Properties mockS3Properties = mock(S3Properties.class);
         FileUrlCacheManager mockFileUrlCacheManager = mock(FileUrlCacheManager.class);
 
         when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
+        when(mockStorageObjectRepository.findById(anyString())).thenReturn(Optional.empty());
         when(mockFileUrlCacheManager.get(fileRecord.getId())).thenReturn(null);
 
         FileAccessService service = new FileAccessService(
-                mockRepository, mockStorageService, mockS3Properties,
+                mockRepository, mockStorageObjectRepository, mockStorageService, mockS3Properties,
                 mockFileUrlCacheManager
         );
         ReflectionTestUtils.setField(service, "privateUrlExpireSeconds", 3600);
@@ -258,8 +271,8 @@ class FileAccessServicePropertyTest {
                 "Exception message should indicate file not found");
 
         // 验证没有调用 URL 生成方法
-        verify(mockStorageService, never()).getPublicUrl(anyString());
-        verify(mockStorageService, never()).generatePresignedUrl(anyString(), any(Duration.class));
+        verify(mockStorageService, never()).getPublicUrl(anyString(), anyString());
+        verify(mockStorageService, never()).generatePresignedUrl(anyString(), anyString(), any(Duration.class));
     }
 
     // ========== Arbitraries (数据生成器) ==========

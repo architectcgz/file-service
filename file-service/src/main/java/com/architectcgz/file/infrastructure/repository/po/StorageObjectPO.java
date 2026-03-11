@@ -36,6 +36,11 @@ public class StorageObjectPO {
      * S3 存储路径
      */
     private String storagePath;
+
+    /**
+     * 存储桶名称
+     */
+    private String bucketName;
     
     /**
      * 文件大小（字节）

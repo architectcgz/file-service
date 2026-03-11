@@ -126,7 +126,8 @@ public class PresignedUrlService {
                 userId, request.getStoragePath(), request.getFileHash());
         
         // 1. 通过 HeadObject 验证文件存在并获取真实元数据（fileSize、contentType）
-        ObjectMetadata metadata = storageService.getObjectMetadata(request.getStoragePath());
+        String bucketName = storageService.getDefaultBucketName();
+        ObjectMetadata metadata = storageService.getObjectMetadata(bucketName, request.getStoragePath());
         long realFileSize = metadata.getFileSize();
         String realContentType = metadata.getContentType();
 
@@ -144,7 +145,7 @@ public class PresignedUrlService {
             StorageObject storageObject = existingStorageObject.get();
             storageObjectRepository.incrementReferenceCount(storageObject.getId());
             storageObjectId = storageObject.getId();
-            fileUrl = storageService.getUrl(storageObject.getStoragePath());
+            fileUrl = storageService.getUrl(storageObject.getBucketName(), storageObject.getStoragePath());
             
             log.info("File deduplication: fileHash={}, storageObjectId={}, referenceCount={}", 
                     request.getFileHash(), storageObjectId, storageObject.getReferenceCount() + 1);
@@ -156,6 +157,7 @@ public class PresignedUrlService {
                     .fileHash(request.getFileHash())
                     .hashAlgorithm("MD5")
                     .storagePath(request.getStoragePath())
+                    .bucketName(bucketName)
                     .fileSize(realFileSize)
                     .contentType(realContentType)
                     .referenceCount(1)
@@ -165,7 +167,7 @@ public class PresignedUrlService {
             
             storageObjectRepository.save(storageObject);
             storageObjectId = storageObject.getId();
-            fileUrl = storageService.getUrl(request.getStoragePath());
+            fileUrl = storageService.getUrl(bucketName, request.getStoragePath());
             
             log.info("New StorageObject created: storageObjectId={}, storagePath={}", 
                     storageObjectId, request.getStoragePath());
