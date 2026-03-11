@@ -3,6 +3,8 @@ package com.architectcgz.file.application.service;
 import com.architectcgz.file.application.dto.DirectUploadCompleteRequest;
 import com.architectcgz.file.application.dto.DirectUploadInitRequest;
 import com.architectcgz.file.application.dto.DirectUploadInitResponse;
+import com.architectcgz.file.application.dto.DirectUploadPartUrlRequest;
+import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.StorageObject;
@@ -30,6 +32,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -152,11 +155,56 @@ class DirectUploadServiceTest {
         doNothing().when(uploadTransactionHelper)
                 .saveCompletedUpload(any(UploadTask.class), storageCaptor.capture(), recordCaptor.capture());
 
-        String fileId = directUploadService.completeDirectUpload(request, "user-123");
+        String fileId = directUploadService.completeDirectUpload("blog", request, "user-123");
 
         assertThat(fileId).isEqualTo(recordCaptor.getValue().getId());
         assertThat(storageCaptor.getValue().getBucketName()).isEqualTo("public-bucket");
         assertThat(recordCaptor.getValue().getStorageObjectId()).isEqualTo(storageCaptor.getValue().getId());
         verify(s3StorageService).completeMultipartUpload(eq("blog/files/report.pdf"), eq("upload-001"), any(), eq("public-bucket"));
+    }
+
+    @Test
+    @DisplayName("获取直传分片地址时 appId 不匹配应拒绝")
+    void getPartUploadUrls_shouldRejectWhenAppIdMismatch() {
+        UploadTask task = UploadTask.builder()
+                .id("task-001")
+                .appId("blog")
+                .userId("user-123")
+                .status(UploadTaskStatus.UPLOADING)
+                .totalParts(2)
+                .expiresAt(LocalDateTime.now().plusHours(1))
+                .build();
+        DirectUploadPartUrlRequest request = new DirectUploadPartUrlRequest();
+        request.setTaskId("task-001");
+        request.setPartNumbers(List.of(1));
+
+        when(uploadTaskRepository.findById("task-001")).thenReturn(Optional.of(task));
+
+        assertThatThrownBy(() -> directUploadService.getPartUploadUrls("im", request, "user-123"))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("完成直传上传时 appId 不匹配应拒绝")
+    void completeDirectUpload_shouldRejectWhenAppIdMismatch() {
+        UploadTask task = UploadTask.builder()
+                .id("task-001")
+                .appId("blog")
+                .userId("user-123")
+                .status(UploadTaskStatus.UPLOADING)
+                .totalParts(1)
+                .expiresAt(LocalDateTime.now().plusHours(1))
+                .build();
+        DirectUploadCompleteRequest request = new DirectUploadCompleteRequest();
+        request.setTaskId("task-001");
+        DirectUploadCompleteRequest.PartInfo part = new DirectUploadCompleteRequest.PartInfo();
+        part.setPartNumber(1);
+        part.setEtag("etag-1");
+        request.setParts(List.of(part));
+
+        when(uploadTaskRepository.findById("task-001")).thenReturn(Optional.of(task));
+
+        assertThatThrownBy(() -> directUploadService.completeDirectUpload("im", request, "user-123"))
+                .isInstanceOf(AccessDeniedException.class);
     }
 }

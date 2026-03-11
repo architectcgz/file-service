@@ -100,7 +100,7 @@ class MultipartControllerTest {
         byte[] data = "test data".getBytes();
         String etag = "test-etag-123";
         
-        when(multipartUploadService.uploadPart(eq(taskId), eq(partNumber), any(byte[].class), anyString()))
+        when(multipartUploadService.uploadPart(eq("test-app"), eq(taskId), eq(partNumber), any(byte[].class), anyString()))
                 .thenReturn(etag);
         UserContext.setUserId("1");
         
@@ -121,7 +121,7 @@ class MultipartControllerTest {
         int partNumber = 1;
         byte[] data = "test data".getBytes();
         
-        when(multipartUploadService.uploadPart(eq(taskId), eq(partNumber), any(byte[].class), anyString()))
+        when(multipartUploadService.uploadPart(eq("test-app"), eq(taskId), eq(partNumber), any(byte[].class), anyString()))
                 .thenThrow(new BusinessException("UPLOAD_TASK_NOT_FOUND", "Upload task not found"));
         UserContext.setUserId("1");
         
@@ -184,7 +184,7 @@ class MultipartControllerTest {
 
     @Test
     void testCompleteUploadReturnsResolvedFileUrl() throws Exception {
-        when(multipartUploadService.completeUpload("task-001", "1")).thenReturn("file-001");
+        when(multipartUploadService.completeUpload("test-app", "task-001", "1")).thenReturn("file-001");
         when(fileAccessService.getFileUrl("test-app", "file-001", "1"))
                 .thenReturn(FileUrlResponse.builder()
                         .url("https://cdn.example.com/files/file-001")

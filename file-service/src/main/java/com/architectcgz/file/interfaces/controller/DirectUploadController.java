@@ -65,13 +65,15 @@ public class DirectUploadController {
      */
     @PostMapping("/part-urls")
     public ApiResponse<DirectUploadPartUrlResponse> getPartUploadUrls(
+            HttpServletRequest httpRequest,
             @Valid @RequestBody DirectUploadPartUrlRequest request) {
+        String appId = (String) httpRequest.getAttribute("appId");
         String userId = resolveUserId();
         
-        log.info("获取分片上传URL: userId={}, taskId={}, partCount={}", 
-                userId, request.getTaskId(), request.getPartNumbers().size());
+        log.info("获取分片上传URL: appId={}, userId={}, taskId={}, partCount={}", 
+                appId, userId, request.getTaskId(), request.getPartNumbers().size());
         
-        DirectUploadPartUrlResponse response = directUploadService.getPartUploadUrls(request, userId);
+        DirectUploadPartUrlResponse response = directUploadService.getPartUploadUrls(appId, request, userId);
         
         return ApiResponse.success(response);
     }
@@ -87,12 +89,14 @@ public class DirectUploadController {
      */
     @PostMapping("/complete")
     public ApiResponse<String> completeUpload(
+            HttpServletRequest httpRequest,
             @Valid @RequestBody DirectUploadCompleteRequest request) {
+        String appId = (String) httpRequest.getAttribute("appId");
         String userId = resolveUserId();
         
-        log.info("完成直传上传: userId={}, taskId={}", userId, request.getTaskId());
+        log.info("完成直传上传: appId={}, userId={}, taskId={}", appId, userId, request.getTaskId());
         
-        String fileId = directUploadService.completeDirectUpload(request, userId);
+        String fileId = directUploadService.completeDirectUpload(appId, request, userId);
         
         return ApiResponse.success(fileId);
     }

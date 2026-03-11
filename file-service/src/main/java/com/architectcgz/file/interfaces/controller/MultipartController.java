@@ -78,7 +78,7 @@ public class MultipartController {
         
         log.info("Upload part - appId: {}, userId: {}, taskId: {}, partNumber: {}, size: {}", 
                 appId, userId, taskId, partNumber, data.length);
-        String etag = multipartUploadService.uploadPart(taskId, partNumber, data, userId);
+        String etag = multipartUploadService.uploadPart(appId, taskId, partNumber, data, userId);
         
         return ApiResponse.success(etag);
     }
@@ -101,7 +101,7 @@ public class MultipartController {
         
         log.info("Complete multipart upload - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
-        String fileId = multipartUploadService.completeUpload(taskId, userId);
+        String fileId = multipartUploadService.completeUpload(appId, taskId, userId);
         FileUrlResponse fileUrl = fileAccessService.getFileUrl(appId, fileId, userId);
         String url = fileUrl.getUrl();
         
@@ -131,7 +131,7 @@ public class MultipartController {
         
         log.info("Abort multipart upload - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
-        multipartUploadService.abortUpload(taskId, userId);
+        multipartUploadService.abortUpload(appId, taskId, userId);
         
         log.info("Abort multipart upload success - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
@@ -157,7 +157,7 @@ public class MultipartController {
         
         log.info("Get upload progress - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
-        UploadProgressResponse response = multipartUploadService.getProgress(taskId, userId);
+        UploadProgressResponse response = multipartUploadService.getProgress(appId, taskId, userId);
         
         return ApiResponse.success(response);
     }

@@ -174,7 +174,7 @@ public class MultipartUploadService {
      * @param userId     用户 ID
      * @return ETag
      */
-    public String uploadPart(String taskId, int partNumber, byte[] data, String userId) {
+    public String uploadPart(String appId, String taskId, int partNumber, byte[] data, String userId) {
         log.info("Uploading part {} for task: {}", partNumber, taskId);
 
         // 查询任务
@@ -182,9 +182,7 @@ public class MultipartUploadService {
                 .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
 
         // 验证用户权限
-        if (!task.getUserId().equals(userId)) {
-            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
-        }
+        validateTaskAccess(task, appId, userId, FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
 
         // 验证任务状态
         if (task.getStatus() != UploadTaskStatus.UPLOADING) {
@@ -314,7 +312,7 @@ public class MultipartUploadService {
      * @param userId 用户 ID
      * @return 文件记录 ID
      */
-    public String completeUpload(String taskId, String userId) {
+    public String completeUpload(String appId, String taskId, String userId) {
         log.info("Completing multipart upload for task: {}", taskId);
         String targetBucketName = resolveUploadBucketName();
         
@@ -323,9 +321,7 @@ public class MultipartUploadService {
                 .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
 
         // 验证用户权限
-        if (!task.getUserId().equals(userId)) {
-            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
-        }
+        validateTaskAccess(task, appId, userId, FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
 
         // 验证任务状态
         if (task.getStatus() != UploadTaskStatus.UPLOADING) {
@@ -430,7 +426,7 @@ public class MultipartUploadService {
      * @param userId 用户 ID
      */
     @Transactional
-    public void abortUpload(String taskId, String userId) {
+    public void abortUpload(String appId, String taskId, String userId) {
         log.info("Aborting multipart upload for task: {}", taskId);
         
         // 查询任务
@@ -438,9 +434,7 @@ public class MultipartUploadService {
                 .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
 
         // 验证用户权限
-        if (!task.getUserId().equals(userId)) {
-            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
-        }
+        validateTaskAccess(task, appId, userId, FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
         
         // 验证任务状态
         if (task.getStatus() != UploadTaskStatus.UPLOADING) {
@@ -474,15 +468,13 @@ public class MultipartUploadService {
      * @param userId 用户 ID
      * @return 上传进度
      */
-    public UploadProgressResponse getProgress(String taskId, String userId) {
+    public UploadProgressResponse getProgress(String appId, String taskId, String userId) {
         // 查询任务
         UploadTask task = uploadTaskRepository.findById(taskId)
                 .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
 
         // 验证用户权限
-        if (!task.getUserId().equals(userId)) {
-            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_VIEW_UPLOAD_TASK);
-        }
+        validateTaskAccess(task, appId, userId, FileServiceErrorMessages.ACCESS_DENIED_VIEW_UPLOAD_TASK);
         
         // 查询已完成的分片数量（使用 Bitmap 优化）
         int completedPartsCount = uploadPartRepository.countCompletedParts(taskId);
@@ -516,6 +508,12 @@ public class MultipartUploadService {
     public List<UploadTask> listTasks(String appId, String userId) {
         // 默认返回最近100个任务
         return uploadTaskRepository.findByUserId(appId, userId, 100);
+    }
+
+    private void validateTaskAccess(UploadTask task, String appId, String userId, String deniedMessage) {
+        if (!task.getUserId().equals(userId) || !task.getAppId().equals(appId)) {
+            throw new AccessDeniedException(deniedMessage);
+        }
     }
     
     /**

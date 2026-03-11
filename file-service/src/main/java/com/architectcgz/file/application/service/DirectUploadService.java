@@ -272,7 +272,7 @@ public class DirectUploadService {
      * @param userId 用户ID
      * @return 预签名 URL 列表
      */
-    public DirectUploadPartUrlResponse getPartUploadUrls(DirectUploadPartUrlRequest request, String userId) {
+    public DirectUploadPartUrlResponse getPartUploadUrls(String appId, DirectUploadPartUrlRequest request, String userId) {
         log.info("获取分片上传URL: taskId={}, partNumbers={}", 
                 request.getTaskId(), request.getPartNumbers());
         
@@ -281,9 +281,7 @@ public class DirectUploadService {
                 .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
 
         // 验证用户权限
-        if (!task.getUserId().equals(userId)) {
-            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
-        }
+        validateTaskAccess(task, appId, userId, FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
 
         // 验证任务状态
         if (task.getStatus() != UploadTaskStatus.UPLOADING) {
@@ -340,7 +338,7 @@ public class DirectUploadService {
      * @param userId 用户ID
      * @return 文件记录ID
      */
-    public String completeDirectUpload(DirectUploadCompleteRequest request, String userId) {
+    public String completeDirectUpload(String appId, DirectUploadCompleteRequest request, String userId) {
         log.info("完成直传上传: taskId={}, parts={}", request.getTaskId(), request.getParts().size());
         String targetBucketName = resolveUploadBucketName();
         
@@ -349,9 +347,7 @@ public class DirectUploadService {
                 .orElseThrow(() -> new BusinessException(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND));
 
         // 验证用户权限
-        if (!task.getUserId().equals(userId)) {
-            throw new AccessDeniedException(FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
-        }
+        validateTaskAccess(task, appId, userId, FileServiceErrorMessages.ACCESS_DENIED_UPLOAD_TASK);
 
         // 验证任务状态
         if (task.getStatus() != UploadTaskStatus.UPLOADING) {
@@ -540,6 +536,12 @@ public class DirectUploadService {
             throw new BusinessException("上传任务缺少 fileHash，无法建立存储对象");
         }
         return task.getFileHash();
+    }
+
+    private void validateTaskAccess(UploadTask task, String appId, String userId, String deniedMessage) {
+        if (!task.getUserId().equals(userId) || !task.getAppId().equals(appId)) {
+            throw new AccessDeniedException(deniedMessage);
+        }
     }
 
     private String resolveUploadBucketName() {

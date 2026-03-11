@@ -1,6 +1,7 @@
 package com.architectcgz.file.application.service;
 
 import com.architectcgz.file.application.dto.InitUploadRequest;
+import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.StorageObject;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
@@ -142,11 +144,48 @@ class MultipartUploadServiceTest {
         doNothing().when(uploadTransactionHelper)
                 .saveCompletedUpload(any(UploadTask.class), storageCaptor.capture(), recordCaptor.capture());
 
-        String fileId = multipartUploadService.completeUpload("task-001", "user-123");
+        String fileId = multipartUploadService.completeUpload("blog", "task-001", "user-123");
 
         assertThat(fileId).isEqualTo(recordCaptor.getValue().getId());
         assertThat(storageCaptor.getValue().getBucketName()).isEqualTo("public-bucket");
         assertThat(recordCaptor.getValue().getStorageObjectId()).isEqualTo(storageCaptor.getValue().getId());
         verify(s3StorageService).completeMultipartUpload(eq("blog/files/archive.zip"), eq("upload-001"), any(), eq("public-bucket"));
+    }
+
+    @Test
+    @DisplayName("上传分片时 appId 不匹配应拒绝")
+    void uploadPart_shouldRejectWhenAppIdMismatch() {
+        UploadTask task = UploadTask.builder()
+                .id("task-001")
+                .appId("blog")
+                .userId("user-123")
+                .uploadId("upload-001")
+                .storagePath("blog/files/archive.zip")
+                .status(UploadTaskStatus.UPLOADING)
+                .totalParts(2)
+                .expiresAt(LocalDateTime.now().plusHours(1))
+                .build();
+        when(uploadTaskRepository.findById("task-001")).thenReturn(Optional.of(task));
+
+        assertThatThrownBy(() -> multipartUploadService.uploadPart("im", "task-001", 1, "data".getBytes(), "user-123"))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("中止上传时 appId 不匹配应拒绝")
+    void abortUpload_shouldRejectWhenAppIdMismatch() {
+        UploadTask task = UploadTask.builder()
+                .id("task-001")
+                .appId("blog")
+                .userId("user-123")
+                .uploadId("upload-001")
+                .storagePath("blog/files/archive.zip")
+                .status(UploadTaskStatus.UPLOADING)
+                .expiresAt(LocalDateTime.now().plusHours(1))
+                .build();
+        when(uploadTaskRepository.findById("task-001")).thenReturn(Optional.of(task));
+
+        assertThatThrownBy(() -> multipartUploadService.abortUpload("im", "task-001", "user-123"))
+                .isInstanceOf(AccessDeniedException.class);
     }
 }

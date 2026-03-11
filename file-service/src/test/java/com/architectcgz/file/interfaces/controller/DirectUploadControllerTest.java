@@ -112,7 +112,7 @@ class DirectUploadControllerTest {
         request.setParts(List.of(part));
 
         UserContext.setUserId("context-user");
-        when(directUploadService.completeDirectUpload(any(DirectUploadCompleteRequest.class), anyString()))
+        when(directUploadService.completeDirectUpload(anyString(), any(DirectUploadCompleteRequest.class), anyString()))
                 .thenReturn("file-001");
 
         mockMvc.perform(post("/api/v1/direct-upload/complete")
@@ -123,6 +123,6 @@ class DirectUploadControllerTest {
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data").value("file-001"));
 
-        verify(directUploadService).completeDirectUpload(any(DirectUploadCompleteRequest.class), eq("context-user"));
+        verify(directUploadService).completeDirectUpload(eq("test-app"), any(DirectUploadCompleteRequest.class), eq("context-user"));
     }
 }
