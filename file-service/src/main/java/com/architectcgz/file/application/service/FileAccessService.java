@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -83,15 +84,29 @@ public class FileAccessService {
         boolean isPermanent;
         LocalDateTime expiresAt;
         String bucketName = resolveBucketName(file);
+        String publicBucketName = storageService.getBucketName(AccessLevel.PUBLIC);
 
         if (file.getAccessLevel() == AccessLevel.PUBLIC) {
-            // 公开文件：返回公开URL
-            url = storageService.getPublicUrl(bucketName, file.getStoragePath());
-            isPermanent = true;
-            expiresAt = null;
+            if (isPublicBucket(bucketName, publicBucketName)) {
+                // 公开文件：对象位于公开桶时返回永久公开 URL
+                url = storageService.getPublicUrl(bucketName, file.getStoragePath());
+                isPermanent = true;
+                expiresAt = null;
 
-            // 将公开文件的URL写入缓存
-            fileUrlCacheManager.put(fileId, url);
+                // 将公开文件的URL写入缓存
+                fileUrlCacheManager.put(fileId, url);
+            } else {
+                // 兼容历史错误数据：公开文件若仍位于私有/默认桶，则退化为临时签名 URL，先保证可访问
+                url = storageService.generatePresignedUrl(
+                        bucketName,
+                        file.getStoragePath(),
+                        Duration.ofSeconds(privateUrlExpireSeconds)
+                );
+                isPermanent = false;
+                expiresAt = LocalDateTime.now().plusSeconds(privateUrlExpireSeconds);
+                log.warn("Public file stored outside public bucket, fallback to presigned URL: fileId={}, bucket={}",
+                        fileId, bucketName);
+            }
         } else {
             // 私有文件：返回预签名URL（不缓存）
             url = storageService.generatePresignedUrl(
@@ -121,6 +136,13 @@ public class FileAccessService {
                             file.getId(), file.getStorageObjectId());
                     return null;
                 });
+    }
+
+    private boolean isPublicBucket(String bucketName, String publicBucketName) {
+        if (!StringUtils.hasText(publicBucketName)) {
+            return !StringUtils.hasText(bucketName);
+        }
+        return publicBucketName.equals(bucketName);
     }
     
     

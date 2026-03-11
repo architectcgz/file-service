@@ -6,6 +6,7 @@ import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
+import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.StorageObjectRepository;
 import com.architectcgz.file.infrastructure.cache.FileUrlCacheManager;
@@ -118,10 +119,12 @@ class FileAccessServiceCacheTest {
     @DisplayName("缓存未命中 - 查询数据库并写入缓存")
     void testCacheMiss_QueriesDatabaseAndCachesResult() {
         String publicUrl = "https://cdn.example.com/2026/02/10/user-123/test.jpg";
+        StorageObject publicObject = buildStorageObject("storage-001", "public-bucket", publicFileRecord.getStoragePath());
         when(fileUrlCacheManager.get("file-001")).thenReturn(null);
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
-        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.empty());
-        when(storageService.getPublicUrl((String) isNull(), eq(publicFileRecord.getStoragePath()))).thenReturn(publicUrl);
+        when(storageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
+        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(publicObject));
+        when(storageService.getPublicUrl("public-bucket", publicFileRecord.getStoragePath())).thenReturn(publicUrl);
 
         FileUrlResponse response = fileAccessService.getFileUrl("blog", "file-001", "user-123");
 
@@ -140,6 +143,7 @@ class FileAccessServiceCacheTest {
         String presignedUrl = "https://s3.example.com/bucket/path?X-Amz-Signature=...";
         when(fileUrlCacheManager.get("file-002")).thenReturn(null);
         when(fileRecordRepository.findById("file-002")).thenReturn(Optional.of(privateFileRecord));
+        when(storageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
         when(storageObjectRepository.findById("storage-002")).thenReturn(Optional.empty());
         when(storageService.generatePresignedUrl((String) isNull(), eq(privateFileRecord.getStoragePath()), any(Duration.class)))
                 .thenReturn(presignedUrl);
@@ -159,10 +163,12 @@ class FileAccessServiceCacheTest {
     @DisplayName("缓存返回null - 降级到数据库查询")
     void testCacheReturnsNull_FallbackToDatabase() {
         String publicUrl = "https://cdn.example.com/2026/02/10/user-123/test.jpg";
+        StorageObject publicObject = buildStorageObject("storage-001", "public-bucket", publicFileRecord.getStoragePath());
         when(fileUrlCacheManager.get("file-001")).thenReturn(null);
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
-        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.empty());
-        when(storageService.getPublicUrl((String) isNull(), eq(publicFileRecord.getStoragePath()))).thenReturn(publicUrl);
+        when(storageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
+        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(publicObject));
+        when(storageService.getPublicUrl("public-bucket", publicFileRecord.getStoragePath())).thenReturn(publicUrl);
 
         FileUrlResponse response = fileAccessService.getFileUrl("blog", "file-001", "user-123");
 
@@ -285,5 +291,41 @@ class FileAccessServiceCacheTest {
                 // afterCommit 异常不影响已提交的事务
             }
         });
+    }
+
+    @Test
+    @DisplayName("公开文件落错桶时 - 返回预签名URL且不写缓存")
+    void testPublicFileOutsidePublicBucket_ReturnsPresignedUrlWithoutCaching() {
+        StorageObject legacyObject = buildStorageObject("storage-legacy", "legacy-private-bucket", publicFileRecord.getStoragePath());
+
+        when(fileUrlCacheManager.get("file-001")).thenReturn(null);
+        when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
+        when(storageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
+        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(legacyObject));
+        when(storageService.generatePresignedUrl(eq("legacy-private-bucket"), eq(publicFileRecord.getStoragePath()), any(Duration.class)))
+                .thenReturn("https://s3.example.com/legacy-public-fallback");
+
+        FileUrlResponse response = fileAccessService.getFileUrl("blog", "file-001", "user-123");
+
+        assertNotNull(response);
+        assertEquals("https://s3.example.com/legacy-public-fallback", response.getUrl());
+        assertFalse(response.getPermanent());
+        verify(fileUrlCacheManager, never()).put(anyString(), anyString());
+    }
+
+    private StorageObject buildStorageObject(String id, String bucketName, String storagePath) {
+        return StorageObject.builder()
+                .id(id)
+                .appId("blog")
+                .fileHash("abc123")
+                .hashAlgorithm("MD5")
+                .storagePath(storagePath)
+                .bucketName(bucketName)
+                .fileSize(1024L)
+                .contentType("image/jpeg")
+                .referenceCount(1)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
     }
 }

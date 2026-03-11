@@ -94,8 +94,14 @@ public class S3StorageService implements StorageService {
     
     @Override
     public String uploadFromFile(Path file, String storagePath, String contentType) {
+        return uploadFromFile(file, storagePath, contentType, com.architectcgz.file.domain.model.AccessLevel.PUBLIC);
+    }
+
+    @Override
+    public String uploadFromFile(Path file, String storagePath, String contentType,
+                                 com.architectcgz.file.domain.model.AccessLevel accessLevel) {
         try {
-            String bucketName = resolveBucket(null);
+            String bucketName = resolveBucket(properties.getBucketByAccessLevel(accessLevel));
             PutObjectRequest putRequest = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(storagePath)
@@ -105,6 +111,9 @@ public class S3StorageService implements StorageService {
             s3Client.putObject(putRequest, RequestBody.fromFile(file));
             log.debug("File uploaded to S3 from local file: bucket={}, key={}", bucketName, storagePath);
 
+            if (accessLevel == com.architectcgz.file.domain.model.AccessLevel.PUBLIC) {
+                return getPublicUrl(bucketName, storagePath);
+            }
             return getUrl(bucketName, storagePath);
         } catch (S3Exception e) {
             log.error("Failed to upload file to S3 from local file: bucket={}, key={}, error={}",
@@ -249,7 +258,10 @@ public class S3StorageService implements StorageService {
         }
         
         // 否则返回公开存储桶的 S3 endpoint URL
-        String endpoint = properties.getEndpoint();
+        String endpoint = properties.getPublicEndpoint();
+        if (!StringUtils.hasText(endpoint)) {
+            endpoint = properties.getEndpoint();
+        }
         // 移除末尾的 /
         if (endpoint.endsWith("/")) {
             endpoint = endpoint.substring(0, endpoint.length() - 1);

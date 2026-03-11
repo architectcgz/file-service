@@ -98,6 +98,12 @@ public class LocalStorageService implements StorageService {
             throw new BusinessException("文件上传失败: " + e.getMessage());
         }
     }
+
+    @Override
+    public String uploadFromFile(Path file, String storagePath, String contentType,
+                                 com.architectcgz.file.domain.model.AccessLevel accessLevel) {
+        return uploadFromFile(file, storagePath, contentType);
+    }
     
     @Override
     public String uploadToPublicBucket(byte[] data, String path, String contentType) {

@@ -124,6 +124,7 @@ class FileAccessServiceTest {
     void testGetFileUrl_PublicFile_returnsPermanentUrl() {
         // Given
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
+        when(storageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
         when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(storageObject));
         when(storageService.getPublicUrl("public-bucket", publicFileRecord.getStoragePath()))
                 .thenReturn("https://cdn.example.com/2026/01/19/123/test-file.jpg");
@@ -142,6 +143,7 @@ class FileAccessServiceTest {
     void testGetFileUrl_PrivateFile_Owner_returnsTemporaryUrl() {
         // Given
         when(fileRecordRepository.findById("file-002")).thenReturn(Optional.of(privateFileRecord));
+        when(storageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
         when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(storageObject));
         when(storageService.generatePresignedUrl(eq("public-bucket"), eq(privateFileRecord.getStoragePath()), any(Duration.class)))
                 .thenReturn("https://s3.example.com/bucket/path?X-Amz-Signature=...");
@@ -211,6 +213,36 @@ class FileAccessServiceTest {
         });
         
         assertEquals("文件已被删除: file-003", exception.getMessage());
+    }
+
+    @Test
+    void testGetFileUrl_PublicFileOutsidePublicBucket_returnsPresignedUrl() {
+        StorageObject privateBucketObject = StorageObject.builder()
+                .id("storage-002")
+                .appId("blog")
+                .fileHash("abc123")
+                .hashAlgorithm("MD5")
+                .storagePath("2026/01/19/123/test-file.jpg")
+                .bucketName("private-bucket")
+                .fileSize(1024L)
+                .contentType("image/jpeg")
+                .referenceCount(1)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
+        when(storageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
+        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(privateBucketObject));
+        when(storageService.generatePresignedUrl(eq("private-bucket"), eq(publicFileRecord.getStoragePath()), any(Duration.class)))
+                .thenReturn("https://s3.example.com/private-object?X-Amz-Signature=fallback");
+
+        FileUrlResponse response = fileAccessService.getFileUrl("blog", "file-001", "123");
+
+        assertNotNull(response);
+        assertEquals("https://s3.example.com/private-object?X-Amz-Signature=fallback", response.getUrl());
+        assertFalse(response.getPermanent());
+        assertNotNull(response.getExpiresAt());
     }
     
     @Test

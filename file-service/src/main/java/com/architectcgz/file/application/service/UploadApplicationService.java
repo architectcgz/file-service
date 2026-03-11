@@ -47,6 +47,8 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class UploadApplicationService {
+
+    private static final AccessLevel DEFAULT_UPLOAD_ACCESS_LEVEL = AccessLevel.PUBLIC;
     
     private final StorageService storageService;
     private final ImageProcessor imageProcessor;
@@ -140,11 +142,16 @@ public class UploadApplicationService {
                 StorageObject existing = existingStorageObject.get();
                 storageObjectId = existing.getId();
                 storagePath = existing.getStoragePath();
-                imageUrl = storageService.getUrl(existing.getBucketName(), storagePath);
+                imageUrl = storageService.getPublicUrl(existing.getBucketName(), storagePath);
 
                 // 缩略图仍需上传（每个用户可能有不同的缩略图需求）
                 String thumbnailPath = generateStoragePath(appId, userId, "thumbnails", "jpg");
-                thumbnailUrl = storageService.uploadFromFile(tempThumbnailFile, thumbnailPath, "image/jpeg");
+                thumbnailUrl = storageService.uploadFromFile(
+                        tempThumbnailFile,
+                        thumbnailPath,
+                        "image/jpeg",
+                        DEFAULT_UPLOAD_ACCESS_LEVEL
+                );
                 uploadedS3Paths.add(thumbnailPath);
 
                 log.info("Image instant upload (deduplication): fileHash={}, userId={}, originalFilename={}",
@@ -171,10 +178,20 @@ public class UploadApplicationService {
                 String imagePath = generateStoragePath(appId, userId, "images", extension);
                 String thumbnailPath = generateStoragePath(appId, userId, "thumbnails", "jpg");
 
-                imageUrl = storageService.uploadFromFile(tempProcessedFile, imagePath, contentType);
+                imageUrl = storageService.uploadFromFile(
+                        tempProcessedFile,
+                        imagePath,
+                        contentType,
+                        DEFAULT_UPLOAD_ACCESS_LEVEL
+                );
                 uploadedS3Paths.add(imagePath);
 
-                thumbnailUrl = storageService.uploadFromFile(tempThumbnailFile, thumbnailPath, "image/jpeg");
+                thumbnailUrl = storageService.uploadFromFile(
+                        tempThumbnailFile,
+                        thumbnailPath,
+                        "image/jpeg",
+                        DEFAULT_UPLOAD_ACCESS_LEVEL
+                );
                 uploadedS3Paths.add(thumbnailPath);
 
                 log.info("Image uploaded to S3: imagePath={}, userId={}, originalFilename={}",
@@ -188,7 +205,7 @@ public class UploadApplicationService {
                         .fileHash(fileHash)
                         .hashAlgorithm("MD5")
                         .storagePath(imagePath)
-                        .bucketName(storageService.getDefaultBucketName())
+                        .bucketName(storageService.getBucketName(DEFAULT_UPLOAD_ACCESS_LEVEL))
                         .fileSize(processedSize)
                         .contentType(contentType)
                         .referenceCount(1)
@@ -245,7 +262,7 @@ public class UploadApplicationService {
                 .contentType(contentType)
                 .fileHash(fileHash)
                 .hashAlgorithm("MD5")
-                .accessLevel(AccessLevel.PUBLIC)
+                .accessLevel(DEFAULT_UPLOAD_ACCESS_LEVEL)
                 .status(FileStatus.COMPLETED)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
@@ -327,7 +344,7 @@ public class UploadApplicationService {
                 StorageObject storageObject = existingStorageObject.get();
                 storageObjectRepository.incrementReferenceCount(storageObject.getId());
                 storageObjectId = storageObject.getId();
-                fileUrl = storageService.getUrl(storageObject.getBucketName(), storageObject.getStoragePath());
+                fileUrl = storageService.getPublicUrl(storageObject.getBucketName(), storageObject.getStoragePath());
                 
                 log.info("File instant upload (deduplication): fileHash={}, userId={}, originalFilename={}", 
                         fileHash, userId, file.getOriginalFilename());
@@ -336,7 +353,12 @@ public class UploadApplicationService {
                 String extension = getExtensiExcepException(file.getOriginalFilename());
                 String filePath = generateStoragePath(appId, userId, "files", extension);
                 
-                fileUrl = storageService.upload(fileData, filePath, file.getContentType());
+                fileUrl = storageService.uploadByAccessLevel(
+                        fileData,
+                        filePath,
+                        file.getContentType(),
+                        DEFAULT_UPLOAD_ACCESS_LEVEL
+                );
                 
                 // 创建 StorageObject
                 StorageObject storageObject = StorageObject.builder()
@@ -345,7 +367,7 @@ public class UploadApplicationService {
                         .fileHash(fileHash)
                         .hashAlgorithm("MD5")
                         .storagePath(filePath)
-                        .bucketName(storageService.getDefaultBucketName())
+                        .bucketName(storageService.getBucketName(DEFAULT_UPLOAD_ACCESS_LEVEL))
                         .fileSize(file.getSize())
                         .contentType(file.getContentType())
                         .referenceCount(1)
@@ -378,7 +400,7 @@ public class UploadApplicationService {
                     .contentType(file.getContentType())
                     .fileHash(fileHash)
                     .hashAlgorithm("MD5")
-                    .accessLevel(AccessLevel.PUBLIC)
+                    .accessLevel(DEFAULT_UPLOAD_ACCESS_LEVEL)
                     .status(FileStatus.COMPLETED)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())

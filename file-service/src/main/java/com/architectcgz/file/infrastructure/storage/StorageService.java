@@ -55,6 +55,14 @@ public interface StorageService {
     String uploadFromFile(Path file, String storagePath, String contentType);
 
     /**
+     * 从本地文件上传到指定访问级别对应的存储桶。
+     * 默认实现退化为原有单桶上传逻辑，便于本地存储等实现平滑兼容。
+     */
+    default String uploadFromFile(Path file, String storagePath, String contentType, AccessLevel accessLevel) {
+        return uploadFromFile(file, storagePath, contentType);
+    }
+
+    /**
      * 上传文件到公开存储桶
      *
      * @param data 文件数据
