@@ -27,6 +27,16 @@ public interface StorageObjectRepository {
      * @return 存储对象（如果存在）
      */
     Optional<StorageObject> findByFileHash(String appId, String fileHash);
+
+    /**
+     * 根据应用ID、文件哈希和存储桶查找存储对象
+     *
+     * @param appId 应用ID
+     * @param fileHash 文件哈希值
+     * @param bucketName 存储桶名称
+     * @return 存储对象（如果存在）
+     */
+    Optional<StorageObject> findByFileHashAndBucket(String appId, String fileHash, String bucketName);
     
     /**
      * 根据ID查找存储对象

@@ -304,6 +304,32 @@ public class S3StorageService implements StorageService {
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
+
+    @Override
+    public void copy(String sourceBucketName, String sourcePath, String targetBucketName, String targetPath) {
+        try {
+            String resolvedSourceBucket = resolveBucket(sourceBucketName);
+            String resolvedTargetBucket = resolveBucket(targetBucketName);
+            CopyObjectRequest copyRequest = CopyObjectRequest.builder()
+                    .copySource(resolvedSourceBucket + "/" + sourcePath)
+                    .destinationBucket(resolvedTargetBucket)
+                    .destinationKey(targetPath)
+                    .build();
+            s3Client.copyObject(copyRequest);
+            log.info("Copied object in S3: sourceBucket={}, sourceKey={}, targetBucket={}, targetKey={}",
+                    resolvedSourceBucket, sourcePath, resolvedTargetBucket, targetPath);
+        } catch (S3Exception e) {
+            log.error("Failed to copy object in S3: sourceBucket={}, sourceKey={}, targetBucket={}, targetKey={}, error={}",
+                    resolveBucket(sourceBucketName), sourcePath, resolveBucket(targetBucketName), targetPath,
+                    e.getMessage(), e);
+            throw new BusinessException("文件复制失败: " + e.getMessage(), e);
+        } catch (SdkClientException e) {
+            log.error("S3 client error during object copy: sourceBucket={}, sourceKey={}, targetBucket={}, targetKey={}, error={}",
+                    resolveBucket(sourceBucketName), sourcePath, resolveBucket(targetBucketName), targetPath,
+                    e.getMessage(), e);
+            throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
+        }
+    }
     
     @Override
     public boolean exists(String path) {

@@ -65,6 +65,19 @@ public class FileRecordRepositoryImpl implements FileRecordRepository {
         int rows = fileRecordMapper.updateAccessLevel(id, accessLevel.name().toLowerCase(), LocalDateTime.now());
         return rows > 0;
     }
+
+    @Override
+    public boolean updateStorageBindingAndAccessLevel(String id, String storageObjectId, String storagePath,
+                                                      AccessLevel accessLevel) {
+        int rows = fileRecordMapper.updateStorageBindingAndAccessLevel(
+                id,
+                storageObjectId,
+                storagePath,
+                accessLevel.name().toLowerCase(),
+                LocalDateTime.now()
+        );
+        return rows > 0;
+    }
     
     @Override
     public List<FileRecord> findByQuery(FileQuery query) {

@@ -8,11 +8,13 @@ import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.common.exception.FileNotFoundException;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
+import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.StorageObjectRepository;
 import com.architectcgz.file.infrastructure.cache.FileUrlCacheManager;
 import com.architectcgz.file.infrastructure.config.S3Properties;
 import com.architectcgz.file.infrastructure.storage.StorageService;
+import com.github.f4b6a3.uuid.UuidCreator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,6 +26,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 /**
  * 文件访问服务
@@ -39,6 +42,7 @@ public class FileAccessService {
     private final StorageService storageService;
     private final S3Properties s3Properties;
     private final FileUrlCacheManager fileUrlCacheManager;
+    private final AccessLevelChangeTransactionHelper accessLevelChangeTransactionHelper;
     
     @Value("${storage.access.private-url-expire-seconds:3600}")
     private int privateUrlExpireSeconds;
@@ -246,22 +250,99 @@ public class FileAccessService {
             log.debug("Access level unchanged, skip update: fileId={}, level={}", fileId, newLevel);
             return;
         }
+        Optional<StorageObject> storageObjectOpt = resolveStorageObject(file);
+        String targetBucketName = storageService.getBucketName(newLevel);
+        boolean sourceObjectShouldDelete = false;
+        String sourceBucketName = null;
+        String sourcePath = file.getStoragePath();
 
-        // 更新访问级别
-        boolean updated = fileRecordRepository.updateAccessLevel(fileId, newLevel);
-        if (!updated) {
-            throw new BusinessException(String.format(FileServiceErrorMessages.UPDATE_ACCESS_LEVEL_FAILED, fileId));
+        if (storageObjectOpt.isEmpty()) {
+            accessLevelChangeTransactionHelper.updateAccessLevelOnly(fileId, newLevel);
+        } else {
+            StorageObject storageObject = storageObjectOpt.get();
+            sourceBucketName = storageObject.getBucketName();
+            sourcePath = storageObject.getStoragePath();
+            if (isBucketMatchTarget(sourceBucketName, targetBucketName)) {
+                accessLevelChangeTransactionHelper.updateAccessLevelOnly(fileId, newLevel);
+            } else {
+                storageService.copy(sourceBucketName, sourcePath, targetBucketName, sourcePath);
+                StorageObject copiedStorageObject = buildCopiedStorageObject(storageObject, targetBucketName);
+                try {
+                    accessLevelChangeTransactionHelper.rebindToCopiedStorage(
+                            fileId, storageObject.getId(), copiedStorageObject, newLevel
+                    );
+                } catch (RuntimeException ex) {
+                    try {
+                        storageService.delete(targetBucketName, sourcePath);
+                    } catch (Exception cleanupEx) {
+                        log.error("Failed to cleanup copied object after access level rebinding error: fileId={}, bucket={}, path={}",
+                                fileId, targetBucketName, sourcePath, cleanupEx);
+                    }
+                    throw ex;
+                }
+                sourceObjectShouldDelete = storageObject.isLastReference();
+            }
         }
-
 
         log.info("File access level updated: fileId={}, oldLevel={}, newLevel={}, userId={}",
                 fileId, file.getAccessLevel(), newLevel, requestUserId);
 
-        // 在事务提交后清除缓存，避免事务回滚后缓存已被清除的窗口期问题
+        registerAfterCommitCallbacks(fileId, sourceObjectShouldDelete, sourceBucketName, sourcePath);
+    }
+
+    private Optional<StorageObject> resolveStorageObject(FileRecord file) {
+        if (!StringUtils.hasText(file.getStorageObjectId())) {
+            return Optional.empty();
+        }
+        return storageObjectRepository.findById(file.getStorageObjectId());
+    }
+
+    private boolean isBucketMatchTarget(String currentBucketName, String targetBucketName) {
+        if (!StringUtils.hasText(targetBucketName)) {
+            return !StringUtils.hasText(currentBucketName);
+        }
+        return targetBucketName.equals(currentBucketName);
+    }
+
+    private StorageObject buildCopiedStorageObject(StorageObject sourceStorageObject, String targetBucketName) {
+        return StorageObject.builder()
+                .id(UuidCreator.getTimeOrderedEpoch().toString())
+                .appId(sourceStorageObject.getAppId())
+                .fileHash(sourceStorageObject.getFileHash())
+                .hashAlgorithm(sourceStorageObject.getHashAlgorithm())
+                .storagePath(sourceStorageObject.getStoragePath())
+                .bucketName(targetBucketName)
+                .fileSize(sourceStorageObject.getFileSize())
+                .contentType(sourceStorageObject.getContentType())
+                .referenceCount(1)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+    }
+
+    private void registerAfterCommitCallbacks(String fileId, boolean deleteSourceObject,
+                                              String sourceBucketName, String sourcePath) {
+        Runnable afterCommitAction = () -> {
+            fileUrlCacheManager.evict(fileId);
+            if (deleteSourceObject && StringUtils.hasText(sourcePath)) {
+                try {
+                    storageService.delete(sourceBucketName, sourcePath);
+                } catch (Exception ex) {
+                    log.warn("Failed to delete source object after access level migration, fallback to orphan cleanup: fileId={}, bucket={}, path={}",
+                            fileId, sourceBucketName, sourcePath, ex);
+                }
+            }
+        };
+
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            afterCommitAction.run();
+            return;
+        }
+
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                fileUrlCacheManager.evict(fileId);
+                afterCommitAction.run();
             }
         });
     }

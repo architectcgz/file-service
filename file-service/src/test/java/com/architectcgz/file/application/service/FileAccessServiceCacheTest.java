@@ -56,6 +56,8 @@ class FileAccessServiceCacheTest {
     private S3Properties s3Properties;
     @Mock
     private FileUrlCacheManager fileUrlCacheManager;
+    @Mock
+    private AccessLevelChangeTransactionHelper accessLevelChangeTransactionHelper;
 
     @InjectMocks
     private FileAccessService fileAccessService;
@@ -221,7 +223,9 @@ class FileAccessServiceCacheTest {
         TransactionSynchronizationManager.initSynchronization();
 
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
-        when(fileRecordRepository.updateAccessLevel("file-001", AccessLevel.PRIVATE)).thenReturn(true);
+        when(storageObjectRepository.findById("storage-001"))
+                .thenReturn(Optional.of(buildStorageObject("storage-001", "private-bucket", publicFileRecord.getStoragePath())));
+        when(storageService.getBucketName(AccessLevel.PRIVATE)).thenReturn("private-bucket");
 
         fileAccessService.updateAccessLevel("blog", "file-001", "user-123", AccessLevel.PRIVATE);
 
@@ -235,6 +239,7 @@ class FileAccessServiceCacheTest {
 
         // 事务提交后，evict 应被调用
         verify(fileUrlCacheManager).evict("file-001");
+        verify(accessLevelChangeTransactionHelper).updateAccessLevelOnly("file-001", AccessLevel.PRIVATE);
     }
 
     @Test
@@ -243,7 +248,9 @@ class FileAccessServiceCacheTest {
         TransactionSynchronizationManager.initSynchronization();
 
         when(fileRecordRepository.findById("file-002")).thenReturn(Optional.of(privateFileRecord));
-        when(fileRecordRepository.updateAccessLevel("file-002", AccessLevel.PUBLIC)).thenReturn(true);
+        when(storageObjectRepository.findById("storage-002"))
+                .thenReturn(Optional.of(buildStorageObject("storage-002", "public-bucket", privateFileRecord.getStoragePath())));
+        when(storageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
 
         fileAccessService.updateAccessLevel("blog", "file-002", "user-123", AccessLevel.PUBLIC);
 
@@ -253,6 +260,7 @@ class FileAccessServiceCacheTest {
         );
 
         verify(fileUrlCacheManager).evict("file-002");
+        verify(accessLevelChangeTransactionHelper).updateAccessLevelOnly("file-002", AccessLevel.PUBLIC);
     }
 
     @Test
@@ -273,7 +281,9 @@ class FileAccessServiceCacheTest {
         TransactionSynchronizationManager.initSynchronization();
 
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
-        when(fileRecordRepository.updateAccessLevel("file-001", AccessLevel.PRIVATE)).thenReturn(true);
+        when(storageObjectRepository.findById("storage-001"))
+                .thenReturn(Optional.of(buildStorageObject("storage-001", "private-bucket", publicFileRecord.getStoragePath())));
+        when(storageService.getBucketName(AccessLevel.PRIVATE)).thenReturn("private-bucket");
         // FileUrlCacheManager.evict 内部已经 catch 异常，这里验证即使抛出也不影响
         doThrow(new RuntimeException("Redis down")).when(fileUrlCacheManager).evict("file-001");
 
@@ -291,6 +301,38 @@ class FileAccessServiceCacheTest {
                 // afterCommit 异常不影响已提交的事务
             }
         });
+    }
+
+    @Test
+    @DisplayName("更新访问级别 - 跨桶时复制对象并在提交后删除旧对象")
+    void testUpdateAccessLevel_CrossBucket_RebindsStorageAndDeletesSourceAfterCommit() {
+        TransactionSynchronizationManager.initSynchronization();
+        StorageObject publicObject = buildStorageObject("storage-001", "public-bucket", publicFileRecord.getStoragePath());
+        publicObject.setReferenceCount(1);
+
+        when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
+        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(publicObject));
+        when(storageService.getBucketName(AccessLevel.PRIVATE)).thenReturn("private-bucket");
+
+        fileAccessService.updateAccessLevel("blog", "file-001", "user-123", AccessLevel.PRIVATE);
+
+        verify(storageService).copy("public-bucket", publicFileRecord.getStoragePath(), "private-bucket",
+                publicFileRecord.getStoragePath());
+        verify(accessLevelChangeTransactionHelper).rebindToCopiedStorage(
+                eq("file-001"),
+                eq("storage-001"),
+                argThat(storageObject ->
+                        "private-bucket".equals(storageObject.getBucketName())
+                                && publicFileRecord.getStoragePath().equals(storageObject.getStoragePath())
+                ),
+                eq(AccessLevel.PRIVATE)
+        );
+        verify(storageService, never()).delete(anyString(), anyString());
+
+        TransactionSynchronizationManager.getSynchronizations().forEach(sync -> sync.afterCommit());
+
+        verify(storageService).delete("public-bucket", publicFileRecord.getStoragePath());
+        verify(fileUrlCacheManager).evict("file-001");
     }
 
     @Test

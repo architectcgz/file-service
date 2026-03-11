@@ -35,6 +35,12 @@ public class StorageObjectRepositoryImpl implements StorageObjectRepository {
         StorageObjectPO po = storageObjectMapper.selectByFileHash(appId, fileHash);
         return Optional.ofNullable(toDomain(po));
     }
+
+    @Override
+    public Optional<StorageObject> findByFileHashAndBucket(String appId, String fileHash, String bucketName) {
+        StorageObjectPO po = storageObjectMapper.selectByFileHashAndBucket(appId, fileHash, bucketName);
+        return Optional.ofNullable(toDomain(po));
+    }
     
     @Override
     public Optional<StorageObject> findById(String id) {

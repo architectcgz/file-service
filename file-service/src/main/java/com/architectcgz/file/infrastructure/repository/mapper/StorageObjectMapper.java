@@ -55,6 +55,20 @@ public interface StorageObjectMapper {
         @Result(property = "updatedAt", column = "updated_at")
     })
     StorageObjectPO selectByFileHash(@Param("appId") String appId, @Param("fileHash") String fileHash);
+
+    /**
+     * 根据应用ID、文件哈希和存储桶查询存储对象
+     */
+    @Select("""
+        SELECT id, app_id, file_hash, hash_algorithm, storage_path, bucket_name, file_size,
+               content_type, reference_count, created_at, updated_at
+        FROM storage_objects
+        WHERE app_id = #{appId} AND file_hash = #{fileHash} AND bucket_name = #{bucketName}
+        """)
+    @ResultMap("storageObjectResult")
+    StorageObjectPO selectByFileHashAndBucket(@Param("appId") String appId,
+                                              @Param("fileHash") String fileHash,
+                                              @Param("bucketName") String bucketName);
     
     /**
      * 根据ID查询存储对象

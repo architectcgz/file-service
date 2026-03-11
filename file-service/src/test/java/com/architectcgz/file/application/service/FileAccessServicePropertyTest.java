@@ -55,6 +55,7 @@ class FileAccessServicePropertyTest {
         StorageService mockStorageService = mock(StorageService.class);
         S3Properties mockS3Properties = mock(S3Properties.class);
         FileUrlCacheManager mockFileUrlCacheManager = mock(FileUrlCacheManager.class);
+        AccessLevelChangeTransactionHelper mockAccessLevelChangeTransactionHelper = mock(AccessLevelChangeTransactionHelper.class);
         
         when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
         when(mockStorageObjectRepository.findById(anyString())).thenReturn(Optional.empty());
@@ -70,7 +71,8 @@ class FileAccessServicePropertyTest {
                 mockStorageObjectRepository,
                 mockStorageService, 
                 mockS3Properties,
-                mockFileUrlCacheManager
+                mockFileUrlCacheManager,
+                mockAccessLevelChangeTransactionHelper
         );
         ReflectionTestUtils.setField(service, "privateUrlExpireSeconds", 3600);
         
@@ -116,6 +118,7 @@ class FileAccessServicePropertyTest {
         StorageService mockStorageService = mock(StorageService.class);
         S3Properties mockS3Properties = mock(S3Properties.class);
         FileUrlCacheManager mockFileUrlCacheManager = mock(FileUrlCacheManager.class);
+        AccessLevelChangeTransactionHelper mockAccessLevelChangeTransactionHelper = mock(AccessLevelChangeTransactionHelper.class);
         
         when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
         when(mockStorageObjectRepository.findById(anyString())).thenReturn(Optional.empty());
@@ -127,7 +130,8 @@ class FileAccessServicePropertyTest {
                 mockStorageObjectRepository,
                 mockStorageService, 
                 mockS3Properties,
-                mockFileUrlCacheManager
+                mockFileUrlCacheManager,
+                mockAccessLevelChangeTransactionHelper
         );
         ReflectionTestUtils.setField(service, "privateUrlExpireSeconds", 3600);
         
@@ -173,6 +177,7 @@ class FileAccessServicePropertyTest {
         StorageService mockStorageService = mock(StorageService.class);
         S3Properties mockS3Properties = mock(S3Properties.class);
         FileUrlCacheManager mockFileUrlCacheManager = mock(FileUrlCacheManager.class);
+        AccessLevelChangeTransactionHelper mockAccessLevelChangeTransactionHelper = mock(AccessLevelChangeTransactionHelper.class);
         
         when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
         when(mockStorageObjectRepository.findById(anyString())).thenReturn(Optional.empty());
@@ -190,7 +195,8 @@ class FileAccessServicePropertyTest {
                 mockStorageObjectRepository,
                 mockStorageService, 
                 mockS3Properties,
-                mockFileUrlCacheManager
+                mockFileUrlCacheManager,
+                mockAccessLevelChangeTransactionHelper
         );
         int expireSeconds = 3600;
         ReflectionTestUtils.setField(service, "privateUrlExpireSeconds", expireSeconds);
@@ -249,6 +255,7 @@ class FileAccessServicePropertyTest {
         StorageService mockStorageService = mock(StorageService.class);
         S3Properties mockS3Properties = mock(S3Properties.class);
         FileUrlCacheManager mockFileUrlCacheManager = mock(FileUrlCacheManager.class);
+        AccessLevelChangeTransactionHelper mockAccessLevelChangeTransactionHelper = mock(AccessLevelChangeTransactionHelper.class);
 
         when(mockRepository.findById(fileRecord.getId())).thenReturn(Optional.of(fileRecord));
         when(mockStorageObjectRepository.findById(anyString())).thenReturn(Optional.empty());
@@ -256,7 +263,7 @@ class FileAccessServicePropertyTest {
 
         FileAccessService service = new FileAccessService(
                 mockRepository, mockStorageObjectRepository, mockStorageService, mockS3Properties,
-                mockFileUrlCacheManager
+                mockFileUrlCacheManager, mockAccessLevelChangeTransactionHelper
         );
         ReflectionTestUtils.setField(service, "privateUrlExpireSeconds", 3600);
 

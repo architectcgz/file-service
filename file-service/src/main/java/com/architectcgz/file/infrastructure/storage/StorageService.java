@@ -168,6 +168,18 @@ public interface StorageService {
     default String generatePresignedUrl(String bucketName, String path, Duration expiration) {
         return generatePresignedUrl(path, expiration);
     }
+
+    /**
+     * 复制对象到另一个存储桶/路径
+     *
+     * @param sourceBucketName 源存储桶
+     * @param sourcePath 源路径
+     * @param targetBucketName 目标存储桶
+     * @param targetPath 目标路径
+     */
+    default void copy(String sourceBucketName, String sourcePath, String targetBucketName, String targetPath) {
+        throw new UnsupportedOperationException("Current storage implementation does not support object copy");
+    }
     
     /**
      * 检查文件是否存或

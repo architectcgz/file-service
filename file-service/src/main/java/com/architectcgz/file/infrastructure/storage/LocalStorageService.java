@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 
 /**
  * 本地存储服务实现
@@ -154,6 +155,23 @@ public class LocalStorageService implements StorageService {
         // 本地存储不支持预签名URL，直接返回普通URL
         log.warn("Local storage does not support presigned URLs, returning regular URL for: {}", path);
         return getUrl(path);
+    }
+
+    @Override
+    public void copy(String sourceBucketName, String sourcePath, String targetBucketName, String targetPath) {
+        try {
+            Path sourceFilePath = Paths.get(basePath, sourcePath);
+            Path targetFilePath = Paths.get(basePath, targetPath);
+            Path parentDir = targetFilePath.getParent();
+            if (parentDir != null && !Files.exists(parentDir)) {
+                Files.createDirectories(parentDir);
+            }
+            Files.copy(sourceFilePath, targetFilePath, StandardCopyOption.REPLACE_EXISTING);
+            log.debug("File copied in local storage: source={}, target={}", sourcePath, targetPath);
+        } catch (IOException e) {
+            log.error("Failed to copy file in local storage: source={}, target={}", sourcePath, targetPath, e);
+            throw new BusinessException("文件复制失败: " + e.getMessage(), e);
+        }
     }
     
     @Override

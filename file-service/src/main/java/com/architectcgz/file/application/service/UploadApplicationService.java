@@ -128,9 +128,12 @@ public class UploadApplicationService {
             // 4. 基于文件流式计算哈希，避免将处理后图片加载到内存
             String fileHash = calculateFileHashFromFile(tempProcessedFile);
             String contentType = imageProperties.isConvertToWebp() ? "image/webp" : file.getContentType();
+            String targetBucketName = storageService.getBucketName(DEFAULT_UPLOAD_ACCESS_LEVEL);
 
             // 5. 检查是否存在相同哈希的文件（秒传去重）
-            Optional<StorageObject> existingStorageObject = storageObjectRepository.findByFileHash(appId, fileHash);
+            Optional<StorageObject> existingStorageObject = storageObjectRepository.findByFileHashAndBucket(
+                    appId, fileHash, targetBucketName
+            );
 
             String storageObjectId;
             String imageUrl;
@@ -205,7 +208,7 @@ public class UploadApplicationService {
                         .fileHash(fileHash)
                         .hashAlgorithm("MD5")
                         .storagePath(imagePath)
-                        .bucketName(storageService.getBucketName(DEFAULT_UPLOAD_ACCESS_LEVEL))
+                        .bucketName(targetBucketName)
                         .fileSize(processedSize)
                         .contentType(contentType)
                         .referenceCount(1)
@@ -332,9 +335,12 @@ public class UploadApplicationService {
             
             // 3. 计算文件哈希
             String fileHash = calculateFileHash(fileData);
+            String targetBucketName = storageService.getBucketName(DEFAULT_UPLOAD_ACCESS_LEVEL);
             
             // 4. 检查是否存在相同哈希的文件（秒传去重)
-            Optional<StorageObject> existingStorageObject = storageObjectRepository.findByFileHash(appId, fileHash);
+            Optional<StorageObject> existingStorageObject = storageObjectRepository.findByFileHashAndBucket(
+                    appId, fileHash, targetBucketName
+            );
             
             String storageObjectId;
             String fileUrl;
@@ -367,7 +373,7 @@ public class UploadApplicationService {
                         .fileHash(fileHash)
                         .hashAlgorithm("MD5")
                         .storagePath(filePath)
-                        .bucketName(storageService.getBucketName(DEFAULT_UPLOAD_ACCESS_LEVEL))
+                        .bucketName(targetBucketName)
                         .fileSize(file.getSize())
                         .contentType(file.getContentType())
                         .referenceCount(1)

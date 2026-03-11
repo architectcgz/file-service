@@ -129,6 +129,30 @@ public interface FileRecordMapper {
         WHERE id = #{id}
     """)
     int updateAccessLevel(@Param("id") String id, @Param("accessLevel") String accessLevel, @Param("updatedAt") LocalDateTime updatedAt);
+
+    /**
+     * 更新文件记录绑定的存储对象和访问级别
+     *
+     * @param id 文件记录ID
+     * @param storageObjectId 新的存储对象ID
+     * @param storagePath 新的存储路径
+     * @param accessLevel 新的访问级别
+     * @param updatedAt 更新时间
+     * @return 影响的行数
+     */
+    @Update("""
+        UPDATE file_records
+        SET storage_object_id = #{storageObjectId},
+            storage_path = #{storagePath},
+            access_level = #{accessLevel},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    """)
+    int updateStorageBindingAndAccessLevel(@Param("id") String id,
+                                           @Param("storageObjectId") String storageObjectId,
+                                           @Param("storagePath") String storagePath,
+                                           @Param("accessLevel") String accessLevel,
+                                           @Param("updatedAt") LocalDateTime updatedAt);
     
     /**
      * 根据查询条件查找文件记录列表

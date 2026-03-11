@@ -70,6 +70,18 @@ public interface FileRecordRepository {
      * @return 是否更新成功
      */
     boolean updateAccessLevel(String id, AccessLevel accessLevel);
+
+    /**
+     * 更新文件记录绑定的存储对象和访问级别
+     *
+     * @param id 文件记录ID
+     * @param storageObjectId 新的存储对象ID
+     * @param storagePath 新的存储路径
+     * @param accessLevel 新的访问级别
+     * @return 是否更新成功
+     */
+    boolean updateStorageBindingAndAccessLevel(String id, String storageObjectId, String storagePath,
+                                               AccessLevel accessLevel);
     
     /**
      * 根据查询条件查找文件记录列表

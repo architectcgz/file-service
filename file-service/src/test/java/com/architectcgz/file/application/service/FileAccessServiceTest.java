@@ -29,7 +29,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -52,6 +55,9 @@ class FileAccessServiceTest {
     
     @Mock
     private FileUrlCacheManager fileUrlCacheManager;
+
+    @Mock
+    private AccessLevelChangeTransactionHelper accessLevelChangeTransactionHelper;
     
     @InjectMocks
     private FileAccessService fileAccessService;
@@ -243,6 +249,73 @@ class FileAccessServiceTest {
         assertEquals("https://s3.example.com/private-object?X-Amz-Signature=fallback", response.getUrl());
         assertFalse(response.getPermanent());
         assertNotNull(response.getExpiresAt());
+    }
+
+    @Test
+    void testUpdateAccessLevel_PublicToPrivate_CopiesAndRebindsStorageObject() {
+        StorageObject sharedPublicObject = StorageObject.builder()
+                .id("storage-001")
+                .appId("blog")
+                .fileHash("abc123")
+                .hashAlgorithm("MD5")
+                .storagePath(publicFileRecord.getStoragePath())
+                .bucketName("public-bucket")
+                .fileSize(1024L)
+                .contentType("image/jpeg")
+                .referenceCount(2)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
+        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(sharedPublicObject));
+        when(storageService.getBucketName(AccessLevel.PRIVATE)).thenReturn("private-bucket");
+
+        assertDoesNotThrow(() ->
+                fileAccessService.updateAccessLevel("blog", "file-001", "123", AccessLevel.PRIVATE)
+        );
+
+        verify(storageService).copy("public-bucket", publicFileRecord.getStoragePath(), "private-bucket",
+                publicFileRecord.getStoragePath());
+        verify(accessLevelChangeTransactionHelper).rebindToCopiedStorage(
+                eq("file-001"),
+                eq("storage-001"),
+                argThat(storageObject ->
+                        "private-bucket".equals(storageObject.getBucketName())
+                                && publicFileRecord.getStoragePath().equals(storageObject.getStoragePath())
+                                && Integer.valueOf(1).equals(storageObject.getReferenceCount())
+                ),
+                eq(AccessLevel.PRIVATE)
+        );
+    }
+
+    @Test
+    void testUpdateAccessLevel_WhenBucketAlreadyMatches_OnlyUpdatesAccessLevel() {
+        StorageObject publicBucketObject = StorageObject.builder()
+                .id("storage-001")
+                .appId("blog")
+                .fileHash("abc123")
+                .hashAlgorithm("MD5")
+                .storagePath(privateFileRecord.getStoragePath())
+                .bucketName("public-bucket")
+                .fileSize(1024L)
+                .contentType("image/jpeg")
+                .referenceCount(1)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        when(fileRecordRepository.findById("file-002")).thenReturn(Optional.of(privateFileRecord));
+        when(storageObjectRepository.findById("storage-001")).thenReturn(Optional.of(publicBucketObject));
+        when(storageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
+
+        assertDoesNotThrow(() ->
+                fileAccessService.updateAccessLevel("blog", "file-002", "123", AccessLevel.PUBLIC)
+        );
+
+        verify(storageService, never()).copy(anyString(), anyString(), anyString(), anyString());
+        verify(accessLevelChangeTransactionHelper, never()).rebindToCopiedStorage(anyString(), anyString(), any(), any());
+        verify(accessLevelChangeTransactionHelper).updateAccessLevelOnly("file-002", AccessLevel.PUBLIC);
     }
     
     @Test
