@@ -545,9 +545,14 @@ public class S3StorageService implements StorageService {
      * @return S3 multipart upload ID
      */
     public String createMultipartUpload(String path, String contentType) {
+        return createMultipartUpload(path, contentType, properties.getBucket());
+    }
+
+    public String createMultipartUpload(String path, String contentType, String bucketName) {
         try {
+            String resolvedBucket = resolveBucket(bucketName);
             CreateMultipartUploadRequest createRequest = CreateMultipartUploadRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(resolvedBucket)
                     .key(path)
                     .contentType(contentType)
                     .build();
@@ -555,17 +560,17 @@ public class S3StorageService implements StorageService {
             CreateMultipartUploadResponse response = s3Client.createMultipartUpload(createRequest);
             String uploadId = response.uploadId();
             
-            log.debug("Multipart upload created: bucket={}, key={}, uploadId={}", 
-                    properties.getBucket(), path, uploadId);
+            log.debug("Multipart upload created: bucket={}, key={}, uploadId={}",
+                    resolvedBucket, path, uploadId);
             
             return uploadId;
         } catch (S3Exception e) {
-            log.error("Failed to create multipart upload: bucket={}, key={}, error={}", 
-                    properties.getBucket(), path, e.getMessage(), e);
+            log.error("Failed to create multipart upload: bucket={}, key={}, error={}",
+                    resolveBucket(bucketName), path, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_MULTIPART_CREATE_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
-            log.error("S3 client error during multipart upload creation: bucket={}, key={}, error={}", 
-                    properties.getBucket(), path, e.getMessage(), e);
+            log.error("S3 client error during multipart upload creation: bucket={}, key={}, error={}",
+                    resolveBucket(bucketName), path, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
@@ -580,9 +585,14 @@ public class S3StorageService implements StorageService {
      * @return ETag (用于完成上传时验或
      */
     public String uploadPart(String path, String uploadId, int partNumber, byte[] data) {
+        return uploadPart(path, uploadId, partNumber, data, properties.getBucket());
+    }
+
+    public String uploadPart(String path, String uploadId, int partNumber, byte[] data, String bucketName) {
         try {
+            String resolvedBucket = resolveBucket(bucketName);
             UploadPartRequest uploadPartRequest = UploadPartRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(resolvedBucket)
                     .key(path)
                     .uploadId(uploadId)
                     .partNumber(partNumber)
@@ -595,16 +605,16 @@ public class S3StorageService implements StorageService {
             
             String etag = response.eTag();
             log.debug("Part uploaded: bucket={}, key={}, uploadId={}, partNumber={}, etag={}", 
-                    properties.getBucket(), path, uploadId, partNumber, etag);
+                    resolvedBucket, path, uploadId, partNumber, etag);
             
             return etag;
         } catch (S3Exception e) {
             log.error("Failed to upload part: bucket={}, key={}, uploadId={}, partNumber={}, error={}", 
-                    properties.getBucket(), path, uploadId, partNumber, e.getMessage(), e);
+                    resolveBucket(bucketName), path, uploadId, partNumber, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_PART_UPLOAD_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
             log.error("S3 client error during part upload: bucket={}, key={}, uploadId={}, partNumber={}, error={}", 
-                    properties.getBucket(), path, uploadId, partNumber, e.getMessage(), e);
+                    resolveBucket(bucketName), path, uploadId, partNumber, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
@@ -618,30 +628,36 @@ public class S3StorageService implements StorageService {
      * @return 文件访问 URL
      */
     public String completeMultipartUpload(String path, String uploadId, java.util.List<CompletedPart> parts) {
+        return completeMultipartUpload(path, uploadId, parts, properties.getBucket());
+    }
+
+    public String completeMultipartUpload(String path, String uploadId, java.util.List<CompletedPart> parts,
+                                          String bucketName) {
         try {
+            String resolvedBucket = resolveBucket(bucketName);
             CompletedMultipartUpload completedUpload = CompletedMultipartUpload.builder()
                     .parts(parts)
                     .build();
             
             CompleteMultipartUploadRequest completeRequest = CompleteMultipartUploadRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(resolvedBucket)
                     .key(path)
                     .uploadId(uploadId)
                     .multipartUpload(completedUpload)
                     .build();
             
             s3Client.completeMultipartUpload(completeRequest);
-            log.info("Multipart upload completed: bucket={}, key={}, uploadId={}, parts={}", 
-                    properties.getBucket(), path, uploadId, parts.size());
+            log.info("Multipart upload completed: bucket={}, key={}, uploadId={}, parts={}",
+                    resolvedBucket, path, uploadId, parts.size());
             
-            return getUrl(path);
+            return getUrl(resolvedBucket, path);
         } catch (S3Exception e) {
-            log.error("Failed to complete multipart upload: bucket={}, key={}, uploadId={}, error={}", 
-                    properties.getBucket(), path, uploadId, e.getMessage(), e);
+            log.error("Failed to complete multipart upload: bucket={}, key={}, uploadId={}, error={}",
+                    resolveBucket(bucketName), path, uploadId, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_MULTIPART_COMPLETE_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
-            log.error("S3 client error during multipart upload completion: bucket={}, key={}, uploadId={}, error={}", 
-                    properties.getBucket(), path, uploadId, e.getMessage(), e);
+            log.error("S3 client error during multipart upload completion: bucket={}, key={}, uploadId={}, error={}",
+                    resolveBucket(bucketName), path, uploadId, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
@@ -653,23 +669,28 @@ public class S3StorageService implements StorageService {
      * @param uploadId S3 multipart upload ID
      */
     public void abortMultipartUpload(String path, String uploadId) {
+        abortMultipartUpload(path, uploadId, properties.getBucket());
+    }
+
+    public void abortMultipartUpload(String path, String uploadId, String bucketName) {
         try {
+            String resolvedBucket = resolveBucket(bucketName);
             AbortMultipartUploadRequest abortRequest = AbortMultipartUploadRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(resolvedBucket)
                     .key(path)
                     .uploadId(uploadId)
                     .build();
             
             s3Client.abortMultipartUpload(abortRequest);
-            log.info("Multipart upload aborted: bucket={}, key={}, uploadId={}", 
-                    properties.getBucket(), path, uploadId);
+            log.info("Multipart upload aborted: bucket={}, key={}, uploadId={}",
+                    resolvedBucket, path, uploadId);
         } catch (S3Exception e) {
-            log.error("Failed to abort multipart upload: bucket={}, key={}, uploadId={}, error={}", 
-                    properties.getBucket(), path, uploadId, e.getMessage(), e);
+            log.error("Failed to abort multipart upload: bucket={}, key={}, uploadId={}, error={}",
+                    resolveBucket(bucketName), path, uploadId, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_MULTIPART_ABORT_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
-            log.error("S3 client error during multipart upload abort: bucket={}, key={}, uploadId={}, error={}", 
-                    properties.getBucket(), path, uploadId, e.getMessage(), e);
+            log.error("S3 client error during multipart upload abort: bucket={}, key={}, uploadId={}, error={}",
+                    resolveBucket(bucketName), path, uploadId, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
@@ -683,9 +704,14 @@ public class S3StorageService implements StorageService {
      * @return 已上传的分片编号列表
      */
     public java.util.List<Integer> listUploadedParts(String path, String uploadId) {
+        return listUploadedParts(path, uploadId, properties.getBucket());
+    }
+
+    public java.util.List<Integer> listUploadedParts(String path, String uploadId, String bucketName) {
         try {
+            String resolvedBucket = resolveBucket(bucketName);
             ListPartsRequest listPartsRequest = ListPartsRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(resolvedBucket)
                     .key(path)
                     .uploadId(uploadId)
                     .build();
@@ -697,13 +723,13 @@ public class S3StorageService implements StorageService {
                     .sorted()
                     .collect(java.util.stream.Collectors.toList());
             
-            log.info("Listed uploaded parts: bucket={}, key={}, uploadId={}, count={}", 
-                    properties.getBucket(), path, uploadId, partNumbers.size());
+            log.info("Listed uploaded parts: bucket={}, key={}, uploadId={}, count={}",
+                    resolvedBucket, path, uploadId, partNumbers.size());
             
             return partNumbers;
         } catch (S3Exception e) {
-            log.error("Failed to list parts: bucket={}, key={}, uploadId={}, error={}", 
-                    properties.getBucket(), path, uploadId, e.getMessage(), e);
+            log.error("Failed to list parts: bucket={}, key={}, uploadId={}, error={}",
+                    resolveBucket(bucketName), path, uploadId, e.getMessage(), e);
             // 如果上传不存在，返回空列表而不是抛出异常
             if (e.statusCode() == 404) {
                 log.warn("Upload not found, returning empty list: uploadId={}", uploadId);
@@ -711,8 +737,8 @@ public class S3StorageService implements StorageService {
             }
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_LIST_PARTS_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
-            log.error("S3 client error during list parts: bucket={}, key={}, uploadId={}, error={}", 
-                    properties.getBucket(), path, uploadId, e.getMessage(), e);
+            log.error("S3 client error during list parts: bucket={}, key={}, uploadId={}, error={}",
+                    resolveBucket(bucketName), path, uploadId, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
@@ -726,9 +752,14 @@ public class S3StorageService implements StorageService {
      * @return 已上传分片的完整信息列表（包括分片编号和 ETag）
      */
     public java.util.List<PartInfo> listUploadedPartsWithETag(String path, String uploadId) {
+        return listUploadedPartsWithETag(path, uploadId, properties.getBucket());
+    }
+
+    public java.util.List<PartInfo> listUploadedPartsWithETag(String path, String uploadId, String bucketName) {
         try {
+            String resolvedBucket = resolveBucket(bucketName);
             ListPartsRequest listPartsRequest = ListPartsRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(resolvedBucket)
                     .key(path)
                     .uploadId(uploadId)
                     .build();
@@ -740,13 +771,13 @@ public class S3StorageService implements StorageService {
                     .sorted((p1, p2) -> Integer.compare(p1.getPartNumber(), p2.getPartNumber()))
                     .collect(java.util.stream.Collectors.toList());
             
-            log.info("Listed uploaded parts with ETag: bucket={}, key={}, uploadId={}, count={}", 
-                    properties.getBucket(), path, uploadId, partInfos.size());
+            log.info("Listed uploaded parts with ETag: bucket={}, key={}, uploadId={}, count={}",
+                    resolvedBucket, path, uploadId, partInfos.size());
             
             return partInfos;
         } catch (S3Exception e) {
-            log.error("Failed to list parts with ETag: bucket={}, key={}, uploadId={}, error={}", 
-                    properties.getBucket(), path, uploadId, e.getMessage(), e);
+            log.error("Failed to list parts with ETag: bucket={}, key={}, uploadId={}, error={}",
+                    resolveBucket(bucketName), path, uploadId, e.getMessage(), e);
             // 如果上传不存在，返回空列表而不是抛出异常
             if (e.statusCode() == 404) {
                 log.warn("Upload not found, returning empty list: uploadId={}", uploadId);
@@ -754,8 +785,8 @@ public class S3StorageService implements StorageService {
             }
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_LIST_PARTS_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
-            log.error("S3 client error during list parts with ETag: bucket={}, key={}, uploadId={}, error={}", 
-                    properties.getBucket(), path, uploadId, e.getMessage(), e);
+            log.error("S3 client error during list parts with ETag: bucket={}, key={}, uploadId={}, error={}",
+                    resolveBucket(bucketName), path, uploadId, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
@@ -819,9 +850,14 @@ public class S3StorageService implements StorageService {
      * @return 预签名上传URL
      */
     public String generatePresignedPutUrl(String path, String contentType, int expireSeconds) {
+        return generatePresignedPutUrl(path, contentType, expireSeconds, properties.getBucket());
+    }
+
+    public String generatePresignedPutUrl(String path, String contentType, int expireSeconds, String bucketName) {
         try {
+            String resolvedBucket = resolveBucket(bucketName);
             PutObjectRequest putRequest = PutObjectRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(resolvedBucket)
                     .key(path)
                     .contentType(contentType)
                     .build();
@@ -833,17 +869,17 @@ public class S3StorageService implements StorageService {
             
             String presignedUrl = s3Presigner.presignPutObject(presignRequest).url().toString();
             
-            log.debug("Generated presigned PUT URL: bucket={}, key={}, expiresIn={}s", 
-                    properties.getBucket(), path, expireSeconds);
+            log.debug("Generated presigned PUT URL: bucket={}, key={}, expiresIn={}s",
+                    resolvedBucket, path, expireSeconds);
             
             return presignedUrl;
         } catch (S3Exception e) {
-            log.error("Failed to generate presigned PUT URL: bucket={}, key={}, error={}", 
-                    properties.getBucket(), path, e.getMessage(), e);
+            log.error("Failed to generate presigned PUT URL: bucket={}, key={}, error={}",
+                    resolveBucket(bucketName), path, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_PRESIGN_PUT_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
-            log.error("S3 client error during presigned PUT URL generation: bucket={}, key={}, error={}", 
-                    properties.getBucket(), path, e.getMessage(), e);
+            log.error("S3 client error during presigned PUT URL generation: bucket={}, key={}, error={}",
+                    resolveBucket(bucketName), path, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }
@@ -897,9 +933,15 @@ public class S3StorageService implements StorageService {
      */
     public String generatePresignedUploadPartUrl(String path, String uploadId, 
                                                  int partNumber, int expireSeconds) {
+        return generatePresignedUploadPartUrl(path, uploadId, partNumber, expireSeconds, properties.getBucket());
+    }
+
+    public String generatePresignedUploadPartUrl(String path, String uploadId,
+                                                 int partNumber, int expireSeconds, String bucketName) {
         try {
+            String resolvedBucket = resolveBucket(bucketName);
             UploadPartRequest uploadPartRequest = UploadPartRequest.builder()
-                    .bucket(properties.getBucket())
+                    .bucket(resolvedBucket)
                     .key(path)
                     .uploadId(uploadId)
                     .partNumber(partNumber)
@@ -913,17 +955,17 @@ public class S3StorageService implements StorageService {
             
             String presignedUrl = s3Presigner.presignUploadPart(presignRequest).url().toString();
             
-            log.debug("Generated presigned upload part URL: bucket={}, key={}, uploadId={}, partNumber={}, expiresIn={}s", 
-                    properties.getBucket(), path, uploadId, partNumber, expireSeconds);
+            log.debug("Generated presigned upload part URL: bucket={}, key={}, uploadId={}, partNumber={}, expiresIn={}s",
+                    resolvedBucket, path, uploadId, partNumber, expireSeconds);
             
             return presignedUrl;
         } catch (S3Exception e) {
-            log.error("Failed to generate presigned upload part URL: bucket={}, key={}, uploadId={}, partNumber={}, error={}", 
-                    properties.getBucket(), path, uploadId, partNumber, e.getMessage(), e);
+            log.error("Failed to generate presigned upload part URL: bucket={}, key={}, uploadId={}, partNumber={}, error={}",
+                    resolveBucket(bucketName), path, uploadId, partNumber, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_PRESIGN_PART_FAILED, e.getMessage()), e);
         } catch (SdkClientException e) {
-            log.error("S3 client error during presigned upload part URL generation: bucket={}, key={}, uploadId={}, partNumber={}, error={}", 
-                    properties.getBucket(), path, uploadId, partNumber, e.getMessage(), e);
+            log.error("S3 client error during presigned upload part URL generation: bucket={}, key={}, uploadId={}, partNumber={}, error={}",
+                    resolveBucket(bucketName), path, uploadId, partNumber, e.getMessage(), e);
             throw new BusinessException(String.format(FileServiceErrorMessages.S3_CLIENT_ERROR, e.getMessage()), e);
         }
     }

@@ -1,5 +1,6 @@
 package com.architectcgz.file.infrastructure.scheduler;
 
+import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.UploadTask;
 import com.architectcgz.file.domain.model.UploadTaskStatus;
 import com.architectcgz.file.domain.repository.UploadTaskRepository;
@@ -23,6 +24,8 @@ import java.util.List;
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "storage.multipart.enabled", havingValue = "true")
 public class UploadTaskCleanupScheduler {
+
+    private static final AccessLevel DEFAULT_UPLOAD_ACCESS_LEVEL = AccessLevel.PUBLIC;
     
     private final UploadTaskRepository uploadTaskRepository;
     private final S3StorageService s3StorageService;
@@ -83,7 +86,11 @@ public class UploadTaskCleanupScheduler {
         
         try {
             // 1. 调用 S3 abortMultipartUpload 清理未完成的分片
-            s3StorageService.abortMultipartUpload(task.getStoragePath(), task.getUploadId());
+            s3StorageService.abortMultipartUpload(
+                    task.getStoragePath(),
+                    task.getUploadId(),
+                    s3StorageService.getBucketName(DEFAULT_UPLOAD_ACCESS_LEVEL)
+            );
             log.debug("S3 multipart upload aborted: taskId={}, uploadId={}", 
                     task.getId(), task.getUploadId());
             

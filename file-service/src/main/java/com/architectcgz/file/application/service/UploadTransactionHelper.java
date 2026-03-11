@@ -95,4 +95,25 @@ public class UploadTransactionHelper {
         uploadTaskRepository.updateStatus(task.getId(), UploadTaskStatus.COMPLETED);
         log.debug("UploadTask marked completed in transaction: taskId={}", task.getId());
     }
+
+    /**
+     * 分片/直传完成后命中去重时的数据库写入事务。
+     * 复用已有 StorageObject，仅新增 FileRecord、租户用量，并将 UploadTask 标记为完成。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void saveCompletedInstantUpload(UploadTask task, String storageObjectId, FileRecord fileRecord) {
+        storageObjectRepository.incrementReferenceCount(storageObjectId);
+        log.debug("StorageObject reference count incremented for completed upload: id={}", storageObjectId);
+
+        fileRecordRepository.save(fileRecord);
+        log.debug("FileRecord saved for completed instant upload: id={}, storageObjectId={}",
+                fileRecord.getId(), storageObjectId);
+
+        tenantUsageRepository.incrementUsage(task.getAppId(), fileRecord.getFileSize());
+        log.debug("Tenant usage incremented for completed instant upload: appId={}, delta={}",
+                task.getAppId(), fileRecord.getFileSize());
+
+        uploadTaskRepository.updateStatus(task.getId(), UploadTaskStatus.COMPLETED);
+        log.debug("UploadTask marked completed after dedup hit: taskId={}", task.getId());
+    }
 }

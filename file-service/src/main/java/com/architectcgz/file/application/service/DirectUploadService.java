@@ -29,10 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
-import software.amazon.awssdk.services.s3.presigner.model.PresignedUploadPartRequest;
-import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -50,6 +47,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class DirectUploadService {
+
+    private static final AccessLevel DEFAULT_DIRECT_UPLOAD_ACCESS_LEVEL = AccessLevel.PUBLIC;
     
     private final S3StorageService s3StorageService;
     private final UploadTaskRepository uploadTaskRepository;
@@ -79,6 +78,7 @@ public class DirectUploadService {
         log.info("初始化直传上传: appId={}, userId={}, fileName={}, fileSize={}, fileHash={}", 
                 appId, userId, request.getFileName(), request.getFileSize(), request.getFileHash());
 
+        String targetBucketName = resolveUploadBucketName();
         tenantDomainService.checkQuota(appId, request.getFileSize());
         
         // 验证文件类型
@@ -93,7 +93,7 @@ public class DirectUploadService {
             log.info("检查秒传: appId={}, fileHash={}", appId, request.getFileHash());
 
             Optional<StorageObject> existingStorageObject = storageObjectRepository
-                    .findByFileHash(appId, request.getFileHash());
+                    .findByFileHashAndBucket(appId, request.getFileHash(), targetBucketName);
 
             if (existingStorageObject.isPresent()) {
                 StorageObject storageObject = existingStorageObject.get();
@@ -123,7 +123,10 @@ public class DirectUploadService {
                 return DirectUploadInitResponse.builder()
                         .isInstantUpload(true)
                         .fileId(fileRecord.getId())
-                        .fileUrl(s3StorageService.getPublicUrl(storageObject.getStoragePath()))
+                        .fileUrl(s3StorageService.getPublicUrl(
+                                storageObject.getBucketName(),
+                                storageObject.getStoragePath()
+                        ))
                         .build();
             }
         }
@@ -146,7 +149,11 @@ public class DirectUploadService {
                     
                     // 中止旧的 S3 upload
                     try {
-                        s3StorageService.abortMultipartUpload(task.getStoragePath(), task.getUploadId());
+                        s3StorageService.abortMultipartUpload(
+                                task.getStoragePath(),
+                                task.getUploadId(),
+                                targetBucketName
+                        );
                     } catch (Exception e) {
                         log.warn("中止过期任务失败（可能已被清理）: taskId={}, error={}", 
                                 task.getId(), e.getMessage());
@@ -169,7 +176,8 @@ public class DirectUploadService {
                     // 从 S3 查询已上传分片的完整信息（包括 ETag）
                     List<S3StorageService.PartInfo> s3PartInfos = s3StorageService.listUploadedPartsWithETag(
                             task.getStoragePath(), 
-                            task.getUploadId()
+                            task.getUploadId(),
+                            targetBucketName
                     );
                     
                     // 提取分片编号列表
@@ -210,7 +218,7 @@ public class DirectUploadService {
         String storagePath = generateStoragePath(appId, userId, request.getFileName());
         
         // 创建 S3 Multipart Upload
-        String uploadId = s3StorageService.createMultipartUpload(storagePath, request.getContentType());
+        String uploadId = s3StorageService.createMultipartUpload(storagePath, request.getContentType(), targetBucketName);
         log.info("创建 S3 multipart upload: uploadId={}", uploadId);
         
         // 计算分片信息
@@ -302,7 +310,8 @@ public class DirectUploadService {
                     task.getStoragePath(),
                     task.getUploadId(),
                     partNumber,
-                    expireSeconds
+                    expireSeconds,
+                    resolveUploadBucketName()
             );
             
             partUrls.add(DirectUploadPartUrlResponse.PartUrl.builder()
@@ -333,6 +342,7 @@ public class DirectUploadService {
      */
     public String completeDirectUpload(DirectUploadCompleteRequest request, String userId) {
         log.info("完成直传上传: taskId={}, parts={}", request.getTaskId(), request.getParts().size());
+        String targetBucketName = resolveUploadBucketName();
         
         // 查询上传任务
         UploadTask task = uploadTaskRepository.findById(request.getTaskId())
@@ -382,17 +392,51 @@ public class DirectUploadService {
         s3StorageService.completeMultipartUpload(
                 task.getStoragePath(), 
                 task.getUploadId(), 
-                completedParts
+                completedParts,
+                targetBucketName
         );
         log.info("完成 S3 multipart upload: taskId={}", request.getTaskId());
 
         String fileHash = requireFileHash(task);
+        Optional<StorageObject> existingStorageObject = storageObjectRepository.findByFileHashAndBucket(
+                task.getAppId(),
+                fileHash,
+                targetBucketName
+        );
+
+        if (existingStorageObject.isPresent()) {
+            StorageObject storageObject = existingStorageObject.get();
+            FileRecord fileRecord = buildFileRecord(
+                    task.getAppId(),
+                    userId,
+                    storageObject.getId(),
+                    task.getFileName(),
+                    storageObject.getStoragePath(),
+                    storageObject.getFileSize(),
+                    storageObject.getContentType(),
+                    fileHash
+            );
+
+            try {
+                uploadTransactionHelper.saveCompletedInstantUpload(task, storageObject.getId(), fileRecord);
+            } catch (Exception dbEx) {
+                cleanupS3Quietly(task.getStoragePath(), targetBucketName);
+                throw dbEx;
+            }
+
+            cleanupS3Quietly(task.getStoragePath(), targetBucketName);
+            log.info("直传完成后命中去重: taskId={}, fileId={}, storageObjectId={}",
+                    task.getId(), fileRecord.getId(), storageObject.getId());
+            return fileRecord.getId();
+        }
+
         StorageObject storageObject = buildStorageObject(
                 task.getAppId(),
                 task.getStoragePath(),
                 task.getFileSize(),
                 request.getContentType(),
-                fileHash
+                fileHash,
+                targetBucketName
         );
         FileRecord fileRecord = buildFileRecord(
                 task.getAppId(),
@@ -408,7 +452,7 @@ public class DirectUploadService {
         try {
             uploadTransactionHelper.saveCompletedUpload(task, storageObject, fileRecord);
         } catch (Exception dbEx) {
-            cleanupS3Quietly(task.getStoragePath());
+            cleanupS3Quietly(task.getStoragePath(), targetBucketName);
             throw dbEx;
         }
 
@@ -475,14 +519,14 @@ public class DirectUploadService {
     }
 
     private StorageObject buildStorageObject(String appId, String storagePath, long fileSize,
-                                             String contentType, String fileHash) {
+                                             String contentType, String fileHash, String bucketName) {
         return StorageObject.builder()
                 .id(UuidCreator.getTimeOrderedEpoch().toString())
                 .appId(appId)
                 .fileHash(fileHash)
                 .hashAlgorithm("MD5")
                 .storagePath(storagePath)
-                .bucketName(s3StorageService.getDefaultBucketName())
+                .bucketName(bucketName)
                 .fileSize(fileSize)
                 .contentType(contentType)
                 .referenceCount(1)
@@ -498,12 +542,16 @@ public class DirectUploadService {
         return task.getFileHash();
     }
 
-    private void cleanupS3Quietly(String storagePath) {
+    private String resolveUploadBucketName() {
+        return s3StorageService.getBucketName(DEFAULT_DIRECT_UPLOAD_ACCESS_LEVEL);
+    }
+
+    private void cleanupS3Quietly(String storagePath, String bucketName) {
         try {
-            s3StorageService.delete(storagePath);
-            log.warn("直传完成后写库失败，已补偿删除 S3 对象: path={}", storagePath);
+            s3StorageService.delete(bucketName, storagePath);
+            log.warn("直传完成后已清理临时 S3 对象: bucket={}, path={}", bucketName, storagePath);
         } catch (Exception cleanupEx) {
-            log.error("直传完成后 S3 补偿删除失败: path={}", storagePath, cleanupEx);
+            log.error("直传完成后 S3 清理失败: bucket={}, path={}", bucketName, storagePath, cleanupEx);
         }
     }
 }

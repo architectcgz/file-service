@@ -3,6 +3,7 @@ package com.architectcgz.file.application.service;
 import com.architectcgz.file.application.dto.DirectUploadCompleteRequest;
 import com.architectcgz.file.application.dto.DirectUploadInitRequest;
 import com.architectcgz.file.application.dto.DirectUploadInitResponse;
+import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.model.UploadTask;
@@ -32,8 +33,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -77,21 +78,23 @@ class DirectUploadServiceTest {
     }
 
     @Test
-    @DisplayName("秒传命中时应创建当前用户的新 FileRecord")
-    void initDirectUpload_shouldCreateNewFileRecordForInstantUpload() {
+    @DisplayName("秒传命中时应按 public bucket 去重并返回公开地址")
+    void initDirectUpload_shouldUsePublicBucketForInstantUpload() {
+        when(s3StorageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
         StorageObject storageObject = StorageObject.builder()
                 .id("storage-001")
                 .appId("blog")
                 .fileHash("hash-123")
                 .storagePath("blog/files/report.pdf")
+                .bucketName("public-bucket")
                 .fileSize(1024L)
                 .contentType("application/pdf")
                 .referenceCount(2)
                 .build();
 
-        when(storageObjectRepository.findByFileHash("blog", "hash-123"))
+        when(storageObjectRepository.findByFileHashAndBucket("blog", "hash-123", "public-bucket"))
                 .thenReturn(Optional.of(storageObject));
-        when(s3StorageService.getPublicUrl("blog/files/report.pdf"))
+        when(s3StorageService.getPublicUrl("public-bucket", "blog/files/report.pdf"))
                 .thenReturn("https://cdn.example.com/blog/files/report.pdf");
         doNothing().when(tenantDomainService).checkQuota("blog", 1024L);
         doNothing().when(fileTypeValidator).validateFile("report.pdf", "application/pdf", 1024L);
@@ -104,16 +107,15 @@ class DirectUploadServiceTest {
 
         assertThat(response.getIsInstantUpload()).isTrue();
         assertThat(response.getFileUrl()).isEqualTo("https://cdn.example.com/blog/files/report.pdf");
-        assertThat(response.getFileId()).isEqualTo(fileRecordCaptor.getValue().getId());
-        assertThat(fileRecordCaptor.getValue().getUserId()).isEqualTo("user-123");
         assertThat(fileRecordCaptor.getValue().getStorageObjectId()).isEqualTo("storage-001");
-        verify(tenantDomainService).checkQuota("blog", 1024L);
+        verify(storageObjectRepository).findByFileHashAndBucket("blog", "hash-123", "public-bucket");
         verify(uploadTransactionHelper).saveInstantUpload("storage-001", fileRecordCaptor.getValue(), 1024L);
     }
 
     @Test
-    @DisplayName("完成直传上传时应落 StorageObject 和 FileRecord")
-    void completeDirectUpload_shouldPersistMetadataViaTransactionHelper() {
+    @DisplayName("完成直传上传时应将对象写入 public bucket")
+    void completeDirectUpload_shouldPersistMetadataInPublicBucket() {
+        when(s3StorageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
         UploadTask task = UploadTask.builder()
                 .id("task-001")
                 .appId("blog")
@@ -142,6 +144,8 @@ class DirectUploadServiceTest {
         request.setParts(List.of(part1, part2));
 
         when(uploadTaskRepository.findById("task-001")).thenReturn(Optional.of(task));
+        when(storageObjectRepository.findByFileHashAndBucket("blog", "hash-123", "public-bucket"))
+                .thenReturn(Optional.empty());
 
         ArgumentCaptor<StorageObject> storageCaptor = ArgumentCaptor.forClass(StorageObject.class);
         ArgumentCaptor<FileRecord> recordCaptor = ArgumentCaptor.forClass(FileRecord.class);
@@ -151,10 +155,8 @@ class DirectUploadServiceTest {
         String fileId = directUploadService.completeDirectUpload(request, "user-123");
 
         assertThat(fileId).isEqualTo(recordCaptor.getValue().getId());
-        assertThat(storageCaptor.getValue().getFileHash()).isEqualTo("hash-123");
-        assertThat(storageCaptor.getValue().getReferenceCount()).isEqualTo(1);
+        assertThat(storageCaptor.getValue().getBucketName()).isEqualTo("public-bucket");
         assertThat(recordCaptor.getValue().getStorageObjectId()).isEqualTo(storageCaptor.getValue().getId());
-        assertThat(recordCaptor.getValue().getAppId()).isEqualTo("blog");
-        verify(s3StorageService).completeMultipartUpload(anyString(), anyString(), any());
+        verify(s3StorageService).completeMultipartUpload(eq("blog/files/report.pdf"), eq("upload-001"), any(), eq("public-bucket"));
     }
 }

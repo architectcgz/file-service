@@ -35,4 +35,10 @@ public class ConfirmUploadRequest {
      */
     @NotBlank(message = "原始文件名不能为空")
     private String originalFilename;
+
+    /**
+     * 访问级别 (public, private)
+     * 默认为 public
+     */
+    private String accessLevel = "public";
 }

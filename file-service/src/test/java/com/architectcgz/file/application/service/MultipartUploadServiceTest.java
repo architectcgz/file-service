@@ -1,11 +1,13 @@
 package com.architectcgz.file.application.service;
 
 import com.architectcgz.file.application.dto.InitUploadRequest;
+import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.model.UploadTask;
 import com.architectcgz.file.domain.model.UploadTaskStatus;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
+import com.architectcgz.file.domain.repository.StorageObjectRepository;
 import com.architectcgz.file.domain.repository.UploadPartRepository;
 import com.architectcgz.file.domain.repository.UploadTaskRepository;
 import com.architectcgz.file.domain.service.TenantDomainService;
@@ -29,9 +31,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -48,6 +48,8 @@ class MultipartUploadServiceTest {
     private UploadPartRepository uploadPartRepository;
     @Mock
     private FileRecordRepository fileRecordRepository;
+    @Mock
+    private StorageObjectRepository storageObjectRepository;
     @Mock
     private MultipartProperties multipartProperties;
     @Mock
@@ -78,9 +80,10 @@ class MultipartUploadServiceTest {
     }
 
     @Test
-    @DisplayName("初始化分片上传时应检查租户配额")
-    void initUpload_shouldCheckQuota() {
-        when(s3StorageService.createMultipartUpload(anyString(), anyString())).thenReturn("upload-001");
+    @DisplayName("初始化分片上传时应在 public bucket 创建任务")
+    void initUpload_shouldCreateMultipartUploadInPublicBucket() {
+        when(s3StorageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
+        when(s3StorageService.createMultipartUpload(any(), any(), eq("public-bucket"))).thenReturn("upload-001");
         when(multipartProperties.getChunkSize()).thenReturn(1024);
         when(multipartProperties.getMaxParts()).thenReturn(10);
         when(multipartProperties.getTaskExpireHours()).thenReturn(24);
@@ -92,11 +95,13 @@ class MultipartUploadServiceTest {
         multipartUploadService.initUpload("blog", initRequest, "user-123");
 
         verify(tenantDomainService).checkQuota("blog", 2048L);
+        verify(s3StorageService).createMultipartUpload(any(), eq("application/zip"), eq("public-bucket"));
     }
 
     @Test
-    @DisplayName("完成分片上传时应落 StorageObject 和 FileRecord")
-    void completeUpload_shouldPersistMetadataViaTransactionHelper() {
+    @DisplayName("完成分片上传时应将对象写入 public bucket")
+    void completeUpload_shouldPersistMetadataInPublicBucket() {
+        when(s3StorageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
         UploadTask task = UploadTask.builder()
                 .id("task-001")
                 .appId("blog")
@@ -128,7 +133,9 @@ class MultipartUploadServiceTest {
         when(uploadPartRepository.countCompletedParts("task-001")).thenReturn(2);
         when(uploadPartRepository.findCompletedPartNumbers("task-001")).thenReturn(List.of(1, 2));
         when(uploadPartMapper.selectByTaskId("task-001")).thenReturn(List.of(part1, part2));
-        doNothing().when(uploadPartRepository).syncAllPartsToDatabase("task-001", List.of());
+        doNothing().when(uploadPartRepository).syncAllPartsToDatabase(eq("task-001"), any());
+        when(storageObjectRepository.findByFileHashAndBucket("blog", "hash-456", "public-bucket"))
+                .thenReturn(Optional.empty());
 
         ArgumentCaptor<StorageObject> storageCaptor = ArgumentCaptor.forClass(StorageObject.class);
         ArgumentCaptor<FileRecord> recordCaptor = ArgumentCaptor.forClass(FileRecord.class);
@@ -138,9 +145,8 @@ class MultipartUploadServiceTest {
         String fileId = multipartUploadService.completeUpload("task-001", "user-123");
 
         assertThat(fileId).isEqualTo(recordCaptor.getValue().getId());
-        assertThat(storageCaptor.getValue().getFileHash()).isEqualTo("hash-456");
+        assertThat(storageCaptor.getValue().getBucketName()).isEqualTo("public-bucket");
         assertThat(recordCaptor.getValue().getStorageObjectId()).isEqualTo(storageCaptor.getValue().getId());
-        assertThat(recordCaptor.getValue().getUserId()).isEqualTo("user-123");
-        verify(s3StorageService).completeMultipartUpload(anyString(), anyString(), any());
+        verify(s3StorageService).completeMultipartUpload(eq("blog/files/archive.zip"), eq("upload-001"), any(), eq("public-bucket"));
     }
 }

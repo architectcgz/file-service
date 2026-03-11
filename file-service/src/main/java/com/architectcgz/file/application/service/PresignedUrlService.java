@@ -5,6 +5,7 @@ import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.application.dto.ConfirmUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadResponse;
+import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
 import com.architectcgz.file.domain.model.StorageObject;
@@ -19,9 +20,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -66,9 +70,12 @@ public class PresignedUrlService {
                 request.getContentType(),
                 request.getFileSize()
         );
+
+        AccessLevel accessLevel = resolveAccessLevel(request.getAccessLevel());
+        String targetBucketName = resolveBucketName(accessLevel);
         
         // 1. 检查是否存在相同 hash 的文件（秒传）
-        Optional<StorageObject> existingStorageObject = storageObjectRepository.findByFileHash(appId, request.getFileHash());
+        Optional<StorageObject> existingStorageObject = findExistingStorageObject(appId, request.getFileHash(), targetBucketName);
         if (existingStorageObject.isPresent()) {
             // 文件已存在，检查用户是否已有该文件
             Optional<FileRecord> existingFileRecord = fileRecordRepository.findByUserIdAndFileHash(
@@ -90,7 +97,8 @@ public class PresignedUrlService {
         String presignedUrl = s3StorageService.generatePresignedPutUrl(
                 storagePath, 
                 request.getContentType(), 
-                presignedUrlExpireSeconds
+                presignedUrlExpireSeconds,
+                targetBucketName
         );
         
         // 4. 计算过期时间
@@ -124,9 +132,11 @@ public class PresignedUrlService {
     public Map<String, String> confirmUpload(String appId, ConfirmUploadRequest request, String userId) {
         log.info("Confirming upload: userId={}, storagePath={}, fileHash={}", 
                 userId, request.getStoragePath(), request.getFileHash());
+
+        AccessLevel accessLevel = resolveAccessLevel(request.getAccessLevel());
         
         // 1. 通过 HeadObject 验证文件存在并获取真实元数据（fileSize、contentType）
-        String bucketName = storageService.getDefaultBucketName();
+        String bucketName = resolveBucketName(accessLevel);
         ObjectMetadata metadata = storageService.getObjectMetadata(bucketName, request.getStoragePath());
         long realFileSize = metadata.getFileSize();
         String realContentType = metadata.getContentType();
@@ -135,17 +145,23 @@ public class PresignedUrlService {
                 request.getStoragePath(), realFileSize, realContentType);
 
         // 2. 检查是否存在相同 hash 的 StorageObject（去重）
-        Optional<StorageObject> existingStorageObject = storageObjectRepository.findByFileHash(appId, request.getFileHash());
+        Optional<StorageObject> existingStorageObject = findExistingStorageObject(appId, request.getFileHash(), bucketName);
         
         String storageObjectId;
         String fileUrl;
+        String recordStoragePath;
+        long recordFileSize;
+        String recordContentType;
         
         if (existingStorageObject.isPresent()) {
             // 文件已存在，增加引用计数（去重）
             StorageObject storageObject = existingStorageObject.get();
             storageObjectRepository.incrementReferenceCount(storageObject.getId());
             storageObjectId = storageObject.getId();
-            fileUrl = storageService.getUrl(storageObject.getBucketName(), storageObject.getStoragePath());
+            fileUrl = resolveFileUrl(accessLevel, storageObject.getBucketName(), storageObject.getStoragePath());
+            recordStoragePath = storageObject.getStoragePath();
+            recordFileSize = storageObject.getFileSize();
+            recordContentType = storageObject.getContentType();
             
             log.info("File deduplication: fileHash={}, storageObjectId={}, referenceCount={}", 
                     request.getFileHash(), storageObjectId, storageObject.getReferenceCount() + 1);
@@ -153,7 +169,7 @@ public class PresignedUrlService {
             // 新文件，创建 StorageObject，使用从 HeadObject 获取的真实元数据
             StorageObject storageObject = StorageObject.builder()
                     .id(generateFileId())
-                    .appId(request.getAppId())
+                    .appId(appId)
                     .fileHash(request.getFileHash())
                     .hashAlgorithm("MD5")
                     .storagePath(request.getStoragePath())
@@ -167,7 +183,10 @@ public class PresignedUrlService {
             
             storageObjectRepository.save(storageObject);
             storageObjectId = storageObject.getId();
-            fileUrl = storageService.getUrl(bucketName, request.getStoragePath());
+            fileUrl = resolveFileUrl(accessLevel, bucketName, request.getStoragePath());
+            recordStoragePath = request.getStoragePath();
+            recordFileSize = realFileSize;
+            recordContentType = realContentType;
             
             log.info("New StorageObject created: storageObjectId={}, storagePath={}", 
                     storageObjectId, request.getStoragePath());
@@ -177,16 +196,17 @@ public class PresignedUrlService {
         String fileRecordId = generateFileId();
         FileRecord fileRecord = FileRecord.builder()
                 .id(fileRecordId)
-                .appId(request.getAppId())
+                .appId(appId)
                 .userId(userId)
                 .storageObjectId(storageObjectId)
                 .originalFilename(request.getOriginalFilename())
-                .storagePath(request.getStoragePath())
-                .fileSize(realFileSize)
-                .contentType(realContentType)
+                .storagePath(recordStoragePath)
+                .fileSize(recordFileSize)
+                .contentType(recordContentType)
                 .fileHash(request.getFileHash())
                 .hashAlgorithm("MD5")
                 .status(FileStatus.COMPLETED)
+                .accessLevel(accessLevel)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -240,5 +260,38 @@ public class PresignedUrlService {
                 userId,
                 fileId,
                 extension);
+    }
+
+    private Optional<StorageObject> findExistingStorageObject(String appId, String fileHash, String bucketName) {
+        if (StringUtils.hasText(bucketName)) {
+            return storageObjectRepository.findByFileHashAndBucket(appId, fileHash, bucketName);
+        }
+        return storageObjectRepository.findByFileHash(appId, fileHash);
+    }
+
+    private AccessLevel resolveAccessLevel(String rawAccessLevel) {
+        if (!StringUtils.hasText(rawAccessLevel)) {
+            return AccessLevel.PUBLIC;
+        }
+        try {
+            return AccessLevel.valueOf(rawAccessLevel.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException("不支持的访问级别: " + rawAccessLevel);
+        }
+    }
+
+    private String resolveFileUrl(AccessLevel accessLevel, String bucketName, String storagePath) {
+        if (accessLevel == AccessLevel.PRIVATE) {
+            return storageService.generatePresignedUrl(bucketName, storagePath, Duration.ofSeconds(presignedUrlExpireSeconds));
+        }
+        return storageService.getPublicUrl(bucketName, storagePath);
+    }
+
+    private String resolveBucketName(AccessLevel accessLevel) {
+        String bucketName = storageService.getBucketName(accessLevel);
+        if (StringUtils.hasText(bucketName)) {
+            return bucketName;
+        }
+        return s3StorageService.getBucketName(accessLevel);
     }
 }

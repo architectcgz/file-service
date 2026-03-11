@@ -14,6 +14,7 @@ import com.architectcgz.file.domain.model.UploadPart;
 import com.architectcgz.file.domain.model.UploadTask;
 import com.architectcgz.file.domain.model.UploadTaskStatus;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
+import com.architectcgz.file.domain.repository.StorageObjectRepository;
 import com.architectcgz.file.domain.repository.UploadPartRepository;
 import com.architectcgz.file.domain.repository.UploadTaskRepository;
 import com.architectcgz.file.domain.service.TenantDomainService;
@@ -47,6 +48,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MultipartUploadService {
 
+    private static final AccessLevel DEFAULT_MULTIPART_UPLOAD_ACCESS_LEVEL = AccessLevel.PUBLIC;
+
     /**
      * 释放分布式锁的 Lua 脚本
      * 先比较锁 value，相同才删除，防止误删其他请求持有的锁
@@ -58,6 +61,7 @@ public class MultipartUploadService {
     private final UploadTaskRepository uploadTaskRepository;
     private final UploadPartRepository uploadPartRepository;
     private final FileRecordRepository fileRecordRepository;
+    private final StorageObjectRepository storageObjectRepository;
     private final MultipartProperties multipartProperties;
     private final FileTypeValidator fileTypeValidator;
     private final UploadPartMapper uploadPartMapper;
@@ -79,6 +83,7 @@ public class MultipartUploadService {
         log.info("Initializing multipart upload for user: {}, file: {}, size: {}", 
                 userId, request.getFileName(), request.getFileSize());
 
+        String targetBucketName = resolveUploadBucketName();
         tenantDomainService.checkQuota(appId, request.getFileSize());
         
         // 验证文件类型
@@ -114,7 +119,7 @@ public class MultipartUploadService {
         String storagePath = generateStoragePath(appId, userId, request.getFileName());
         
         // 创建 S3 Multipart Upload
-        String uploadId = s3StorageService.createMultipartUpload(storagePath, request.getContentType());
+        String uploadId = s3StorageService.createMultipartUpload(storagePath, request.getContentType(), targetBucketName);
         log.info("Created S3 multipart upload: {}", uploadId);
         
         // 计算分片信息
@@ -287,7 +292,13 @@ public class MultipartUploadService {
         }
 
         // 上传分片到 S3（网络 IO，不在事务内执行）
-        String etag = s3StorageService.uploadPart(task.getStoragePath(), task.getUploadId(), partNumber, data);
+        String etag = s3StorageService.uploadPart(
+                task.getStoragePath(),
+                task.getUploadId(),
+                partNumber,
+                data,
+                resolveUploadBucketName()
+        );
         log.info("Uploaded part {} with ETag: {}", partNumber, etag);
 
         // 通过独立短事务保存分片记录，避免长事务占用连接池
@@ -305,6 +316,7 @@ public class MultipartUploadService {
      */
     public String completeUpload(String taskId, String userId) {
         log.info("Completing multipart upload for task: {}", taskId);
+        String targetBucketName = resolveUploadBucketName();
         
         // 查询任务
         UploadTask task = uploadTaskRepository.findById(taskId)
@@ -360,17 +372,49 @@ public class MultipartUploadService {
                 .collect(Collectors.toList());
         
         // 完成 S3 Multipart Upload
-        s3StorageService.completeMultipartUpload(task.getStoragePath(), task.getUploadId(), completedParts);
+        s3StorageService.completeMultipartUpload(task.getStoragePath(), task.getUploadId(), completedParts, targetBucketName);
         log.info("Completed S3 multipart upload for task: {}", taskId);
 
         String fileHash = requireFileHash(task);
-        StorageObject storageObject = buildStorageObject(task, fileHash);
-        FileRecord fileRecord = buildFileRecord(task, userId, storageObject.getId(), fileHash);
+        Optional<StorageObject> existingStorageObject = storageObjectRepository.findByFileHashAndBucket(
+                task.getAppId(),
+                fileHash,
+                targetBucketName
+        );
+
+        if (existingStorageObject.isPresent()) {
+            StorageObject storageObject = existingStorageObject.get();
+            FileRecord fileRecord = buildFileRecord(task, userId, storageObject.getId(), fileHash,
+                    storageObject.getStoragePath(), storageObject.getFileSize(), storageObject.getContentType());
+
+            try {
+                uploadTransactionHelper.saveCompletedInstantUpload(task, storageObject.getId(), fileRecord);
+            } catch (Exception dbEx) {
+                cleanupS3Quietly(task.getStoragePath(), targetBucketName);
+                throw dbEx;
+            }
+
+            cleanupS3Quietly(task.getStoragePath(), targetBucketName);
+            log.info("Multipart upload dedup hit: taskId={}, fileId={}, storageObjectId={}",
+                    taskId, fileRecord.getId(), storageObject.getId());
+            return fileRecord.getId();
+        }
+
+        StorageObject storageObject = buildStorageObject(task, fileHash, targetBucketName);
+        FileRecord fileRecord = buildFileRecord(
+                task,
+                userId,
+                storageObject.getId(),
+                fileHash,
+                task.getStoragePath(),
+                task.getFileSize(),
+                task.getContentType()
+        );
 
         try {
             uploadTransactionHelper.saveCompletedUpload(task, storageObject, fileRecord);
         } catch (Exception dbEx) {
-            cleanupS3Quietly(task.getStoragePath());
+            cleanupS3Quietly(task.getStoragePath(), targetBucketName);
             throw dbEx;
         }
 
@@ -406,7 +450,11 @@ public class MultipartUploadService {
         
         // 中止 S3 Multipart Upload
         try {
-            s3StorageService.abortMultipartUpload(task.getStoragePath(), task.getUploadId());
+            s3StorageService.abortMultipartUpload(
+                    task.getStoragePath(),
+                    task.getUploadId(),
+                    resolveUploadBucketName()
+            );
             log.info("Aborted S3 multipart upload for task: {}", taskId);
         } catch (Exception e) {
             log.error("Failed to abort S3 multipart upload for task: {}", taskId, e);
@@ -505,14 +553,14 @@ public class MultipartUploadService {
         return fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
     }
 
-    private StorageObject buildStorageObject(UploadTask task, String fileHash) {
+    private StorageObject buildStorageObject(UploadTask task, String fileHash, String bucketName) {
         return StorageObject.builder()
                 .id(UuidCreator.getTimeOrderedEpoch().toString())
                 .appId(task.getAppId())
                 .fileHash(fileHash)
                 .hashAlgorithm("MD5")
                 .storagePath(task.getStoragePath())
-                .bucketName(s3StorageService.getDefaultBucketName())
+                .bucketName(bucketName)
                 .fileSize(task.getFileSize())
                 .contentType(task.getContentType())
                 .referenceCount(1)
@@ -521,16 +569,17 @@ public class MultipartUploadService {
                 .build();
     }
 
-    private FileRecord buildFileRecord(UploadTask task, String userId, String storageObjectId, String fileHash) {
+    private FileRecord buildFileRecord(UploadTask task, String userId, String storageObjectId, String fileHash,
+                                       String storagePath, long fileSize, String contentType) {
         return FileRecord.builder()
                 .id(UuidCreator.getTimeOrderedEpoch().toString())
                 .appId(task.getAppId())
                 .userId(userId)
                 .storageObjectId(storageObjectId)
                 .originalFilename(task.getFileName())
-                .storagePath(task.getStoragePath())
-                .fileSize(task.getFileSize())
-                .contentType(task.getContentType())
+                .storagePath(storagePath)
+                .fileSize(fileSize)
+                .contentType(contentType)
                 .fileHash(fileHash)
                 .hashAlgorithm("MD5")
                 .accessLevel(AccessLevel.PUBLIC)
@@ -547,12 +596,16 @@ public class MultipartUploadService {
         return task.getFileHash();
     }
 
-    private void cleanupS3Quietly(String storagePath) {
+    private String resolveUploadBucketName() {
+        return s3StorageService.getBucketName(DEFAULT_MULTIPART_UPLOAD_ACCESS_LEVEL);
+    }
+
+    private void cleanupS3Quietly(String storagePath, String bucketName) {
         try {
-            s3StorageService.delete(storagePath);
-            log.warn("分片合并后写库失败，已补偿删除 S3 对象: path={}", storagePath);
+            s3StorageService.delete(bucketName, storagePath);
+            log.warn("分片合并后已清理临时 S3 对象: bucket={}, path={}", bucketName, storagePath);
         } catch (Exception cleanupEx) {
-            log.error("分片合并后 S3 补偿删除失败: path={}", storagePath, cleanupEx);
+            log.error("分片合并后 S3 清理失败: bucket={}, path={}", bucketName, storagePath, cleanupEx);
         }
     }
 }
