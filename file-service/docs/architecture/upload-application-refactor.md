@@ -182,8 +182,13 @@
   - copied storage 保存
   - storage binding 更新
   - 源对象引用计数扣减
-- `fileaccess/transaction/AccessLevelTransactionSupport`
-  - 事务内 repository 调用与错误码收口
+- `fileaccess/transaction/mutation/FileAccessRecordMutationService`
+  - 访问级别更新
+  - storage binding 与 access level 联合更新
+- `fileaccess/transaction/persistence/FileAccessStoragePersistenceService`
+  - copied storage 持久化收口
+- `fileaccess/transaction/mutation/FileAccessStorageReferenceMutationService`
+  - 源对象引用计数递减与错误码收口
 - `AccessLevelChangeTransactionHelper`
   - 保留原 helper 入口，作为 transaction façade
 
@@ -269,6 +274,8 @@
 
 - `FileDeleteTransactionHelper`
   - 保留原 helper 入口，作为删除事务 façade
+- `filedeletion/query/FileDeletionStorageObjectQueryService`
+  - 存储对象最后引用查询收口
 - `filedeletion/query/StorageObjectLastReferenceQueryService`
   - 查询是否为最后引用
 - `filedeletion/transaction/UserFileDeleteTransactionService`
@@ -279,10 +286,14 @@
   - 管理员删除文件短事务
   - 硬删除记录
   - 递减租户用量与对象引用
-- `filedeletion/FileDeleteTransactionSupport`
-  - repository 调用收口
+- `filedeletion/mutation/FileDeletionRecordMutationService`
+  - 文件软删除 / 硬删除
   - 删除失败错误码收口
-  - StorageObject 归零删除判定
+- `filedeletion/accounting/FileDeletionUsageAccountingService`
+  - 租户用量递减收口
+- `filedeletion/mutation/FileDeletionStorageReleaseService`
+  - 对象引用递减
+  - 引用归零后的 `StorageObject` 删除收口
 
 ### 审计
 
@@ -291,8 +302,8 @@
 - `audit/command/AuditLogRecordCommandService`
   - 审计持久化执行
   - 吞异常并记录错误日志
-- `audit/AuditLogSupport`
-  - `AuditLogRepository` 调用收口
+- `audit/persistence/AuditLogPersistenceService`
+  - `AuditLogRepository` 持久化收口
 
 ### 租户管理
 
@@ -409,11 +420,11 @@
 按代码规模和职责密度看，后续优先级建议如下：
 
 1. `AccessLevelChangeTransactionHelper`
-   - 已完成拆分，事务细节已下沉到 fileaccess/transaction
+   - 已完成 façade + transaction + mutation/persistence 收敛
 2. `FileDeleteTransactionHelper`
-   - 已完成拆分，删除事务细节已下沉到 filedeletion/*
+   - 已完成 façade + query/mutation/accounting 收敛
 3. `AuditLogService`
-   - 已完成 façade + recorder 收敛，后续可继续下沉 details factory
+   - 已完成 façade + recorder + persistence 收敛，后续可继续下沉 details factory
 4. `UploadPartTransactionHelper`
    - 已完成 façade + transaction service + factory/query/persistence 收敛
 5. `UploadTransactionHelper`
@@ -421,17 +432,18 @@
 
 ## 后续建议
 
-当前应用层主要重构已基本完成，下一阶段如果继续收敛，建议转向更细粒度的 repository / support 边界，原因：
+当前应用层主要重构已基本完成，下一阶段如果继续收敛，建议转向更细粒度的 repository / factory / assembler 边界，原因：
 
 - 目前应用层 façade、命令、查询基本已经收敛
 - 上传事务 façade 也已经和 direct/multipart 链路保持一致
 - 上传任务查询 / 创建 / 状态流转也已经通过 query/command/factory 从 direct/multipart 用例中抽离
 - 分片状态查询 / 同步 / 完成态装配也已经通过 query/assembler/factory/persistence 从 direct/multipart 用例中抽离
-- 后续价值更高的是继续压缩剩余 transaction support 内的仓储编排密度
+- 文件访问事务、删除事务和审计入口也已经完成 mutation / persistence / accounting 收敛
+- 当前应用层已无遗留 `*Support.java`
 
 建议延续同一模式：
 
-- support 中对象构造与 repository 编排继续解耦
+- 继续把偏重的 façade 内对象构造与 repository 编排解耦
 - 审计 details factory 与异常码装配进一步下沉
 - 分片进度、锁协同、对象存储 authoritative state 继续细分独立用例
 - direct / multipart 间可复用的完成态校验逻辑进一步归并
