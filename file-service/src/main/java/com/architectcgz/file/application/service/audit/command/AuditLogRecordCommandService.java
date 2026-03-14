@@ -1,6 +1,6 @@
 package com.architectcgz.file.application.service.audit.command;
 
-import com.architectcgz.file.application.service.audit.AuditLogSupport;
+import com.architectcgz.file.application.service.audit.persistence.AuditLogPersistenceService;
 import com.architectcgz.file.domain.model.AuditLog;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,11 +16,11 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AuditLogRecordCommandService {
 
-    private final AuditLogSupport auditLogSupport;
+    private final AuditLogPersistenceService auditLogPersistenceService;
 
     public void log(AuditLog auditLog) {
         try {
-            auditLogSupport.save(auditLog);
+            auditLogPersistenceService.save(auditLog);
             log.debug("Audit log recorded: action={}, targetType={}, targetId={}, adminUser={}",
                     auditLog.getAction(),
                     auditLog.getTargetType(),
