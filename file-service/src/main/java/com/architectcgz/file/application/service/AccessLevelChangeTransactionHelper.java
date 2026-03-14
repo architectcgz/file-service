@@ -2,7 +2,9 @@ package com.architectcgz.file.application.service;
 
 import com.architectcgz.file.application.service.fileaccess.transaction.AccessLevelOnlyTransactionService;
 import com.architectcgz.file.application.service.fileaccess.transaction.AccessLevelStorageRebindTransactionService;
-import com.architectcgz.file.application.service.fileaccess.transaction.AccessLevelTransactionSupport;
+import com.architectcgz.file.application.service.fileaccess.transaction.mutation.FileAccessRecordMutationService;
+import com.architectcgz.file.application.service.fileaccess.transaction.mutation.FileAccessStorageReferenceMutationService;
+import com.architectcgz.file.application.service.fileaccess.transaction.persistence.FileAccessStoragePersistenceService;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
@@ -30,12 +32,20 @@ public class AccessLevelChangeTransactionHelper {
 
     AccessLevelChangeTransactionHelper(FileRecordRepository fileRecordRepository,
                                        StorageObjectRepository storageObjectRepository) {
-        AccessLevelTransactionSupport support = new AccessLevelTransactionSupport(
-                fileRecordRepository,
-                storageObjectRepository
+        FileAccessRecordMutationService fileAccessRecordMutationService =
+                new FileAccessRecordMutationService(fileRecordRepository);
+        FileAccessStoragePersistenceService fileAccessStoragePersistenceService =
+                new FileAccessStoragePersistenceService(storageObjectRepository);
+        FileAccessStorageReferenceMutationService fileAccessStorageReferenceMutationService =
+                new FileAccessStorageReferenceMutationService(storageObjectRepository);
+        this.accessLevelOnlyTransactionService = new AccessLevelOnlyTransactionService(
+                fileAccessRecordMutationService
         );
-        this.accessLevelOnlyTransactionService = new AccessLevelOnlyTransactionService(support);
-        this.accessLevelStorageRebindTransactionService = new AccessLevelStorageRebindTransactionService(support);
+        this.accessLevelStorageRebindTransactionService = new AccessLevelStorageRebindTransactionService(
+                fileAccessStoragePersistenceService,
+                fileAccessRecordMutationService,
+                fileAccessStorageReferenceMutationService
+        );
     }
 
     public void updateAccessLevelOnly(String fileId, AccessLevel newLevel) {
