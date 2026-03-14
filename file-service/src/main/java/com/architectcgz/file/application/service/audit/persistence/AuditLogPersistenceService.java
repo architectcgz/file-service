@@ -1,13 +1,16 @@
-package com.architectcgz.file.application.service.audit;
+package com.architectcgz.file.application.service.audit.persistence;
 
 import com.architectcgz.file.domain.model.AuditLog;
 import com.architectcgz.file.domain.repository.AuditLogRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
-@Component
+/**
+ * 审计日志持久化服务。
+ */
+@Service
 @RequiredArgsConstructor
-public class AuditLogSupport {
+public class AuditLogPersistenceService {
 
     private final AuditLogRepository auditLogRepository;
 

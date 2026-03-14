@@ -1,7 +1,7 @@
 package com.architectcgz.file.application.service;
 
-import com.architectcgz.file.application.service.audit.AuditLogSupport;
 import com.architectcgz.file.application.service.audit.command.AuditLogRecordCommandService;
+import com.architectcgz.file.application.service.audit.persistence.AuditLogPersistenceService;
 import com.architectcgz.file.domain.model.AuditLog;
 import com.architectcgz.file.domain.repository.AuditLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,7 +23,7 @@ public class AuditLogService {
     }
 
     public AuditLogService(AuditLogRepository auditLogRepository) {
-        this(new AuditLogRecordCommandService(new AuditLogSupport(auditLogRepository)));
+        this(new AuditLogRecordCommandService(new AuditLogPersistenceService(auditLogRepository)));
     }
 
     /**

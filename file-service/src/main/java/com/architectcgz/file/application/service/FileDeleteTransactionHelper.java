@@ -1,6 +1,9 @@
 package com.architectcgz.file.application.service;
 
-import com.architectcgz.file.application.service.filedeletion.FileDeleteTransactionSupport;
+import com.architectcgz.file.application.service.filedeletion.accounting.FileDeletionUsageAccountingService;
+import com.architectcgz.file.application.service.filedeletion.mutation.FileDeletionRecordMutationService;
+import com.architectcgz.file.application.service.filedeletion.mutation.FileDeletionStorageReleaseService;
+import com.architectcgz.file.application.service.filedeletion.query.FileDeletionStorageObjectQueryService;
 import com.architectcgz.file.application.service.filedeletion.query.StorageObjectLastReferenceQueryService;
 import com.architectcgz.file.application.service.filedeletion.transaction.AdminFileDeleteTransactionService;
 import com.architectcgz.file.application.service.filedeletion.transaction.UserFileDeleteTransactionService;
@@ -38,14 +41,27 @@ public class FileDeleteTransactionHelper {
     FileDeleteTransactionHelper(FileRecordRepository fileRecordRepository,
                                 StorageObjectRepository storageObjectRepository,
                                 TenantUsageRepository tenantUsageRepository) {
-        FileDeleteTransactionSupport support = new FileDeleteTransactionSupport(
-                fileRecordRepository,
-                storageObjectRepository,
-                tenantUsageRepository
+        FileDeletionStorageObjectQueryService fileDeletionStorageObjectQueryService =
+                new FileDeletionStorageObjectQueryService(storageObjectRepository);
+        FileDeletionRecordMutationService fileDeletionRecordMutationService =
+                new FileDeletionRecordMutationService(fileRecordRepository);
+        FileDeletionUsageAccountingService fileDeletionUsageAccountingService =
+                new FileDeletionUsageAccountingService(tenantUsageRepository);
+        FileDeletionStorageReleaseService fileDeletionStorageReleaseService =
+                new FileDeletionStorageReleaseService(storageObjectRepository);
+        this.storageObjectLastReferenceQueryService = new StorageObjectLastReferenceQueryService(
+                fileDeletionStorageObjectQueryService
         );
-        this.storageObjectLastReferenceQueryService = new StorageObjectLastReferenceQueryService(support);
-        this.userFileDeleteTransactionService = new UserFileDeleteTransactionService(support);
-        this.adminFileDeleteTransactionService = new AdminFileDeleteTransactionService(support);
+        this.userFileDeleteTransactionService = new UserFileDeleteTransactionService(
+                fileDeletionRecordMutationService,
+                fileDeletionUsageAccountingService,
+                fileDeletionStorageReleaseService
+        );
+        this.adminFileDeleteTransactionService = new AdminFileDeleteTransactionService(
+                fileDeletionRecordMutationService,
+                fileDeletionUsageAccountingService,
+                fileDeletionStorageReleaseService
+        );
     }
 
     public Optional<StorageObject> findStorageObjectIfLastReference(String storageObjectId) {
