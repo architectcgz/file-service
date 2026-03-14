@@ -5,6 +5,7 @@ import com.architectcgz.file.application.dto.InitUploadRequest;
 import com.architectcgz.file.application.dto.InitUploadResponse;
 import com.architectcgz.file.application.service.FileAccessService;
 import com.architectcgz.file.application.service.MultipartUploadService;
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.context.UserContext;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.config.WebMvcTestConfig;
@@ -131,7 +132,8 @@ class MultipartControllerTest {
                         .content(data)
                         .header("X-App-Id", "test-app"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(400));
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.UPLOAD_TASK_NOT_FOUND));
     }
 
     @Test
@@ -177,7 +179,29 @@ class MultipartControllerTest {
                         .header("X-App-Id", "test-app")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(403));
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.ACCESS_DENIED));
+
+        verifyNoInteractions(multipartUploadService);
+    }
+
+    @Test
+    void testInitUploadValidationErrorReturnsErrorCode() throws Exception {
+        InitUploadRequest request = new InitUploadRequest();
+        request.setFileName("");
+        request.setFileSize(104857600L);
+        request.setFileHash("d41d8cd98f00b204e9800998ecf8427e");
+        request.setContentType("video/mp4");
+        UserContext.setUserId("context-user");
+
+        mockMvc.perform(post("/api/v1/multipart/init")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-App-Id", "test-app")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.VALIDATION_ERROR))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("文件名不能为空")));
 
         verifyNoInteractions(multipartUploadService);
     }

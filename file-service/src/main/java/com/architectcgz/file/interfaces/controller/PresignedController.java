@@ -7,6 +7,7 @@ import com.architectcgz.file.application.dto.ConfirmUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadResponse;
 import com.architectcgz.file.application.service.PresignedUrlService;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
@@ -91,7 +92,7 @@ public class PresignedController {
     private String resolveUserId() {
         String userId = UserContext.getUserId();
         if (userId == null || userId.isBlank()) {
-            throw new AccessDeniedException("未获取到用户身份");
+            throw new AccessDeniedException(FileServiceErrorMessages.USER_IDENTITY_MISSING);
         }
         return userId;
     }

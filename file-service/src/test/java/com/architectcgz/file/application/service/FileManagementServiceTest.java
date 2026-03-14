@@ -1,6 +1,8 @@
 package com.architectcgz.file.application.service;
 
 import com.architectcgz.file.application.dto.BatchDeleteResult;
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.TenantRepository;
@@ -53,7 +55,8 @@ class FileManagementServiceTest {
                 () -> fileManagementService.deleteFile("file-001", null)
         );
 
-        assertEquals("未获取到管理员身份", exception.getMessage());
+        assertEquals(FileServiceErrorMessages.ADMIN_IDENTITY_MISSING, exception.getMessage());
+        assertEquals(FileServiceErrorCodes.ACCESS_DENIED, exception.getCode());
         verifyNoInteractions(fileRecordRepository, storageService, auditLogService, fileUrlCacheManager, deleteTransactionHelper);
     }
 
@@ -64,7 +67,8 @@ class FileManagementServiceTest {
                 () -> fileManagementService.batchDeleteFiles(List.of("file-001"), " ")
         );
 
-        assertEquals("未获取到管理员身份", exception.getMessage());
+        assertEquals(FileServiceErrorMessages.ADMIN_IDENTITY_MISSING, exception.getMessage());
+        assertEquals(FileServiceErrorCodes.ACCESS_DENIED, exception.getCode());
         verifyNoInteractions(fileRecordRepository, storageService, auditLogService, fileUrlCacheManager, deleteTransactionHelper);
     }
 }

@@ -11,6 +11,7 @@ import lombok.Data;
 public class ApiResponse<T> {
     
     private Integer code;
+    private String errorCode;
     private String message;
     private T data;
     
@@ -18,7 +19,12 @@ public class ApiResponse<T> {
     }
     
     public ApiResponse(Integer code, String message, T data) {
+        this(code, null, message, data);
+    }
+
+    public ApiResponse(Integer code, String errorCode, String message, T data) {
         this.code = code;
+        this.errorCode = errorCode;
         this.message = message;
         this.data = data;
     }
@@ -41,5 +47,9 @@ public class ApiResponse<T> {
     
     public static <T> ApiResponse<T> error(Integer code, String message) {
         return new ApiResponse<>(code, message, null);
+    }
+
+    public static <T> ApiResponse<T> error(Integer code, String errorCode, String message) {
+        return new ApiResponse<>(code, errorCode, message, null);
     }
 }

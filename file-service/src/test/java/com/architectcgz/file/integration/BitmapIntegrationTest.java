@@ -66,6 +66,11 @@ class BitmapIntegrationTest {
     @Container
     static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
             .withExposedPorts(6379);
+
+    static {
+        postgres.start();
+        redis.start();
+    }
     
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
@@ -182,12 +187,41 @@ class BitmapIntegrationTest {
     
     @Test
     @Order(2)
-    @DisplayName("Redis 故障场景 - 自动回退到数据库")
-    @Disabled("Testcontainers Redis 容器停止后无法可靠重启，此测试场景需要在真实环境中验证")
+    @DisplayName("Redis 故障场景 - Bitmap 丢失时自动回退到数据库")
     void testRedisFailureScenario() {
-        // 此测试在 Testcontainers 环境中不稳定
-        // 在生产环境中，Redis 故障时系统会自动回退到数据库
-        // 该功能已通过其他测试间接验证
+        // Given - 创建上传任务并写入部分分片
+        String taskId = UUID.randomUUID().toString();
+        int totalParts = 20;
+        UploadTask task = createUploadTask(taskId, totalParts);
+        uploadTaskRepository.save(task);
+
+        try {
+            for (int i = 1; i <= totalParts; i++) {
+                uploadPartRepository.savePart(createUploadPart(taskId, i));
+            }
+
+            String bitmapKey = UploadRedisKeys.partsBitmap(taskId);
+            Boolean bitmapExistsBeforeFailure = redisTemplate.hasKey(bitmapKey);
+            assertTrue(Boolean.TRUE.equals(bitmapExistsBeforeFailure), "故障前 Bitmap key 应该存在");
+
+            // When - 模拟 Redis 中对应 Bitmap 数据丢失
+            Boolean deleted = redisTemplate.delete(bitmapKey);
+            assertTrue(Boolean.TRUE.equals(deleted), "应该成功删除 Bitmap key 以模拟 Redis 故障");
+            assertFalse(Boolean.TRUE.equals(redisTemplate.hasKey(bitmapKey)), "Bitmap key 应该已被删除");
+
+            // Then - 查询应该自动回退到数据库
+            int completedPartCount = uploadPartRepository.countCompletedParts(taskId);
+            assertEquals(totalParts, completedPartCount, "Bitmap 丢失后应该从数据库返回完整分片数量");
+
+            List<Integer> completedParts = uploadPartRepository.findCompletedPartNumbers(taskId);
+            assertEquals(totalParts, completedParts.size(), "Bitmap 丢失后应该从数据库返回完整分片列表");
+
+            for (int i = 1; i <= totalParts; i++) {
+                assertTrue(completedParts.contains(i), "数据库回退结果中应该包含分片 " + i);
+            }
+        } finally {
+            cleanupTestData(taskId);
+        }
     }
     
     // ========== 断点续传场景测试 ==========
@@ -564,6 +598,8 @@ class BitmapIntegrationTest {
                 .userId("test-user")
                 .fileName("test-file.bin")
                 .fileSize(1024L * 1024L * totalParts) // 每个分片 1MB
+                .contentType("application/octet-stream")
+                .storagePath("bitmap-tests/" + taskId + "/test-file.bin")
                 .uploadId(UUID.randomUUID().toString())
                 .totalParts(totalParts)
                 .chunkSize(1024 * 1024) // 1MB

@@ -5,6 +5,7 @@ import com.architectcgz.file.application.dto.TenantDetailResponse;
 import com.architectcgz.file.application.dto.UpdateTenantRequest;
 import com.architectcgz.file.application.dto.UpdateTenantStatusRequest;
 import com.architectcgz.file.application.service.TenantManagementService;
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.context.AdminContext;
 import com.architectcgz.file.common.exception.TenantNotFoundException;
 import com.architectcgz.file.config.WebMvcTestConfig;
@@ -377,7 +378,8 @@ class TenantAdminControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-App-Id", "test-app"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(403));
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.ACCESS_DENIED));
 
         verifyNoInteractions(tenantManagementService);
     }

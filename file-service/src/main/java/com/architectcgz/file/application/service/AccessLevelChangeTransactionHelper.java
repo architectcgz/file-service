@@ -1,61 +1,54 @@
 package com.architectcgz.file.application.service;
 
-import com.architectcgz.file.common.exception.BusinessException;
+import com.architectcgz.file.application.service.fileaccess.transaction.AccessLevelOnlyTransactionService;
+import com.architectcgz.file.application.service.fileaccess.transaction.AccessLevelStorageRebindTransactionService;
+import com.architectcgz.file.application.service.fileaccess.transaction.AccessLevelTransactionSupport;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.StorageObjectRepository;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 文件访问级别切换事务辅助类
+ * 文件访问级别切换事务门面。
  *
- * 负责在短事务内完成文件记录与存储对象绑定关系的切换，
- * 避免在数据库事务中执行 S3/MinIO 等远程 I/O。
+ * 对外保留原有 helper 名称，内部事务逻辑下沉到更细的 transaction service。
  */
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class AccessLevelChangeTransactionHelper {
 
-    private final FileRecordRepository fileRecordRepository;
-    private final StorageObjectRepository storageObjectRepository;
+    private final AccessLevelOnlyTransactionService accessLevelOnlyTransactionService;
+    private final AccessLevelStorageRebindTransactionService accessLevelStorageRebindTransactionService;
 
-    @Transactional(rollbackFor = Exception.class)
-    public void updateAccessLevelOnly(String fileId, AccessLevel newLevel) {
-        boolean updated = fileRecordRepository.updateAccessLevel(fileId, newLevel);
-        if (!updated) {
-            throw new BusinessException("更新文件访问级别失败: " + fileId);
-        }
-        log.debug("Updated file access level without storage rebinding: fileId={}, newLevel={}", fileId, newLevel);
+    @Autowired
+    public AccessLevelChangeTransactionHelper(AccessLevelOnlyTransactionService accessLevelOnlyTransactionService,
+                                              AccessLevelStorageRebindTransactionService accessLevelStorageRebindTransactionService) {
+        this.accessLevelOnlyTransactionService = accessLevelOnlyTransactionService;
+        this.accessLevelStorageRebindTransactionService = accessLevelStorageRebindTransactionService;
     }
 
-    @Transactional(rollbackFor = Exception.class)
+    AccessLevelChangeTransactionHelper(FileRecordRepository fileRecordRepository,
+                                       StorageObjectRepository storageObjectRepository) {
+        AccessLevelTransactionSupport support = new AccessLevelTransactionSupport(
+                fileRecordRepository,
+                storageObjectRepository
+        );
+        this.accessLevelOnlyTransactionService = new AccessLevelOnlyTransactionService(support);
+        this.accessLevelStorageRebindTransactionService = new AccessLevelStorageRebindTransactionService(support);
+    }
+
+    public void updateAccessLevelOnly(String fileId, AccessLevel newLevel) {
+        accessLevelOnlyTransactionService.updateAccessLevelOnly(fileId, newLevel);
+    }
+
     public void rebindToCopiedStorage(String fileId, String sourceStorageObjectId,
                                       StorageObject copiedStorageObject, AccessLevel newLevel) {
-        storageObjectRepository.save(copiedStorageObject);
-        log.debug("Saved copied storage object: newStorageObjectId={}, bucket={}",
-                copiedStorageObject.getId(), copiedStorageObject.getBucketName());
-
-        boolean rebound = fileRecordRepository.updateStorageBindingAndAccessLevel(
+        accessLevelStorageRebindTransactionService.rebindToCopiedStorage(
                 fileId,
-                copiedStorageObject.getId(),
-                copiedStorageObject.getStoragePath(),
+                sourceStorageObjectId,
+                copiedStorageObject,
                 newLevel
         );
-        if (!rebound) {
-            throw new BusinessException("更新文件存储绑定失败: " + fileId);
-        }
-
-        boolean decremented = storageObjectRepository.decrementReferenceCount(sourceStorageObjectId);
-        if (!decremented) {
-            throw new BusinessException("减少原存储对象引用计数失败: " + sourceStorageObjectId);
-        }
-
-        log.debug("Rebound file to copied storage: fileId={}, oldStorageObjectId={}, newStorageObjectId={}, newLevel={}",
-                fileId, sourceStorageObjectId, copiedStorageObject.getId(), newLevel);
     }
 }

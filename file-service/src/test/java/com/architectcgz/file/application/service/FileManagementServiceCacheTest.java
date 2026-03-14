@@ -1,5 +1,7 @@
 package com.architectcgz.file.application.service;
 
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.FileNotFoundException;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
@@ -130,7 +132,8 @@ class FileManagementServiceCacheTest {
         FileNotFoundException ex = assertThrows(FileNotFoundException.class,
                 () -> fileManagementService.deleteFile("non-existent", "admin-001"));
 
-        assertEquals("文件不存在: non-existent", ex.getMessage());
+        assertEquals(String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, "non-existent"), ex.getMessage());
+        assertEquals(FileServiceErrorCodes.FILE_NOT_FOUND, ex.getCode());
         verify(fileRecordRepository, never()).deleteById(anyString());
         verify(fileUrlCacheManager, never()).evict(anyString());
     }

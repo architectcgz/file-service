@@ -2,6 +2,9 @@ package com.architectcgz.file.infrastructure.repository;
 
 import com.architectcgz.file.common.config.BitmapProperties;
 import com.architectcgz.file.domain.model.UploadPart;
+import com.architectcgz.file.domain.model.UploadTask;
+import com.architectcgz.file.domain.model.UploadTaskStatus;
+import com.architectcgz.file.domain.repository.UploadTaskRepository;
 import com.architectcgz.file.infrastructure.cache.UploadRedisKeys;
 import com.architectcgz.file.infrastructure.repository.mapper.UploadPartMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,6 +60,11 @@ class UploadPartRepositoryBitmapTTLPropertyTest {
     static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
             .withExposedPorts(6379);
 
+    static {
+        postgres.start();
+        redis.start();
+    }
+
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         // PostgreSQL 配置
@@ -95,6 +103,9 @@ class UploadPartRepositoryBitmapTTLPropertyTest {
     @Autowired
     private UploadPartMapper uploadPartMapper;
 
+    @Autowired
+    private UploadTaskRepository uploadTaskRepository;
+
     private final Random random = new Random();
 
     @BeforeEach
@@ -128,6 +139,7 @@ class UploadPartRepositoryBitmapTTLPropertyTest {
             // Given - 生成随机的 taskId 和 partNumber
             String taskId = generateRandomTaskId();
             int partNumber = random.nextInt(1000) + 1; // 1 到 1000
+            uploadTaskRepository.save(createUploadTask(taskId, 1000));
             
             UploadPart part = UploadPart.builder()
                     .id(UUID.randomUUID().toString())
@@ -202,6 +214,7 @@ class UploadPartRepositoryBitmapTTLPropertyTest {
             String taskId = generateRandomTaskId();
             int partNumber1 = random.nextInt(100) + 1;
             int partNumber2 = random.nextInt(100) + 101; // 确保不同
+            uploadTaskRepository.save(createUploadTask(taskId, 1000));
             
             UploadPart part1 = createPart(taskId, partNumber1);
             UploadPart part2 = createPart(taskId, partNumber2);
@@ -264,6 +277,7 @@ class UploadPartRepositoryBitmapTTLPropertyTest {
                 // Given - 生成随机的 taskId 和 partNumber
                 String taskId = generateRandomTaskId();
                 int partNumber = random.nextInt(1000) + 1;
+                uploadTaskRepository.save(createUploadTask(taskId, 1000));
                 
                 UploadPart part = createPart(taskId, partNumber);
                 String expectedKey = UploadRedisKeys.partsBitmap(taskId);
@@ -309,6 +323,7 @@ class UploadPartRepositoryBitmapTTLPropertyTest {
             // Given - 生成随机的 taskId 和多个 partNumber
             String taskId = generateRandomTaskId();
             int partCount = random.nextInt(10) + 5; // 5 到 14 个分片
+            uploadTaskRepository.save(createUploadTask(taskId, 1000));
             
             String expectedKey = UploadRedisKeys.partsBitmap(taskId);
 
@@ -354,6 +369,26 @@ class UploadPartRepositoryBitmapTTLPropertyTest {
     private String generateRandomTaskId() {
         int length = random.nextInt(27) + 10; // 10 到 36
         return UUID.randomUUID().toString().substring(0, Math.min(length, 36));
+    }
+
+    private UploadTask createUploadTask(String taskId, int totalParts) {
+        LocalDateTime now = LocalDateTime.now();
+        return UploadTask.builder()
+                .id(taskId)
+                .appId("test-app")
+                .userId("test-user")
+                .fileName("bitmap-ttl-test.bin")
+                .fileSize(5L * 1024 * 1024 * totalParts)
+                .contentType("application/octet-stream")
+                .storagePath("bitmap-tests/" + taskId + "/bitmap-ttl-test.bin")
+                .uploadId(UUID.randomUUID().toString())
+                .totalParts(totalParts)
+                .chunkSize(5 * 1024 * 1024)
+                .status(UploadTaskStatus.UPLOADING)
+                .createdAt(now)
+                .updatedAt(now)
+                .expiresAt(now.plusHours(24))
+                .build();
     }
 
     /**

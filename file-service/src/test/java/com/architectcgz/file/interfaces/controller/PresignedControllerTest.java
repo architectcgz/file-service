@@ -4,7 +4,9 @@ import com.architectcgz.file.application.dto.ConfirmUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadResponse;
 import com.architectcgz.file.application.service.PresignedUrlService;
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.context.UserContext;
+import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.config.WebMvcTestConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -127,7 +129,8 @@ class PresignedControllerTest {
                         .header("X-App-Id", "test-app")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(403));
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.ACCESS_DENIED));
 
         verifyNoInteractions(presignedUrlService);
     }
@@ -173,8 +176,56 @@ class PresignedControllerTest {
                         .header("X-App-Id", "test-app")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(403));
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.ACCESS_DENIED));
 
         verifyNoInteractions(presignedUrlService);
+    }
+
+    @Test
+    void testGetPresignedUploadUrlValidationErrorReturnsErrorCode() throws Exception {
+        PresignedUploadRequest request = new PresignedUploadRequest();
+        request.setFileName("");
+        request.setFileSize(1024L);
+        request.setContentType("image/jpeg");
+        request.setFileHash("hash-123");
+        UserContext.setUserId("context-user");
+
+        mockMvc.perform(post("/api/v1/upload/presign")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-App-Id", "test-app")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.VALIDATION_ERROR))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("文件名不能为空")));
+
+        verifyNoInteractions(presignedUrlService);
+    }
+
+    @Test
+    void testGetPresignedUploadUrlReturnsBusinessErrorCode() throws Exception {
+        PresignedUploadRequest request = new PresignedUploadRequest();
+        request.setFileName("image.jpg");
+        request.setFileSize(1024L);
+        request.setContentType("image/jpeg");
+        request.setFileHash("hash-123");
+        request.setAccessLevel("unsupported");
+
+        UserContext.setUserId("context-user");
+        when(presignedUrlService.getPresignedUploadUrl(anyString(), any(PresignedUploadRequest.class), anyString()))
+                .thenThrow(new BusinessException(
+                        FileServiceErrorCodes.UNSUPPORTED_ACCESS_LEVEL,
+                        "不支持的访问级别: unsupported"
+                ));
+
+        mockMvc.perform(post("/api/v1/upload/presign")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-App-Id", "test-app")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.UNSUPPORTED_ACCESS_LEVEL))
+                .andExpect(jsonPath("$.message").value("不支持的访问级别: unsupported"));
     }
 }

@@ -1,5 +1,6 @@
 package com.architectcgz.file.infrastructure.image;
 
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.domain.model.ImageProcessConfig;
 import org.junit.jupiter.api.BeforeEach;
@@ -122,8 +123,9 @@ class ImageProcessorTest {
             ImageProcessConfig config = ImageProcessConfig.defaultConfig();
 
             // When & Then
-            assertThrows(BusinessException.class, () ->
+            BusinessException exception = assertThrows(BusinessException.class, () ->
                     imageProcessor.process(invalidData, config));
+            assertEquals(FileServiceErrorCodes.IMAGE_READ_FAILED, exception.getCode());
         }
     }
 

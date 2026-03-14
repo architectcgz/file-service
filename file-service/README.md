@@ -12,6 +12,21 @@ File Service 是从 `blog-upload` 重构而来的通用文件服务，提供：
 - **独立部署**: 拥有独立数据库和存储，与其他服务完全解耦
 - **S3 兼容存储**: 当前默认使用 MinIO，也兼容标准 S3 接口
 
+## 上传方式说明
+
+- `/api/v1/upload/image`、`/api/v1/upload/file`: 普通上传，请求先到 `file-service`
+- `/api/v1/multipart/*`: 服务端中转的分片上传，前端把分片发给 `file-service`
+- `/api/v1/direct-upload/*`: 分片预签名直传，前端拿到分片 URL 后直接上传到 MinIO/S3
+- `/api/v1/upload/presign` + `/api/v1/upload/confirm`: 单文件预签名直传
+
+如果是大文件且希望减轻服务端带宽压力，优先使用 `/api/v1/direct-upload/*`。如果更看重服务端统一控制和兼容性，可以使用 `/api/v1/multipart/*`。
+
+`/api/v1/direct-upload/*` 当前已支持：
+
+- 基于 `fileHash` 的断点续传匹配
+- 通过 `/api/v1/direct-upload/{taskId}/progress` 恢复已完成分片和 `etag`
+- `complete` 阶段以对象存储中的实际分片为准，减少前端丢失本地状态后的失败率
+
 ## 核心特性
 
 ### 1. 双 Bucket 存储策略
@@ -237,6 +252,7 @@ curl -X DELETE http://localhost:8089/api/v1/upload/{fileId} \
 ```json
 {
   "code": 403,
+  "errorCode": "ACCESS_DENIED",
   "message": "Access denied: file belongs to different app",
   "data": null
 }
@@ -248,18 +264,22 @@ curl -X DELETE http://localhost:8089/api/v1/upload/{fileId} \
 
 | HTTP 状态码 | 错误码 | 说明 | 解决方案 |
 |------------|--------|------|----------|
-| 400 | 400 | 缺少 X-App-Id | 添加 X-App-Id 请求头 |
-| 400 | 400 | 无效的 X-App-Id 格式 | 检查 appId 格式是否符合规范 |
-| 401 | 401 | 未认证 | 提供有效的 JWT Token |
-| 403 | 403 | 权限不足 | 确认文件属于当前应用 |
-| 404 | 404 | 文件不存在 | 检查文件 ID 是否正确 |
-| 413 | 413 | 文件过大 | 减小文件大小或使用分片上传 |
+| 400 | MISSING_REQUEST_HEADER | 缺少 X-App-Id | 添加 X-App-Id 请求头 |
+| 400 | VALIDATION_ERROR | 请求参数无效 | 检查请求参数格式 |
+| 400 | UNSUPPORTED_ACCESS_LEVEL | 访问级别非法 | 仅使用 `public` 或 `private` |
+| 400 | EXTENSION_NOT_ALLOWED / CONTENT_TYPE_NOT_ALLOWED | 文件类型不允许 | 检查扩展名、Content-Type 与白名单配置 |
+| 403 | ACCESS_DENIED | 权限不足 | 确认文件属于当前应用 |
+| 404 | FILE_NOT_FOUND | 文件不存在 | 检查文件 ID 是否正确 |
+| 404 | UPLOAD_TASK_NOT_FOUND | 上传任务不存在 | 检查 taskId 是否正确或任务是否已清理 |
+| 413 | FILE_TOO_LARGE | 文件过大 | 减小文件大小或使用分片上传 |
+| 500 | FILE_UPLOAD_FAILED / S3_CLIENT_ERROR | 存储上传失败 | 检查对象存储服务状态和网络连通性 |
 
 ### 错误响应示例
 
 ```json
 {
   "code": 400,
+  "errorCode": "VALIDATION_ERROR",
   "message": "Invalid X-App-Id format",
   "data": null
 }

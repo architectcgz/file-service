@@ -1,6 +1,7 @@
 package com.architectcgz.file.interfaces.controller;
 
 import com.architectcgz.file.application.dto.FileUrlResponse;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.result.ApiResponse;
 import com.architectcgz.file.common.context.UserContext;
 import com.architectcgz.file.common.exception.AccessDeniedException;
@@ -185,7 +186,7 @@ public class MultipartController {
     private String resolveUserId() {
         String userId = UserContext.getUserId();
         if (userId == null || userId.isBlank()) {
-            throw new AccessDeniedException("未获取到用户身份");
+            throw new AccessDeniedException(FileServiceErrorMessages.USER_IDENTITY_MISSING);
         }
         return userId;
     }

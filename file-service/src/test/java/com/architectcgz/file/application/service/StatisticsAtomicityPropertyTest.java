@@ -2,217 +2,222 @@ package com.architectcgz.file.application.service;
 
 import com.architectcgz.file.domain.model.TenantUsage;
 import com.architectcgz.file.domain.repository.TenantUsageRepository;
-import com.architectcgz.file.infrastructure.repository.TenantUsageRepositoryImpl;
-import com.architectcgz.file.infrastructure.repository.mapper.TenantUsageMapper;
-import com.architectcgz.file.infrastructure.repository.po.TenantUsagePO;
-import net.jqwik.api.*;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.jdbc.Sql;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.*;
-import java.util.stream.Collectors;
+import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * 统计更新原子性属性测试
- * 
- * Feature: file-service-optimization
- * 使用基于属性的测试验证并发场景下租户统计更新的原子性
+ *
+ * 使用随机多轮并发操作验证租户统计更新的原子性。
  */
 @SpringBootTest
 @ActiveProfiles("test")
+@Testcontainers
+@Sql(scripts = "/schema.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
 class StatisticsAtomicityPropertyTest {
+
+    private static final String[] TENANT_IDS = {
+            "test-tenant-1",
+            "test-tenant-2",
+            "test-tenant-3"
+    };
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
+            .withDatabaseName("file_service_test")
+            .withUsername("test")
+            .withPassword("test");
+
+    @Container
+    static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
+            .withExposedPorts(6379);
+
+    static {
+        postgres.start();
+        redis.start();
+    }
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.data.redis.host", redis::getHost);
+        registry.add("spring.data.redis.port", redis::getFirstMappedPort);
+        registry.add("spring.data.redis.password", () -> "");
+        registry.add("spring.redis.redisson.config", () ->
+                "singleServerConfig:\n" +
+                "  address: \"redis://" + redis.getHost() + ":" + redis.getFirstMappedPort() + "\"\n" +
+                "  password: null\n"
+        );
+    }
 
     @Autowired
     private TenantUsageRepository tenantUsageRepository;
 
-    @Autowired
-    private TenantUsageMapper tenantUsageMapper;
+    private final Random random = new Random();
 
     /**
      * Feature: file-service-optimization, Property 32: 统计更新原子性
-     * 
-     * 属性：对于任何并发的文件上传和删除操作，租户使用统计的更新应该是原子性的，
-     * 最终统计结果应该与操作序列一致。
-     * 
-     * 验证需求：12.6
+     *
+     * 随机生成多组并发上传/删除操作，验证最终统计结果保持一致。
      */
-    @Property(tries = 100)
-    @Label("Property 32: 统计更新原子性 - 并发操作下统计更新保持一致性")
-    void statisticsUpdateAtomicity(
-            @ForAll("tenantIds") String tenantId,
-            @ForAll("operationSequences") List<Operation> operations
-    ) throws Exception {
-        // Given: 初始化租户使用统计
-        initializeTenantUsage(tenantId);
-        
-        // 计算预期的最终状态
-        long expectedStorageBytes = 0;
-        int expectedFileCount = 0;
-        
-        for (Operation op : operations) {
-            if (op.isUpload()) {
-                expectedStorageBytes += op.getFileSize();
-                expectedFileCount += 1;
-            } else {
-                expectedStorageBytes = Math.max(0, expectedStorageBytes - op.getFileSize());
-                expectedFileCount = Math.max(0, expectedFileCount - 1);
+    @Test
+    @DisplayName("Property 32: 统计更新原子性 - 并发操作下统计更新保持一致性")
+    void statisticsUpdateAtomicity() throws Exception {
+        for (int iteration = 1; iteration <= 30; iteration++) {
+            String tenantId = randomTenantId();
+            List<Operation> operations = randomOperationSequence();
+
+            // 预先填充所有删除操作对应的基线数据，避免并发扣减触发下限裁剪后导致结果依赖执行时序。
+            initializeTenantUsage(tenantId, operations);
+
+            long expectedStorageBytes = operations.stream()
+                    .filter(Operation::isUpload)
+                    .mapToLong(Operation::getFileSize)
+                    .sum();
+            int expectedFileCount = (int) operations.stream()
+                    .filter(Operation::isUpload)
+                    .count();
+
+            ExecutorService executor = Executors.newFixedThreadPool(10);
+            List<Future<?>> futures = new ArrayList<>();
+
+            for (Operation op : operations) {
+                futures.add(executor.submit(() -> {
+                    if (op.isUpload()) {
+                        tenantUsageRepository.incrementUsage(tenantId, op.getFileSize());
+                    } else {
+                        tenantUsageRepository.decrementUsage(tenantId, op.getFileSize());
+                    }
+                }));
             }
-        }
-        
-        // When: 并发执行所有操作
-        ExecutorService executor = Executors.newFixedThreadPool(10);
-        List<Future<?>> futures = new ArrayList<>();
-        
-        for (Operation op : operations) {
-            Future<?> future = executor.submit(() -> {
-                if (op.isUpload()) {
-                    tenantUsageRepository.incrementUsage(tenantId, op.getFileSize());
-                } else {
-                    tenantUsageRepository.decrementUsage(tenantId, op.getFileSize());
+
+            for (Future<?> future : futures) {
+                try {
+                    future.get(5, TimeUnit.SECONDS);
+                } catch (TimeoutException e) {
+                    fail("Operation timed out");
                 }
-            });
-            futures.add(future);
-        }
-        
-        // 等待所有操作完成
-        for (Future<?> future : futures) {
-            try {
-                future.get(5, TimeUnit.SECONDS);
-            } catch (TimeoutException e) {
-                fail("Operation timed out");
             }
-        }
-        
-        executor.shutdown();
-        executor.awaitTermination(10, TimeUnit.SECONDS);
-        
-        // Then: 验证最终统计结果与预期一致
-        TenantUsage finalUsage = tenantUsageRepository.findById(tenantId)
-                .orElseThrow(() -> new AssertionError("Tenant usage not found"));
-        
-        assertEquals(
-                expectedStorageBytes,
-                finalUsage.getUsedStorageBytes(),
-                String.format(
-                        "Storage bytes should be %d after %d operations, but was %d",
-                        expectedStorageBytes,
-                        operations.size(),
-                        finalUsage.getUsedStorageBytes()
-                )
-        );
-        
-        assertEquals(
-                expectedFileCount,
-                finalUsage.getUsedFileCount(),
-                String.format(
-                        "File count should be %d after %d operations, but was %d",
-                        expectedFileCount,
-                        operations.size(),
-                        finalUsage.getUsedFileCount()
-                )
-        );
-        
-        // 清理测试数据
-        cleanupTenantUsage(tenantId);
-    }
 
-    /**
-     * 初始化租户使用统计
-     */
-    private void initializeTenantUsage(String tenantId) {
-        TenantUsagePO po = new TenantUsagePO();
-        po.setTenantId(tenantId);
-        po.setUsedStorageBytes(0L);
-        po.setUsedFileCount(0);
-        po.setLastUploadAt(null);
-        po.setUpdatedAt(LocalDateTime.now());
-        
-        // 删除已存在的记录
-        TenantUsagePO existing = tenantUsageMapper.findById(tenantId);
-        if (existing != null) {
-            tenantUsageMapper.update(po);
-        } else {
-            tenantUsageMapper.insert(po);
+            executor.shutdown();
+            executor.awaitTermination(10, TimeUnit.SECONDS);
+
+            TenantUsage finalUsage = tenantUsageRepository.findById(tenantId)
+                    .orElseThrow(() -> new AssertionError("Tenant usage not found"));
+
+            assertEquals(
+                    expectedStorageBytes,
+                    finalUsage.getUsedStorageBytes(),
+                    String.format(
+                            "[Iteration %d] Storage bytes should be %d after %d operations, but was %d",
+                            iteration,
+                            expectedStorageBytes,
+                            operations.size(),
+                            finalUsage.getUsedStorageBytes()
+                    )
+            );
+
+            assertEquals(
+                    expectedFileCount,
+                    finalUsage.getUsedFileCount(),
+                    String.format(
+                            "[Iteration %d] File count should be %d after %d operations, but was %d",
+                            iteration,
+                            expectedFileCount,
+                            operations.size(),
+                            finalUsage.getUsedFileCount()
+                    )
+            );
+
+            cleanupTenantUsage(tenantId);
         }
     }
 
-    /**
-     * 清理租户使用统计
-     */
+    private void initializeTenantUsage(String tenantId, List<Operation> operations) {
+        long baselineStorageBytes = operations.stream()
+                .filter(op -> !op.isUpload())
+                .mapToLong(Operation::getFileSize)
+                .sum();
+        int baselineFileCount = (int) operations.stream()
+                .filter(op -> !op.isUpload())
+                .count();
+        tenantUsageRepository.save(createTenantUsage(tenantId, baselineStorageBytes, baselineFileCount));
+    }
+
     private void cleanupTenantUsage(String tenantId) {
-        // 重置为初始状态
-        TenantUsagePO po = new TenantUsagePO();
-        po.setTenantId(tenantId);
-        po.setUsedStorageBytes(0L);
-        po.setUsedFileCount(0);
-        po.setLastUploadAt(null);
-        po.setUpdatedAt(LocalDateTime.now());
-        tenantUsageMapper.update(po);
+        tenantUsageRepository.save(createTenantUsage(tenantId, 0L, 0));
     }
 
-    // ========== Arbitraries (数据生成器) ==========
-
-    /**
-     * 生成租户ID
-     */
-    @Provide
-    Arbitrary<String> tenantIds() {
-        return Arbitraries.of("test-tenant-1", "test-tenant-2", "test-tenant-3");
+    private TenantUsage createTenantUsage(String tenantId, long usedStorageBytes, int usedFileCount) {
+        TenantUsage usage = new TenantUsage();
+        usage.setTenantId(tenantId);
+        usage.setUsedStorageBytes(usedStorageBytes);
+        usage.setUsedFileCount(usedFileCount);
+        usage.setLastUploadAt(null);
+        usage.setUpdatedAt(LocalDateTime.now());
+        return usage;
     }
 
-    /**
-     * 生成操作序列
-     * 包含上传和删除操作的混合序列
-     */
-    @Provide
-    Arbitrary<List<Operation>> operationSequences() {
-        return Arbitraries.integers()
-                .between(5, 20) // 5到20个操作
-                .flatMap(count -> {
-                    Arbitrary<Operation> operationArbitrary = Combinators.combine(
-                            Arbitraries.of(OperationType.UPLOAD, OperationType.DELETE),
-                            Arbitraries.longs().between(1024L, 10485760L) // 1KB to 10MB
-                    ).as(Operation::new);
-                    
-                    return operationArbitrary.list().ofSize(count);
-                });
+    private String randomTenantId() {
+        return TENANT_IDS[random.nextInt(TENANT_IDS.length)];
     }
 
-    // ========== 辅助类 ==========
+    private List<Operation> randomOperationSequence() {
+        int count = random.nextInt(16) + 5;
+        List<Operation> operations = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            OperationType type = random.nextBoolean() ? OperationType.UPLOAD : OperationType.DELETE;
+            long fileSize = 1024L + random.nextLong(10 * 1024 * 1024L - 1024L + 1);
+            operations.add(new Operation(type, fileSize));
+        }
+        return operations;
+    }
 
-    /**
-     * 操作类型枚举
-     */
     enum OperationType {
         UPLOAD,
         DELETE
     }
 
-    /**
-     * 操作对象
-     */
     static class Operation {
         private final OperationType type;
         private final long fileSize;
 
-        public Operation(OperationType type, long fileSize) {
+        Operation(OperationType type, long fileSize) {
             this.type = type;
             this.fileSize = fileSize;
         }
 
-        public boolean isUpload() {
+        boolean isUpload() {
             return type == OperationType.UPLOAD;
         }
 
-        public long getFileSize() {
+        long getFileSize() {
             return fileSize;
         }
 

@@ -1,5 +1,7 @@
 package com.architectcgz.file.common.exception;
 
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.result.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -29,7 +31,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ApiResponse<Void> handleTenantNotFoundException(TenantNotFoundException ex) {
         log.warn("Tenant not found: {}", ex.getMessage());
-        return ApiResponse.error(404, ex.getMessage());
+        return ApiResponse.error(404, ex.getErrorCode(), ex.getMessage());
     }
     
     /**
@@ -42,9 +44,13 @@ public class GlobalExceptionHandler {
         String errorMessage = ex.getBindingResult().getFieldErrors().stream()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .collect(Collectors.joining(", "));
-        
+
         log.warn("Validation error: {}", errorMessage);
-        return ApiResponse.error(400, "参数验证失败: " + errorMessage);
+        return ApiResponse.error(
+                400,
+                FileServiceErrorCodes.VALIDATION_ERROR,
+                String.format(FileServiceErrorMessages.VALIDATION_FAILED, errorMessage)
+        );
     }
     
     /**
@@ -55,7 +61,11 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleMissingHeaderException(MissingRequestHeaderException ex) {
         log.warn("Missing required header: {}", ex.getHeaderName());
-        return ApiResponse.error(400, "缺少必需的请求头: " + ex.getHeaderName());
+        return ApiResponse.error(
+                400,
+                FileServiceErrorCodes.MISSING_REQUEST_HEADER,
+                String.format(FileServiceErrorMessages.MISSING_REQUEST_HEADER, ex.getHeaderName())
+        );
     }
     
     /**
@@ -66,7 +76,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public ApiResponse<Void> handleTenantSuspendedException(TenantSuspendedException ex) {
         log.warn("Tenant suspended: {}", ex.getMessage());
-        return ApiResponse.error(403, ex.getMessage());
+        return ApiResponse.error(403, ex.getErrorCode(), ex.getMessage());
     }
     
     /**
@@ -77,7 +87,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
     public ApiResponse<Void> handleQuotaExceededException(QuotaExceededException ex) {
         log.warn("Quota exceeded: {}", ex.getMessage());
-        return ApiResponse.error(413, ex.getMessage());
+        return ApiResponse.error(413, ex.getErrorCode(), ex.getMessage());
     }
     
     /**
@@ -88,7 +98,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
     public ApiResponse<Void> handleFileTooLargeException(FileTooLargeException ex) {
         log.warn("File too large: {}", ex.getMessage());
-        return ApiResponse.error(413, ex.getMessage());
+        return ApiResponse.error(413, ex.getErrorCode(), ex.getMessage());
     }
     
     /**
@@ -99,7 +109,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public ApiResponse<Void> handleAccessDeniedException(AccessDeniedException ex) {
         log.warn("Access denied: {}", ex.getMessage());
-        return ApiResponse.error(403, ex.getMessage());
+        return ApiResponse.error(403, ex.getErrorCode(), ex.getMessage());
     }
     
     /**
@@ -110,7 +120,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ApiResponse<Void> handleFileNotFoundException(FileNotFoundException ex) {
         log.warn("File not found: {}", ex.getMessage());
-        return ApiResponse.error(404, ex.getMessage());
+        return ApiResponse.error(404, ex.getErrorCode(), ex.getMessage());
     }
     
     /**
@@ -121,7 +131,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleBusinessException(BusinessException ex) {
         log.warn("Business exception: {}", ex.getMessage());
-        return ApiResponse.error(400, ex.getMessage());
+        return ApiResponse.error(400, ex.getErrorCode(), ex.getMessage());
     }
     
     /**
@@ -132,6 +142,10 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResponse<Void> handleException(Exception ex) {
         log.error("Unexpected error", ex);
-        return ApiResponse.error(500, "Internal server error: " + ex.getMessage());
+        return ApiResponse.error(
+                500,
+                FileServiceErrorCodes.INTERNAL_SERVER_ERROR,
+                String.format(FileServiceErrorMessages.INTERNAL_SERVER_ERROR, ex.getMessage())
+        );
     }
 }

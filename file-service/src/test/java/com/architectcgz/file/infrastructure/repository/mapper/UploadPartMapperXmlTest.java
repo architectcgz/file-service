@@ -40,6 +40,10 @@ class UploadPartMapperXmlTest {
             .withDatabaseName("file_service_test")
             .withUsername("test")
             .withPassword("test");
+
+    static {
+        postgres.start();
+    }
     
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {

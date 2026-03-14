@@ -5,7 +5,9 @@ import com.architectcgz.file.application.dto.DirectUploadInitRequest;
 import com.architectcgz.file.application.dto.DirectUploadInitResponse;
 import com.architectcgz.file.application.dto.DirectUploadPartUrlRequest;
 import com.architectcgz.file.application.dto.DirectUploadPartUrlResponse;
+import com.architectcgz.file.application.dto.DirectUploadProgressResponse;
 import com.architectcgz.file.application.service.DirectUploadService;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.context.UserContext;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.result.ApiResponse;
@@ -77,6 +79,28 @@ public class DirectUploadController {
         
         return ApiResponse.success(response);
     }
+
+    /**
+     * 查询直传上传进度
+     *
+     * 客户端可在刷新页面或断线重连后使用该接口恢复已上传分片信息。
+     *
+     * @param taskId 上传任务 ID
+     * @return 上传进度与已完成分片信息
+     */
+    @GetMapping("/{taskId}/progress")
+    public ApiResponse<DirectUploadProgressResponse> getUploadProgress(
+            HttpServletRequest httpRequest,
+            @PathVariable String taskId) {
+        String appId = (String) httpRequest.getAttribute("appId");
+        String userId = resolveUserId();
+
+        log.info("查询直传上传进度: appId={}, userId={}, taskId={}", appId, userId, taskId);
+
+        DirectUploadProgressResponse response = directUploadService.getUploadProgress(appId, taskId, userId);
+
+        return ApiResponse.success(response);
+    }
     
     /**
      * 完成直传上传
@@ -104,7 +128,7 @@ public class DirectUploadController {
     private String resolveUserId() {
         String userId = UserContext.getUserId();
         if (userId == null || userId.isBlank()) {
-            throw new AccessDeniedException("未获取到用户身份");
+            throw new AccessDeniedException(FileServiceErrorMessages.USER_IDENTITY_MISSING);
         }
         return userId;
     }

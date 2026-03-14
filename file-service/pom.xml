@@ -166,6 +166,12 @@
             <version>1.8.2</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik-spring</artifactId>
+            <version>0.9.0</version>
+            <scope>test</scope>
+        </dependency>
         
         <!-- Testcontainers for Integration Testing -->
         <dependency>

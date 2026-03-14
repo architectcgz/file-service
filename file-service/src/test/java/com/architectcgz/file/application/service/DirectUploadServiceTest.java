@@ -4,207 +4,109 @@ import com.architectcgz.file.application.dto.DirectUploadCompleteRequest;
 import com.architectcgz.file.application.dto.DirectUploadInitRequest;
 import com.architectcgz.file.application.dto.DirectUploadInitResponse;
 import com.architectcgz.file.application.dto.DirectUploadPartUrlRequest;
-import com.architectcgz.file.common.exception.AccessDeniedException;
-import com.architectcgz.file.domain.model.AccessLevel;
-import com.architectcgz.file.domain.model.FileRecord;
-import com.architectcgz.file.domain.model.StorageObject;
-import com.architectcgz.file.domain.model.UploadTask;
-import com.architectcgz.file.domain.model.UploadTaskStatus;
-import com.architectcgz.file.domain.repository.FileRecordRepository;
-import com.architectcgz.file.domain.repository.StorageObjectRepository;
-import com.architectcgz.file.domain.repository.UploadPartRepository;
-import com.architectcgz.file.domain.repository.UploadTaskRepository;
-import com.architectcgz.file.domain.service.TenantDomainService;
-import com.architectcgz.file.infrastructure.config.AccessProperties;
-import com.architectcgz.file.infrastructure.config.MultipartProperties;
-import com.architectcgz.file.infrastructure.storage.S3StorageService;
+import com.architectcgz.file.application.dto.DirectUploadPartUrlResponse;
+import com.architectcgz.file.application.dto.DirectUploadProgressResponse;
+import com.architectcgz.file.application.service.direct.command.DirectUploadCompleteCommandService;
+import com.architectcgz.file.application.service.direct.command.DirectUploadInitCommandService;
+import com.architectcgz.file.application.service.direct.query.DirectUploadPartUrlQueryService;
+import com.architectcgz.file.application.service.direct.query.DirectUploadProgressQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("DirectUploadService 单元测试")
+@DisplayName("DirectUploadService 门面单元测试")
 class DirectUploadServiceTest {
 
     @Mock
-    private S3StorageService s3StorageService;
+    private DirectUploadInitCommandService directUploadInitCommandService;
     @Mock
-    private UploadTaskRepository uploadTaskRepository;
+    private DirectUploadProgressQueryService directUploadProgressQueryService;
     @Mock
-    private UploadPartRepository uploadPartRepository;
+    private DirectUploadPartUrlQueryService directUploadPartUrlQueryService;
     @Mock
-    private FileRecordRepository fileRecordRepository;
-    @Mock
-    private StorageObjectRepository storageObjectRepository;
-    @Mock
-    private MultipartProperties multipartProperties;
-    @Mock
-    private AccessProperties accessProperties;
-    @Mock
-    private FileTypeValidator fileTypeValidator;
-    @Mock
-    private TenantDomainService tenantDomainService;
-    @Mock
-    private UploadTransactionHelper uploadTransactionHelper;
+    private DirectUploadCompleteCommandService directUploadCompleteCommandService;
 
-    @InjectMocks
     private DirectUploadService directUploadService;
-
-    private DirectUploadInitRequest initRequest;
 
     @BeforeEach
     void setUp() {
-        initRequest = new DirectUploadInitRequest();
-        initRequest.setFileName("report.pdf");
-        initRequest.setFileSize(1024L);
-        initRequest.setContentType("application/pdf");
-        initRequest.setFileHash("hash-123");
+        directUploadService = new DirectUploadService(
+                directUploadInitCommandService,
+                directUploadProgressQueryService,
+                directUploadPartUrlQueryService,
+                directUploadCompleteCommandService
+        );
     }
 
     @Test
-    @DisplayName("秒传命中时应按 public bucket 去重并返回公开地址")
-    void initDirectUpload_shouldUsePublicBucketForInstantUpload() {
-        when(s3StorageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
-        StorageObject storageObject = StorageObject.builder()
-                .id("storage-001")
-                .appId("blog")
-                .fileHash("hash-123")
-                .storagePath("blog/files/report.pdf")
-                .bucketName("public-bucket")
-                .fileSize(1024L)
-                .contentType("application/pdf")
-                .referenceCount(2)
+    @DisplayName("初始化直传上传应委托给 init command service")
+    void initDirectUpload_shouldDelegateToInitCommandService() {
+        DirectUploadInitRequest request = new DirectUploadInitRequest();
+        DirectUploadInitResponse response = DirectUploadInitResponse.builder()
+                .taskId("task-001")
+                .isInstantUpload(false)
                 .build();
+        when(directUploadInitCommandService.initDirectUpload("blog", request, "user-123"))
+                .thenReturn(response);
 
-        when(storageObjectRepository.findByFileHashAndBucket("blog", "hash-123", "public-bucket"))
-                .thenReturn(Optional.of(storageObject));
-        when(s3StorageService.getPublicUrl("public-bucket", "blog/files/report.pdf"))
-                .thenReturn("https://cdn.example.com/blog/files/report.pdf");
-        doNothing().when(tenantDomainService).checkQuota("blog", 1024L);
-        doNothing().when(fileTypeValidator).validateFile("report.pdf", "application/pdf", 1024L);
+        DirectUploadInitResponse actual = directUploadService.initDirectUpload("blog", request, "user-123");
 
-        ArgumentCaptor<FileRecord> fileRecordCaptor = ArgumentCaptor.forClass(FileRecord.class);
-        doNothing().when(uploadTransactionHelper)
-                .saveInstantUpload(anyString(), fileRecordCaptor.capture(), anyLong());
-
-        DirectUploadInitResponse response = directUploadService.initDirectUpload("blog", initRequest, "user-123");
-
-        assertThat(response.getIsInstantUpload()).isTrue();
-        assertThat(response.getFileUrl()).isEqualTo("https://cdn.example.com/blog/files/report.pdf");
-        assertThat(fileRecordCaptor.getValue().getStorageObjectId()).isEqualTo("storage-001");
-        verify(storageObjectRepository).findByFileHashAndBucket("blog", "hash-123", "public-bucket");
-        verify(uploadTransactionHelper).saveInstantUpload("storage-001", fileRecordCaptor.getValue(), 1024L);
+        assertThat(actual).isSameAs(response);
+        verify(directUploadInitCommandService).initDirectUpload("blog", request, "user-123");
     }
 
     @Test
-    @DisplayName("完成直传上传时应将对象写入 public bucket")
-    void completeDirectUpload_shouldPersistMetadataInPublicBucket() {
-        when(s3StorageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("public-bucket");
-        UploadTask task = UploadTask.builder()
-                .id("task-001")
-                .appId("blog")
-                .userId("user-123")
-                .fileName("report.pdf")
-                .fileSize(1024L)
-                .fileHash("hash-123")
-                .contentType("application/pdf")
-                .storagePath("blog/files/report.pdf")
-                .uploadId("upload-001")
-                .totalParts(2)
-                .chunkSize(512)
-                .status(UploadTaskStatus.UPLOADING)
-                .expiresAt(LocalDateTime.now().plusHours(1))
+    @DisplayName("查询上传进度应委托给 progress query service")
+    void getUploadProgress_shouldDelegateToProgressQueryService() {
+        DirectUploadProgressResponse response = DirectUploadProgressResponse.builder()
+                .taskId("task-001")
+                .completedPartNumbers(List.of(1, 2))
                 .build();
+        when(directUploadProgressQueryService.getUploadProgress("blog", "task-001", "user-123"))
+                .thenReturn(response);
 
+        DirectUploadProgressResponse actual = directUploadService.getUploadProgress("blog", "task-001", "user-123");
+
+        assertThat(actual).isSameAs(response);
+        verify(directUploadProgressQueryService).getUploadProgress("blog", "task-001", "user-123");
+    }
+
+    @Test
+    @DisplayName("获取分片上传地址应委托给 part url query service")
+    void getPartUploadUrls_shouldDelegateToPartUrlQueryService() {
+        DirectUploadPartUrlRequest request = new DirectUploadPartUrlRequest();
+        DirectUploadPartUrlResponse response = DirectUploadPartUrlResponse.builder()
+                .taskId("task-001")
+                .build();
+        when(directUploadPartUrlQueryService.getPartUploadUrls("blog", request, "user-123"))
+                .thenReturn(response);
+
+        DirectUploadPartUrlResponse actual = directUploadService.getPartUploadUrls("blog", request, "user-123");
+
+        assertThat(actual).isSameAs(response);
+        verify(directUploadPartUrlQueryService).getPartUploadUrls("blog", request, "user-123");
+    }
+
+    @Test
+    @DisplayName("完成直传上传应委托给 complete command service")
+    void completeDirectUpload_shouldDelegateToCompleteCommandService() {
         DirectUploadCompleteRequest request = new DirectUploadCompleteRequest();
-        request.setTaskId("task-001");
-        request.setContentType("application/pdf");
-        DirectUploadCompleteRequest.PartInfo part1 = new DirectUploadCompleteRequest.PartInfo();
-        part1.setPartNumber(1);
-        part1.setEtag("etag-1");
-        DirectUploadCompleteRequest.PartInfo part2 = new DirectUploadCompleteRequest.PartInfo();
-        part2.setPartNumber(2);
-        part2.setEtag("etag-2");
-        request.setParts(List.of(part1, part2));
-
-        when(uploadTaskRepository.findById("task-001")).thenReturn(Optional.of(task));
-        when(storageObjectRepository.findByFileHashAndBucket("blog", "hash-123", "public-bucket"))
-                .thenReturn(Optional.empty());
-
-        ArgumentCaptor<StorageObject> storageCaptor = ArgumentCaptor.forClass(StorageObject.class);
-        ArgumentCaptor<FileRecord> recordCaptor = ArgumentCaptor.forClass(FileRecord.class);
-        doNothing().when(uploadTransactionHelper)
-                .saveCompletedUpload(any(UploadTask.class), storageCaptor.capture(), recordCaptor.capture());
+        when(directUploadCompleteCommandService.completeDirectUpload("blog", request, "user-123"))
+                .thenReturn("file-001");
 
         String fileId = directUploadService.completeDirectUpload("blog", request, "user-123");
 
-        assertThat(fileId).isEqualTo(recordCaptor.getValue().getId());
-        assertThat(storageCaptor.getValue().getBucketName()).isEqualTo("public-bucket");
-        assertThat(recordCaptor.getValue().getStorageObjectId()).isEqualTo(storageCaptor.getValue().getId());
-        verify(s3StorageService).completeMultipartUpload(eq("blog/files/report.pdf"), eq("upload-001"), any(), eq("public-bucket"));
-    }
-
-    @Test
-    @DisplayName("获取直传分片地址时 appId 不匹配应拒绝")
-    void getPartUploadUrls_shouldRejectWhenAppIdMismatch() {
-        UploadTask task = UploadTask.builder()
-                .id("task-001")
-                .appId("blog")
-                .userId("user-123")
-                .status(UploadTaskStatus.UPLOADING)
-                .totalParts(2)
-                .expiresAt(LocalDateTime.now().plusHours(1))
-                .build();
-        DirectUploadPartUrlRequest request = new DirectUploadPartUrlRequest();
-        request.setTaskId("task-001");
-        request.setPartNumbers(List.of(1));
-
-        when(uploadTaskRepository.findById("task-001")).thenReturn(Optional.of(task));
-
-        assertThatThrownBy(() -> directUploadService.getPartUploadUrls("im", request, "user-123"))
-                .isInstanceOf(AccessDeniedException.class);
-    }
-
-    @Test
-    @DisplayName("完成直传上传时 appId 不匹配应拒绝")
-    void completeDirectUpload_shouldRejectWhenAppIdMismatch() {
-        UploadTask task = UploadTask.builder()
-                .id("task-001")
-                .appId("blog")
-                .userId("user-123")
-                .status(UploadTaskStatus.UPLOADING)
-                .totalParts(1)
-                .expiresAt(LocalDateTime.now().plusHours(1))
-                .build();
-        DirectUploadCompleteRequest request = new DirectUploadCompleteRequest();
-        request.setTaskId("task-001");
-        DirectUploadCompleteRequest.PartInfo part = new DirectUploadCompleteRequest.PartInfo();
-        part.setPartNumber(1);
-        part.setEtag("etag-1");
-        request.setParts(List.of(part));
-
-        when(uploadTaskRepository.findById("task-001")).thenReturn(Optional.of(task));
-
-        assertThatThrownBy(() -> directUploadService.completeDirectUpload("im", request, "user-123"))
-                .isInstanceOf(AccessDeniedException.class);
+        assertThat(fileId).isEqualTo("file-001");
+        verify(directUploadCompleteCommandService).completeDirectUpload("blog", request, "user-123");
     }
 }

@@ -1,7 +1,6 @@
 package com.architectcgz.file.application.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import lombok.Data;
 
 import java.util.List;
@@ -27,7 +26,6 @@ public class DirectUploadCompleteRequest {
     /**
      * 已上传的分片信息列表
      */
-    @NotEmpty(message = "分片信息列表不能为空")
     private List<PartInfo> parts;
     
     /**

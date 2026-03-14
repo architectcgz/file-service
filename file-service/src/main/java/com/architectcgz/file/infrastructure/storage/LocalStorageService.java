@@ -1,5 +1,6 @@
 package com.architectcgz.file.infrastructure.storage;
 
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
@@ -39,7 +40,10 @@ public class LocalStorageService implements StorageService {
                 log.info("Created upload directory: {}", uploadDir.toAbsolutePath());
             }
         } catch (IOException e) {
-            throw new BusinessException(String.format(FileServiceErrorMessages.LOCAL_DIR_CREATE_FAILED, e.getMessage()));
+            throw new BusinessException(
+                    FileServiceErrorCodes.LOCAL_DIR_CREATE_FAILED,
+                    String.format(FileServiceErrorMessages.LOCAL_DIR_CREATE_FAILED, e.getMessage())
+            );
         }
     }
 
@@ -75,7 +79,10 @@ public class LocalStorageService implements StorageService {
             return getUrl(path);
         } catch (IOException e) {
             log.error("Failed to upload file to local storage: {}", path, e);
-            throw new BusinessException(String.format(FileServiceErrorMessages.FILE_UPLOAD_FAILED, e.getMessage()));
+            throw new BusinessException(
+                    FileServiceErrorCodes.FILE_UPLOAD_FAILED,
+                    String.format(FileServiceErrorMessages.FILE_UPLOAD_FAILED, e.getMessage())
+            );
         }
     }
 
@@ -96,7 +103,10 @@ public class LocalStorageService implements StorageService {
             return getUrl(storagePath);
         } catch (IOException e) {
             log.error("Failed to upload file to local storage from file: {}", storagePath, e);
-            throw new BusinessException("文件上传失败: " + e.getMessage());
+            throw new BusinessException(
+                    FileServiceErrorCodes.FILE_UPLOAD_FAILED,
+                    String.format(FileServiceErrorMessages.FILE_UPLOAD_FAILED, e.getMessage())
+            );
         }
     }
 
@@ -135,7 +145,10 @@ public class LocalStorageService implements StorageService {
             }
         } catch (IOException e) {
             log.error("Failed to delete file from local storage: {}", path, e);
-            throw new BusinessException(String.format(FileServiceErrorMessages.FILE_DELETE_FAILED, e.getMessage()));
+            throw new BusinessException(
+                    FileServiceErrorCodes.FILE_DELETE_FAILED,
+                    String.format(FileServiceErrorMessages.FILE_DELETE_FAILED, e.getMessage())
+            );
         }
     }
     
@@ -170,7 +183,11 @@ public class LocalStorageService implements StorageService {
             log.debug("File copied in local storage: source={}, target={}", sourcePath, targetPath);
         } catch (IOException e) {
             log.error("Failed to copy file in local storage: source={}, target={}", sourcePath, targetPath, e);
-            throw new BusinessException("文件复制失败: " + e.getMessage(), e);
+            throw new BusinessException(
+                    FileServiceErrorCodes.FILE_COPY_FAILED,
+                    "文件复制失败: " + e.getMessage(),
+                    e
+            );
         }
     }
     
@@ -184,7 +201,10 @@ public class LocalStorageService implements StorageService {
         try {
             Path filePath = Paths.get(basePath, path);
             if (!Files.exists(filePath)) {
-                throw new BusinessException("文件不存在: " + path);
+                throw new BusinessException(
+                        FileServiceErrorCodes.FILE_NOT_FOUND,
+                        String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, path)
+                );
             }
 
             long fileSize = Files.size(filePath);
@@ -205,7 +225,11 @@ public class LocalStorageService implements StorageService {
         } catch (IOException e) {
             log.error("Failed to get object metadata from local storage: path={}, error={}",
                     path, e.getMessage(), e);
-            throw new BusinessException("获取文件元数据失败: " + e.getMessage(), e);
+            throw new BusinessException(
+                    FileServiceErrorCodes.FILE_METADATA_FAILED,
+                    "获取文件元数据失败: " + e.getMessage(),
+                    e
+            );
         }
     }
 }

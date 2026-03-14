@@ -31,7 +31,8 @@ public class DirectUploadInitRequest {
     private String contentType;
     
     /**
-     * 文件哈希值（可选，用于断点续传）
+     * 文件哈希值（必填，用于秒传和断点续传匹配）
      */
+    @NotBlank(message = "文件哈希不能为空")
     private String fileHash;
 }

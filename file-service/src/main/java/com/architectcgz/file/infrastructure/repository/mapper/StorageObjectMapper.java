@@ -63,7 +63,9 @@ public interface StorageObjectMapper {
         SELECT id, app_id, file_hash, hash_algorithm, storage_path, bucket_name, file_size,
                content_type, reference_count, created_at, updated_at
         FROM storage_objects
-        WHERE app_id = #{appId} AND file_hash = #{fileHash} AND bucket_name = #{bucketName}
+        WHERE app_id = #{appId}
+          AND file_hash = #{fileHash}
+          AND (bucket_name = #{bucketName} OR (bucket_name IS NULL AND #{bucketName} IS NULL))
         """)
     @ResultMap("storageObjectResult")
     StorageObjectPO selectByFileHashAndBucket(@Param("appId") String appId,

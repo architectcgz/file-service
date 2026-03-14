@@ -1,7 +1,9 @@
 package com.architectcgz.file.infrastructure.repository;
 
 import com.architectcgz.file.common.config.BitmapProperties;
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.constant.FileServiceErrorMessages;
+import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.domain.model.UploadPart;
 import com.architectcgz.file.domain.repository.UploadPartRepository;
 import com.architectcgz.file.infrastructure.cache.UploadRedisKeys;
@@ -66,7 +68,7 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
      * 7. Redis 失败时回退到数据库
      * 
      * @param part 分片信息
-     * @throws IllegalArgumentException 参数无效时抛出
+     * @throws BusinessException 参数无效时抛出
      */
     @Override
     public void savePart(UploadPart part) {
@@ -77,15 +79,17 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
             // 2. 查询任务信息（用于降级判断）
             UploadTaskPO taskPO = uploadTaskMapper.selectById(part.getTaskId());
             if (taskPO == null) {
-                throw new IllegalArgumentException(
+                throw new BusinessException(
+                    FileServiceErrorCodes.UPLOAD_TASK_NOT_FOUND,
                     String.format(FileServiceErrorMessages.UPLOAD_TASK_NOT_FOUND_WITH_ID, part.getTaskId())
                 );
             }
             
             // 3. 校验分片编号范围
             if (part.getPartNumber() < 1 || part.getPartNumber() > taskPO.getTotalParts()) {
-                throw new IllegalArgumentException(
-                    String.format("分片编号超出范围: partNumber=%d, 有效范围=[1, %d]", 
+                throw new BusinessException(
+                    FileServiceErrorCodes.PART_NUMBER_INVALID,
+                    String.format(FileServiceErrorMessages.PART_NUMBER_OUT_OF_RANGE,
                         part.getPartNumber(), taskPO.getTotalParts())
                 );
             }
@@ -187,6 +191,13 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
             
             try {
                 String bitmapKey = UploadRedisKeys.partsBitmap(taskId);
+                Boolean bitmapExists = redisTemplate.hasKey(bitmapKey);
+
+                if (!Boolean.TRUE.equals(bitmapExists)) {
+                    metrics.recordCacheMiss();
+                    log.debug("Bitmap key 不存在，从数据库查询分片数量: taskId={}", taskId);
+                    return countFromDatabase(taskId);
+                }
                 
                 Long count = redisTemplate.execute((RedisCallback<Long>) connection -> {
                     byte[] keyBytes = bitmapKey.getBytes();
@@ -293,7 +304,7 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
      * 
      * @param taskId 任务ID
      * @param parts 所有分片信息
-     * @throws RuntimeException 同步失败时抛出异常
+     * @throws BusinessException 同步失败时抛出异常
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -321,9 +332,16 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
                 log.debug("删除 Bitmap: taskId={}, deleted={}", taskId, deleted);
             }
             
+        } catch (BusinessException e) {
+            log.error("全量同步失败，保留 Bitmap: taskId={}, count={}", taskId, parts.size(), e);
+            throw e;
         } catch (Exception e) {
             log.error("全量同步失败，保留 Bitmap: taskId={}, count={}", taskId, parts.size(), e);
-            throw new RuntimeException("同步分片记录失败: " + e.getMessage(), e);
+            throw new BusinessException(
+                    FileServiceErrorCodes.PART_SYNC_FAILED,
+                    String.format(FileServiceErrorMessages.PART_SYNC_FAILED, taskId),
+                    e
+            );
         }
     }
     
@@ -377,24 +395,25 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
      * 校验分片参数
      * 
      * @param part 分片信息
-     * @throws IllegalArgumentException 参数无效时抛出
+     * @throws BusinessException 参数无效时抛出
      */
     private void validatePartParameters(UploadPart part) {
         if (part == null) {
-            throw new IllegalArgumentException("分片信息不能为空");
+            throw new BusinessException(FileServiceErrorCodes.PART_INFO_EMPTY, FileServiceErrorMessages.PART_INFO_EMPTY);
         }
         
         if (part.getTaskId() == null || part.getTaskId().trim().isEmpty()) {
-            throw new IllegalArgumentException("任务ID不能为空");
+            throw new BusinessException(FileServiceErrorCodes.TASK_ID_EMPTY, FileServiceErrorMessages.TASK_ID_EMPTY);
         }
         
         if (part.getPartNumber() == null) {
-            throw new IllegalArgumentException("分片编号不能为空");
+            throw new BusinessException(FileServiceErrorCodes.PART_NUMBER_EMPTY, FileServiceErrorMessages.PART_NUMBER_EMPTY);
         }
         
         if (part.getPartNumber() < 1) {
-            throw new IllegalArgumentException(
-                String.format("分片编号必须大于0: partNumber=%d", part.getPartNumber())
+            throw new BusinessException(
+                FileServiceErrorCodes.PART_NUMBER_INVALID,
+                String.format(FileServiceErrorMessages.PART_NUMBER_MUST_POSITIVE, part.getPartNumber())
             );
         }
     }
@@ -498,7 +517,11 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
             log.debug("分片记录到数据库(upsert): taskId={}, partNumber={}", part.getTaskId(), part.getPartNumber());
         } catch (Exception e) {
             log.error("写入数据库失败: taskId={}, partNumber={}", part.getTaskId(), part.getPartNumber(), e);
-            throw new RuntimeException("写入数据库失败: " + e.getMessage(), e);
+            throw new BusinessException(
+                    FileServiceErrorCodes.PART_DB_WRITE_FAILED,
+                    String.format(FileServiceErrorMessages.PART_DB_WRITE_FAILED, part.getTaskId(), part.getPartNumber()),
+                    e
+            );
         }
     }
     
@@ -552,7 +575,11 @@ public class UploadPartRepositoryImpl implements UploadPartRepository {
             log.debug("批量插入分片记录: count={}", parts.size());
         } catch (Exception e) {
             log.error("批量插入分片记录失败", e);
-            throw new RuntimeException("批量插入分片记录失败", e);
+            throw new BusinessException(
+                    FileServiceErrorCodes.PART_BATCH_INSERT_FAILED,
+                    String.format(FileServiceErrorMessages.PART_BATCH_INSERT_FAILED, parts.size()),
+                    e
+            );
         }
     }
     

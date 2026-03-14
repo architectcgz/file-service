@@ -4,6 +4,7 @@ import com.architectcgz.file.application.dto.FileDetailResponse;
 import com.architectcgz.file.application.dto.FileUrlResponse;
 import com.architectcgz.file.application.dto.UpdateAccessLevelRequest;
 import com.architectcgz.file.application.service.FileAccessService;
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.context.UserContext;
 import com.architectcgz.file.config.WebMvcTestConfig;
@@ -155,7 +156,8 @@ class FileControllerTest {
         mockMvc.perform(get("/api/v1/files/{fileId}/content", "file-001")
                         .header("X-App-Id", "test-app"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(403));
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.ACCESS_DENIED));
     }
 
     @Test
@@ -173,6 +175,25 @@ class FileControllerTest {
                 .andExpect(jsonPath("$.code").value(200));
 
         verify(fileAccessService).updateAccessLevel("test-app", "file-001", "context-user", AccessLevel.PRIVATE);
+    }
+
+    @Test
+    void testUpdateAccessLevelValidationErrorReturnsErrorCode() throws Exception {
+        UserContext.setUserId("context-user");
+        UpdateAccessLevelRequest request = UpdateAccessLevelRequest.builder()
+                .accessLevel(null)
+                .build();
+
+        mockMvc.perform(put("/api/v1/files/{fileId}/access-level", "file-001")
+                        .contentType(APPLICATION_JSON)
+                        .header("X-App-Id", "test-app")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.VALIDATION_ERROR))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("访问级别不能为空")));
+
+        verifyNoInteractions(fileAccessService);
     }
 
     @Test

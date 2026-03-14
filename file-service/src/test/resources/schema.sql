@@ -23,7 +23,7 @@ CREATE INDEX IF NOT EXISTS idx_storage_objects_created_at ON storage_objects(cre
 CREATE TABLE IF NOT EXISTS file_records (
     id                VARCHAR(36) PRIMARY KEY,
     app_id            VARCHAR(64) NOT NULL,
-    user_id           BIGINT NOT NULL,
+    user_id           VARCHAR(64) NOT NULL,
     storage_object_id VARCHAR(36) NOT NULL,
     original_name     VARCHAR(255) NOT NULL,
     storage_path      VARCHAR(512),
@@ -50,14 +50,14 @@ CREATE INDEX IF NOT EXISTS idx_file_records_created_at ON file_records(created_a
 CREATE TABLE IF NOT EXISTS upload_tasks (
     id              VARCHAR(36) PRIMARY KEY,
     app_id          VARCHAR(64) NOT NULL,
-    user_id         BIGINT NOT NULL,
+    user_id         VARCHAR(64) NOT NULL,
     file_name       VARCHAR(255) NOT NULL,
     file_size       BIGINT NOT NULL,
     file_hash       VARCHAR(64),
     content_type    VARCHAR(128),
     storage_path    VARCHAR(512) NOT NULL,
     upload_id       VARCHAR(256) NOT NULL,
-    total_parts     INT NOT NULL,
+    total_chunks    INT NOT NULL,
     chunk_size      INT NOT NULL DEFAULT 5242880,
     status          VARCHAR(32) NOT NULL DEFAULT 'uploading',
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -84,6 +84,23 @@ CREATE TABLE IF NOT EXISTS upload_parts (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_upload_parts_task_part ON upload_parts(task_id, part_number);
 CREATE INDEX IF NOT EXISTS idx_upload_parts_task_id ON upload_parts(task_id);
+
+-- Tenants Table
+CREATE TABLE IF NOT EXISTS tenants (
+    tenant_id            VARCHAR(32) PRIMARY KEY,
+    tenant_name          VARCHAR(128) NOT NULL,
+    status               VARCHAR(16) NOT NULL DEFAULT 'active',
+    max_storage_bytes    BIGINT NOT NULL DEFAULT 10737418240,
+    max_file_count       INT NOT NULL DEFAULT 10000,
+    max_single_file_size BIGINT NOT NULL DEFAULT 104857600,
+    allowed_file_types   TEXT ARRAY,
+    contact_email        VARCHAR(255),
+    created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status);
+CREATE INDEX IF NOT EXISTS idx_tenants_created_at ON tenants(created_at);
 
 -- Tenant Usage Table
 CREATE TABLE IF NOT EXISTS tenant_usage (

@@ -33,6 +33,7 @@ Authorization: Bearer {your-jwt-token}
 ```json
 {
   "code": 200,
+  "errorCode": null,
   "message": "success",
   "data": {
     // 响应数据
@@ -45,6 +46,7 @@ Authorization: Bearer {your-jwt-token}
 ```json
 {
   "code": 400,
+  "errorCode": "VALIDATION_ERROR",
   "message": "错误描述",
   "data": null
 }
@@ -52,15 +54,17 @@ Authorization: Bearer {your-jwt-token}
 
 ### 错误码
 
-| HTTP 状态码 | 错误码 | 说明 |
-|------------|--------|------|
-| 200 | 200 | 成功 |
-| 400 | 400 | 请求参数错误 |
-| 401 | 401 | 未认证或 Token 无效 |
-| 403 | 403 | 权限不足 |
-| 404 | 404 | 资源不存在 |
-| 413 | 413 | 文件过大 |
-| 500 | 500 | 服务器内部错误 |
+`code` 为数值型状态码，兼容现有客户端；`errorCode` 为稳定字符串业务码，仅在错误响应中返回。
+
+| HTTP 状态码 | errorCode | 说明 |
+|------------|-----------|------|
+| 400 | VALIDATION_ERROR | 请求参数校验失败 |
+| 400 | MISSING_REQUEST_HEADER | 缺少必需请求头 |
+| 400 | BUSINESS_ERROR | 通用业务异常兜底 |
+| 403 | ACCESS_DENIED | 权限不足 |
+| 404 | FILE_NOT_FOUND / TENANT_NOT_FOUND / UPLOAD_TASK_NOT_FOUND | 资源不存在 |
+| 413 | FILE_TOO_LARGE / QUOTA_EXCEEDED | 文件过大或租户配额超限 |
+| 500 | INTERNAL_SERVER_ERROR | 服务器内部错误 |
 
 ---
 
@@ -312,9 +316,16 @@ curl -X DELETE http://localhost:8089/api/v1/upload/01JGXXX-XXX-XXX \
 
 ## 4. 分片上传 API
 
+本节描述的是“服务端中转的分片上传”：
+
+- 前端把分片字节上传到 `file-service`
+- `file-service` 再调用 MinIO/S3 Multipart API 上传分片
+
+如果需要“预签名直传分片”，请看后面的“5. 预签名直传 API”。
+
 ### 4.1 初始化分片上传
 
-初始化一个分片上传任务。
+初始化一个分片上传任务；如果传入 `fileHash` 且命中未完成任务，会返回已有任务用于断点续传。
 
 **端点**: `POST /api/v1/multipart/init`
 
@@ -331,8 +342,8 @@ Authorization: Bearer {token}
 {
   "fileName": "large-video.mp4",
   "fileSize": 104857600,
-  "contentType": "video/mp4",
-  "chunkSize": 5242880
+  "fileHash": "d41d8cd98f00b204e9800998ecf8427e",
+  "contentType": "video/mp4"
 }
 ```
 
@@ -342,8 +353,8 @@ Authorization: Bearer {token}
 |------|------|------|------|
 | fileName | String | 是 | 文件名 |
 | fileSize | Long | 是 | 文件总大小（字节） |
+| fileHash | String | 否 | 文件哈希，用于断点续传匹配 |
 | contentType | String | 是 | MIME 类型 |
-| chunkSize | Long | 是 | 分片大小（字节） |
 
 **响应示例**:
 
@@ -354,8 +365,9 @@ Authorization: Bearer {token}
   "data": {
     "taskId": "01JGZZZ-ZZZ-ZZZ-ZZZ-ZZZZZZZZZZZZ",
     "uploadId": "s3-upload-id-xxx",
-    "totalChunks": 20,
-    "chunkSize": 5242880
+    "chunkSize": 5242880,
+    "totalParts": 20,
+    "completedParts": [1, 2, 3]
   }
 }
 ```
@@ -364,42 +376,36 @@ Authorization: Bearer {token}
 
 ### 4.2 上传分片
 
-上传单个分片。
+上传单个分片。请求体是原始二进制字节流，不是 `multipart/form-data`。
 
-**端点**: `POST /api/v1/multipart/{taskId}/upload`
+**端点**: `PUT /api/v1/multipart/{taskId}/parts/{partNumber}`
 
 **路径参数**:
 
 | 参数 | 类型 | 必需 | 说明 |
 |------|------|------|------|
 | taskId | String | 是 | 上传任务 ID |
-
-**查询参数**:
-
-| 参数 | 类型 | 必需 | 说明 |
-|------|------|------|------|
 | partNumber | Integer | 是 | 分片编号（从 1 开始） |
 
 **请求头**:
 ```http
-Content-Type: multipart/form-data
+Content-Type: application/octet-stream
 X-App-Id: blog
 Authorization: Bearer {token}
 ```
 
-**请求参数**:
+**请求体**:
 
-| 参数 | 类型 | 必需 | 说明 |
-|------|------|------|------|
-| file | File | 是 | 分片数据 |
+原始分片字节流。
 
 **请求示例**:
 
 ```bash
-curl -X POST "http://localhost:8089/api/v1/multipart/01JGZZZ-ZZZ-ZZZ/upload?partNumber=1" \
+curl -X PUT "http://localhost:8089/api/v1/multipart/01JGZZZ-ZZZ-ZZZ-ZZZ-ZZZZZZZZZZZZ/parts/1" \
   -H "X-App-Id: blog" \
   -H "Authorization: Bearer eyJhbGc..." \
-  -F "file=@chunk-1.bin"
+  -H "Content-Type: application/octet-stream" \
+  --data-binary "@chunk-1.bin"
 ```
 
 **响应示例**:
@@ -408,10 +414,7 @@ curl -X POST "http://localhost:8089/api/v1/multipart/01JGZZZ-ZZZ-ZZZ/upload?part
 {
   "code": 200,
   "message": "success",
-  "data": {
-    "partNumber": 1,
-    "etag": "\"d41d8cd98f00b204e9800998ecf8427e\""
-  }
+  "data": "\"d41d8cd98f00b204e9800998ecf8427e\""
 }
 ```
 
@@ -419,7 +422,7 @@ curl -X POST "http://localhost:8089/api/v1/multipart/01JGZZZ-ZZZ-ZZZ/upload?part
 
 ### 4.3 完成分片上传
 
-完成分片上传，合并所有分片。
+完成分片上传，服务端会根据已记录的分片信息调用 `CompleteMultipartUpload` 并生成 `fileId`。
 
 **端点**: `POST /api/v1/multipart/{taskId}/complete`
 
@@ -431,18 +434,13 @@ curl -X POST "http://localhost:8089/api/v1/multipart/01JGZZZ-ZZZ-ZZZ/upload?part
 
 **请求头**:
 ```http
-Content-Type: application/json
 X-App-Id: blog
 Authorization: Bearer {token}
 ```
 
 **请求体**:
 
-```json
-{
-  "fileHash": "d41d8cd98f00b204e9800998ecf8427e"
-}
-```
+无。
 
 **响应示例**:
 
@@ -452,10 +450,7 @@ Authorization: Bearer {token}
   "message": "success",
   "data": {
     "fileId": "01JGXXX-XXX-XXX-XXX-XXXXXXXXXXXX",
-    "url": "https://cdn.example.com/blog/2026/01/19/12345/videos/xxx.mp4",
-    "originalName": "large-video.mp4",
-    "fileSize": 104857600,
-    "contentType": "video/mp4"
+    "url": "https://cdn.example.com/blog/2026/01/19/12345/videos/xxx.mp4"
   }
 }
 ```
@@ -492,13 +487,225 @@ Authorization: Bearer {token}
 
 ---
 
-## 5. 预签名 URL 上传 API
+### 4.5 查询上传进度
 
-### 5.1 获取预签名上传 URL
+查询当前上传任务的进度。
 
-获取预签名 URL，客户端可直接上传到 S3。
+**端点**: `GET /api/v1/multipart/{taskId}/progress`
 
-**端点**: `POST /api/v1/presigned/upload-url`
+**路径参数**:
+
+| 参数 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| taskId | String | 是 | 上传任务 ID |
+
+**响应示例**:
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "taskId": "01JGZZZ-ZZZ-ZZZ-ZZZ-ZZZZZZZZZZZZ",
+    "totalParts": 20,
+    "completedParts": 3,
+    "uploadedBytes": 15728640,
+    "totalBytes": 104857600,
+    "percentage": 15
+  }
+}
+```
+
+---
+
+## 5. 预签名直传 API
+
+本项目有两类预签名直传：
+
+- 分片预签名直传：`/api/v1/direct-upload/*`
+- 单文件预签名直传：`/api/v1/upload/presign` + `/api/v1/upload/confirm`
+
+### 5.1 分片预签名直传初始化
+
+初始化分片直传任务。前端拿到 `taskId` 和 `uploadId` 后，再按需申请每个分片的上传 URL。
+
+说明：
+
+- `fileHash` 为必填，用于秒传和断点续传匹配
+- 如果命中未完成任务，接口会返回 `completedParts` 和 `completedPartInfos`
+- `completedPartInfos` 中的 `etag` 可直接用于后续完成上传或前端状态恢复
+
+**端点**: `POST /api/v1/direct-upload/init`
+
+**请求体**:
+
+```json
+{
+  "fileName": "large-video.mp4",
+  "fileSize": 104857600,
+  "contentType": "video/mp4",
+  "fileHash": "d41d8cd98f00b204e9800998ecf8427e"
+}
+```
+
+**响应示例**:
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "taskId": "01JGZZZ-ZZZ-ZZZ-ZZZ-ZZZZZZZZZZZZ",
+    "uploadId": "s3-upload-id-xxx",
+    "storagePath": "blog/2026/03/13/12345/files/01JGXXX.bin",
+    "chunkSize": 5242880,
+    "totalParts": 20,
+    "completedParts": [1, 2],
+    "completedPartInfos": [
+      {
+        "partNumber": 1,
+        "etag": "\"etag-1\""
+      },
+      {
+        "partNumber": 2,
+        "etag": "\"etag-2\""
+      }
+    ],
+    "isResume": true,
+    "isInstantUpload": false,
+    "fileId": null,
+    "fileUrl": null
+  }
+}
+```
+
+---
+
+### 5.2 获取分片上传 URL
+
+为一个或多个分片生成预签名上传 URL。前端拿到 URL 后，直接把分片上传到 MinIO/S3，不经过 `file-service` 中转。
+
+**端点**: `POST /api/v1/direct-upload/part-urls`
+
+**请求体**:
+
+```json
+{
+  "taskId": "01JGZZZ-ZZZ-ZZZ-ZZZ-ZZZZZZZZZZZZ",
+  "partNumbers": [1, 2, 3]
+}
+```
+
+**响应示例**:
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "taskId": "01JGZZZ-ZZZ-ZZZ-ZZZ-ZZZZZZZZZZZZ",
+    "partUrls": [
+      {
+        "partNumber": 1,
+        "uploadUrl": "https://minio.example.com/bucket/object?partNumber=1&uploadId=xxx",
+        "expiresIn": 900
+      },
+      {
+        "partNumber": 2,
+        "uploadUrl": "https://minio.example.com/bucket/object?partNumber=2&uploadId=xxx",
+        "expiresIn": 900
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 5.3 查询分片预签名直传进度
+
+查询当前任务在 MinIO/S3 中已经完成的分片，用于页面刷新、断线重连后的状态恢复。
+
+**端点**: `GET /api/v1/direct-upload/{taskId}/progress`
+
+**响应示例**:
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "taskId": "01JGZZZ-ZZZ-ZZZ-ZZZ-ZZZZZZZZZZZZ",
+    "totalParts": 20,
+    "completedParts": 2,
+    "uploadedBytes": 10485760,
+    "totalBytes": 104857600,
+    "percentage": 10,
+    "completedPartNumbers": [1, 2],
+    "completedPartInfos": [
+      {
+        "partNumber": 1,
+        "etag": "\"etag-1\""
+      },
+      {
+        "partNumber": 2,
+        "etag": "\"etag-2\""
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 5.4 完成分片预签名直传
+
+前端把所有分片直接上传到 MinIO/S3 后，调用完成接口。
+
+说明：
+
+- 如果前端保留了 `partNumber + etag` 列表，可以一并传回，服务端会校验这些信息
+- 如果前端在刷新页面后丢失了本地 `etag` 缓存，也可以不传 `parts`，服务端会以对象存储中的已上传分片为准完成合并
+- 服务端会拒绝与 MinIO/S3 当前状态不一致的 `etag`
+
+**端点**: `POST /api/v1/direct-upload/complete`
+
+**请求体**:
+
+```json
+{
+  "taskId": "01JGZZZ-ZZZ-ZZZ-ZZZ-ZZZZZZZZZZZZ",
+  "contentType": "video/mp4",
+  "parts": [
+    {
+      "partNumber": 1,
+      "etag": "\"etag-1\""
+    },
+    {
+      "partNumber": 2,
+      "etag": "\"etag-2\""
+    }
+  ]
+}
+```
+
+**响应示例**:
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": "01JGXXX-XXX-XXX-XXX-XXXXXXXXXXXX"
+}
+```
+
+---
+
+### 5.5 获取单文件预签名上传 URL
+
+适用于不需要分片的单文件直传。
+
+**端点**: `POST /api/v1/upload/presign`
 
 **请求头**:
 ```http
@@ -513,7 +720,9 @@ Authorization: Bearer {token}
 {
   "fileName": "photo.jpg",
   "fileSize": 102400,
-  "contentType": "image/jpeg"
+  "fileHash": "d41d8cd98f00b204e9800998ecf8427e",
+  "contentType": "image/jpeg",
+  "accessLevel": "public"
 }
 ```
 
@@ -524,9 +733,10 @@ Authorization: Bearer {token}
   "code": 200,
   "message": "success",
   "data": {
-    "uploadUrl": "https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...",
-    "fileId": "01JGXXX-XXX-XXX-XXX-XXXXXXXXXXXX",
-    "expiresAt": "2026-01-19T11:00:00Z",
+    "presignedUrl": "https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...",
+    "storagePath": "blog/2026/03/13/12345/files/01JGXXX.jpg",
+    "expiresAt": "2026-03-13T11:00:00",
+    "method": "PUT",
     "headers": {
       "Content-Type": "image/jpeg"
     }
@@ -536,17 +746,11 @@ Authorization: Bearer {token}
 
 ---
 
-### 5.2 确认预签名上传
+### 5.6 确认单文件预签名上传
 
-确认文件已上传完成。
+客户端使用预签名 URL 上传完成后，调用此接口创建文件记录。
 
-**端点**: `POST /api/v1/presigned/{fileId}/confirm`
-
-**路径参数**:
-
-| 参数 | 类型 | 必需 | 说明 |
-|------|------|------|------|
-| fileId | String | 是 | 文件 ID |
+**端点**: `POST /api/v1/upload/confirm`
 
 **请求头**:
 ```http
@@ -559,7 +763,10 @@ Authorization: Bearer {token}
 
 ```json
 {
-  "fileHash": "d41d8cd98f00b204e9800998ecf8427e"
+  "storagePath": "blog/2026/03/13/12345/files/01JGXXX.jpg",
+  "fileHash": "d41d8cd98f00b204e9800998ecf8427e",
+  "originalFilename": "photo.jpg",
+  "accessLevel": "public"
 }
 ```
 
@@ -571,8 +778,7 @@ Authorization: Bearer {token}
   "message": "success",
   "data": {
     "fileId": "01JGXXX-XXX-XXX-XXX-XXXXXXXXXXXX",
-    "url": "https://cdn.example.com/blog/2026/01/19/12345/images/xxx.jpg",
-    "status": "active"
+    "url": "https://cdn.example.com/blog/2026/03/13/12345/images/xxx.jpg"
   }
 }
 ```
@@ -758,9 +964,9 @@ public class MessageService {
 
 | 场景 | 推荐方式 | 原因 |
 |------|----------|------|
-| 小文件 (<5MB) | 直接上传 | 简单快速 |
-| 大文件 (>10MB) | 分片上传 | 支持断点续传 |
-| 客户端直传 | 预签名 URL | 减轻服务器压力 |
+| 小文件 (<5MB) | 直接上传或单文件预签名直传 | 简单快速 |
+| 大文件 (>10MB) | `/api/v1/multipart/*` | 服务端中转，支持断点续传 |
+| 大文件客户端直传 | `/api/v1/direct-upload/*` | 分片预签名直传，减轻服务器压力 |
 | 重复文件 | 秒传 | 节省带宽和时间 |
 
 ### 9.2 错误重试策略
@@ -1472,11 +1678,30 @@ curl -X GET http://localhost:8089/api/v1/admin/files/statistics/by-tenant \
 | 403 | TENANT_SUSPENDED | 租户已被停用 |
 | 413 | QUOTA_EXCEEDED | 配额超限 |
 | 413 | FILE_TOO_LARGE | 文件过大 |
+| 400 | UPLOAD_TASK_NOT_FOUND | 上传任务不存在 |
+| 400 | UPLOAD_TASK_EXPIRED | 上传任务已过期 |
+| 400 | TASK_STATUS_INVALID | 上传任务状态不允许当前操作 |
+| 400 | FILE_SIZE_MISMATCH | 断点续传文件大小不匹配 |
+| 400 | PART_COUNT_EXCEEDED | 分片数量超出系统限制 |
+| 400 | PART_NUMBER_INVALID | 分片号非法 |
+| 400 | PART_NUMBER_DUPLICATED | 请求中分片号重复 |
+| 400 | PARTS_INCOMPLETE | 仍有分片未上传完成 |
+| 400 | PART_NOT_FOUND_IN_STORAGE | 对象存储中不存在对应分片 |
+| 400 | PART_ETAG_MISMATCH | 客户端分片 ETag 与对象存储不一致 |
+| 400 | UNSUPPORTED_ACCESS_LEVEL | 不支持的访问级别 |
+| 400 | FILENAME_EMPTY / EXTENSION_REQUIRED | 文件名或扩展名不合法 |
+| 400 | EXTENSION_NOT_ALLOWED / CONTENT_TYPE_NOT_ALLOWED | 文件类型不在允许列表中 |
+| 400 | FILE_TYPE_CONTENT_MISMATCH | 文件声明类型与魔数检测结果不一致 |
+| 400 | FILE_HASH_FAILED | 文件哈希计算失败 |
+| 500 | FILE_UPLOAD_FAILED / IMAGE_UPLOAD_FAILED | 文件或图片上传处理失败 |
+| 500 | IMAGE_PROCESS_FAILED / THUMBNAIL_GENERATE_FAILED | 图片处理或缩略图生成失败 |
+| 500 | S3_CLIENT_ERROR | S3/MinIO 客户端调用失败 |
 
 **错误响应示例（租户停用）**:
 ```json
 {
   "code": 403,
+  "errorCode": "TENANT_SUSPENDED",
   "message": "Tenant is suspended",
   "data": {
     "tenantId": "blog",
@@ -1489,6 +1714,7 @@ curl -X GET http://localhost:8089/api/v1/admin/files/statistics/by-tenant \
 ```json
 {
   "code": 413,
+  "errorCode": "QUOTA_EXCEEDED",
   "message": "Storage quota exceeded",
   "data": {
     "tenantId": "blog",

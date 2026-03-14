@@ -1,8 +1,11 @@
 package com.architectcgz.file.application.service;
 
 import com.architectcgz.file.application.dto.FileUrlResponse;
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.exception.BusinessException;
+import com.architectcgz.file.common.exception.FileNotFoundException;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
@@ -187,9 +190,10 @@ class FileAccessServiceCacheTest {
         when(fileUrlCacheManager.get("non-existent")).thenReturn(null);
         when(fileRecordRepository.findById("non-existent")).thenReturn(Optional.empty());
 
-        BusinessException ex = assertThrows(BusinessException.class,
+        FileNotFoundException ex = assertThrows(FileNotFoundException.class,
                 () -> fileAccessService.getFileUrl("blog", "non-existent", "user-123"));
-        assertTrue(ex.getMessage().contains("文件不存在"));
+        assertEquals(String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, "non-existent"), ex.getMessage());
+        assertEquals(FileServiceErrorCodes.FILE_NOT_FOUND, ex.getCode());
     }
 
     @Test
@@ -198,9 +202,10 @@ class FileAccessServiceCacheTest {
         when(fileUrlCacheManager.get("file-001")).thenReturn(null);
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(publicFileRecord));
 
-        BusinessException ex = assertThrows(BusinessException.class,
+        FileNotFoundException ex = assertThrows(FileNotFoundException.class,
                 () -> fileAccessService.getFileUrl("wrong-app", "file-001", "user-123"));
-        assertEquals("文件不存在: file-001", ex.getMessage());
+        assertEquals(String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, "file-001"), ex.getMessage());
+        assertEquals(FileServiceErrorCodes.FILE_NOT_FOUND, ex.getCode());
     }
 
     @Test

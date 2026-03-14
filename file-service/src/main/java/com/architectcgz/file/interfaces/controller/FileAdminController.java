@@ -2,6 +2,7 @@ package com.architectcgz.file.interfaces.controller;
 
 import com.architectcgz.file.application.dto.*;
 import com.architectcgz.file.application.service.FileManagementService;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.context.AdminContext;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.result.ApiResponse;
@@ -130,7 +131,7 @@ public class FileAdminController {
     private String resolveAdminUserId() {
         String adminUserId = AdminContext.getAdminUser();
         if (adminUserId == null || adminUserId.isBlank()) {
-            throw new AccessDeniedException("未获取到管理员身份");
+            throw new AccessDeniedException(FileServiceErrorMessages.ADMIN_IDENTITY_MISSING);
         }
         return adminUserId;
     }

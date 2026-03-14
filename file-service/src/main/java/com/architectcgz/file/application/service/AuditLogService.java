@@ -1,43 +1,39 @@
 package com.architectcgz.file.application.service;
 
+import com.architectcgz.file.application.service.audit.AuditLogSupport;
+import com.architectcgz.file.application.service.audit.command.AuditLogRecordCommandService;
 import com.architectcgz.file.domain.model.AuditLog;
 import com.architectcgz.file.domain.repository.AuditLogRepository;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * Service for managing audit logs
- * Records all administrative operations for compliance and tracking
+ * 审计日志应用层门面。
+ *
+ * 对外保留统一审计记录入口，内部委托给 recorder service。
  */
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class AuditLogService {
-    
-    private final AuditLogRepository auditLogRepository;
-    
+
+    private final AuditLogRecordCommandService auditLogRecordCommandService;
+
+    @Autowired
+    public AuditLogService(AuditLogRecordCommandService auditLogRecordCommandService) {
+        this.auditLogRecordCommandService = auditLogRecordCommandService;
+    }
+
+    public AuditLogService(AuditLogRepository auditLogRepository) {
+        this(new AuditLogRecordCommandService(new AuditLogSupport(auditLogRepository)));
+    }
+
     /**
-     * Record an audit log entry
-     * 
-     * @param auditLog the audit log to record
+     * 记录审计日志。
+     *
+     * 审计失败不会影响主业务流程。
+     *
+     * @param auditLog 审计日志
      */
     public void log(AuditLog auditLog) {
-        try {
-            auditLogRepository.save(auditLog);
-            log.debug("Audit log recorded: action={}, targetType={}, targetId={}, adminUser={}", 
-                    auditLog.getAction(), 
-                    auditLog.getTargetType(), 
-                    auditLog.getTargetId(),
-                    auditLog.getAdminUserId());
-        } catch (Exception e) {
-            // Log the error but don't fail the operation
-            // Audit logging should not break business operations
-            log.error("Failed to record audit log: action={}, targetType={}, targetId={}", 
-                    auditLog.getAction(), 
-                    auditLog.getTargetType(), 
-                    auditLog.getTargetId(), 
-                    e);
-        }
+        auditLogRecordCommandService.log(auditLog);
     }
 }

@@ -28,8 +28,29 @@ public final class FileServiceErrorMessages {
     /** 上传任务已过期 */
     public static final String UPLOAD_TASK_EXPIRED = "上传任务已过期";
 
+    /** 上传任务缺少 fileHash，无法建立存储对象 */
+    public static final String UPLOAD_TASK_FILE_HASH_MISSING = "上传任务缺少 fileHash，无法建立存储对象";
+
+    /** 分片信息不能为空 */
+    public static final String PART_INFO_EMPTY = "分片信息不能为空";
+
+    /** 任务ID不能为空 */
+    public static final String TASK_ID_EMPTY = "任务ID不能为空";
+
+    /** 分片编号不能为空 */
+    public static final String PART_NUMBER_EMPTY = "分片编号不能为空";
+
     /** 分片号无效，配合 String.format 使用 */
     public static final String PART_NUMBER_INVALID = "分片号无效: %d";
+
+    /** 分片编号超出范围，配合 String.format 使用 */
+    public static final String PART_NUMBER_OUT_OF_RANGE = "分片编号超出范围: partNumber=%d, 有效范围=[1, %d]";
+
+    /** 分片编号必须大于0，配合 String.format 使用 */
+    public static final String PART_NUMBER_MUST_POSITIVE = "分片编号必须大于0: partNumber=%d";
+
+    /** 分片编号重复，配合 String.format 使用 */
+    public static final String PART_NUMBER_DUPLICATED = "分片编号重复: %d";
 
     /** 分片已上传，请勿重复提交 */
     public static final String PART_ALREADY_UPLOADED = "分片已上传，请勿重复提交";
@@ -43,6 +64,27 @@ public final class FileServiceErrorMessages {
     /** 分片未全部上传，配合 String.format 使用 */
     public static final String PARTS_INCOMPLETE = "分片未全部上传，已上传:%d, 总数: %d";
 
+    /** 分片在对象存储中不存在，配合 String.format 使用 */
+    public static final String PART_NOT_FOUND_IN_STORAGE = "对象存储中不存在该分片: %d";
+
+    /** 分片 ETag 不匹配，配合 String.format 使用 */
+    public static final String PART_ETAG_MISMATCH = "分片ETag不匹配: %d";
+
+    /** 同步分片记录失败，配合 String.format 使用 */
+    public static final String PART_SYNC_FAILED = "同步分片记录失败: taskId=%s";
+
+    /** 写入分片记录失败，配合 String.format 使用 */
+    public static final String PART_DB_WRITE_FAILED = "写入分片记录失败: taskId=%s, partNumber=%d";
+
+    /** 批量插入分片记录失败，配合 String.format 使用 */
+    public static final String PART_BATCH_INSERT_FAILED = "批量插入分片记录失败: count=%d";
+
+    /** 等待并发分片上传时被中断 */
+    public static final String WAIT_PART_UPLOAD_INTERRUPTED = "等待分片上传完成时被中断";
+
+    /** 等待并发分片上传超时 */
+    public static final String WAIT_PART_UPLOAD_TIMEOUT = "等待分片上传完成超时，请重试";
+
     /** 文件大小不匹配，无法续传 */
     public static final String FILE_SIZE_MISMATCH = "文件大小不匹配，无法续传";
 
@@ -53,6 +95,12 @@ public final class FileServiceErrorMessages {
 
     /** 无权查看该上传任务 */
     public static final String ACCESS_DENIED_VIEW_UPLOAD_TASK = "无权查看该上传任务";
+
+    /** 未获取到用户身份 */
+    public static final String USER_IDENTITY_MISSING = "未获取到用户身份";
+
+    /** 未获取到管理员身份 */
+    public static final String ADMIN_IDENTITY_MISSING = "未获取到管理员身份";
 
     /** 无权访问该文件，配合 String.format 使用 */
     public static final String ACCESS_DENIED_FILE = "无权访问该文件: %s";
@@ -72,11 +120,32 @@ public final class FileServiceErrorMessages {
     /** 文件不存在，请先上传文件 */
     public static final String FILE_NOT_UPLOADED = "文件不存在，请先上传文件";
 
+    /** 文件不存在（带路径），配合 String.format 使用 */
+    public static final String FILE_NOT_FOUND_WITH_PATH = "文件不存在: %s";
+
+    /** 文件已被删除（带文件ID），配合 String.format 使用 */
+    public static final String FILE_DELETED_WITH_ID = "文件已被删除: %s";
+
     /** 更新文件访问级别失败，配合 String.format 使用 */
     public static final String UPDATE_ACCESS_LEVEL_FAILED = "更新文件访问级别失败: %s";
 
+    /** 更新文件存储绑定失败，配合 String.format 使用 */
+    public static final String UPDATE_STORAGE_BINDING_FAILED = "更新文件存储绑定失败: %s";
+
+    /** 减少原存储对象引用计数失败，配合 String.format 使用 */
+    public static final String STORAGE_REFERENCE_DECREMENT_FAILED = "减少原存储对象引用计数失败: %s";
+
     /** 存储对象不存在 */
     public static final String STORAGE_OBJECT_NOT_FOUND = "存储对象不存在";
+
+    /** 参数验证失败，配合 String.format 使用 */
+    public static final String VALIDATION_FAILED = "参数验证失败: %s";
+
+    /** 缺少必需的请求头，配合 String.format 使用 */
+    public static final String MISSING_REQUEST_HEADER = "缺少必需的请求头: %s";
+
+    /** 未知服务端错误，配合 String.format 使用 */
+    public static final String INTERNAL_SERVER_ERROR = "Internal server error: %s";
 
     // ==================== 文件验证相关 ====================
 

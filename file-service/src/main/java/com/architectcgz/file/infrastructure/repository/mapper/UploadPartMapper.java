@@ -66,7 +66,19 @@ public interface UploadPartMapper {
      * 
      * @param parts 上传分片列表
      */
-    void batchInsert(@Param("parts") List<UploadPartPO> parts);
+    default void batchInsert(List<UploadPartPO> parts) {
+        if (parts == null || parts.isEmpty()) {
+            return;
+        }
+        doBatchInsert(parts);
+    }
+
+    /**
+     * 执行批量插入上传分片
+     *
+     * @param parts 上传分片列表
+     */
+    void doBatchInsert(@Param("parts") List<UploadPartPO> parts);
     
     /**
      * 根据任务ID查询所有分片

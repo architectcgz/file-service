@@ -5,7 +5,7 @@
     
     <!-- 批量插入上传分片 -->
     <!-- 使用 ON CONFLICT DO NOTHING 保证幂等性 -->
-    <insert id="batchInsert">
+    <insert id="doBatchInsert">
         INSERT INTO upload_parts (
             id, task_id, part_number, etag, size, uploaded_at
         ) VALUES

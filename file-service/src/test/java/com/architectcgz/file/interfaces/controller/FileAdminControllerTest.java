@@ -3,6 +3,7 @@ package com.architectcgz.file.interfaces.controller;
 import com.architectcgz.file.application.dto.*;
 import com.architectcgz.file.application.service.FileManagementService;
 import com.architectcgz.file.common.context.AdminContext;
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.common.result.PageResponse;
 import com.architectcgz.file.config.WebMvcTestConfig;
@@ -249,7 +250,10 @@ class FileAdminControllerTest {
                 .thenThrow(new BusinessException("FILE_NOT_FOUND", "File not found: non-existent"));
         mockMvc.perform(get("/api/v1/admin/files/non-existent")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.FILE_NOT_FOUND))
+                .andExpect(jsonPath("$.message").value("File not found: non-existent"));
     }
     
     @Test
@@ -275,7 +279,8 @@ class FileAdminControllerTest {
         mockMvc.perform(delete("/api/v1/admin/files/file-1")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(403));
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.ACCESS_DENIED));
 
         verifyNoInteractions(fileManagementService);
     }
@@ -369,7 +374,8 @@ class FileAdminControllerTest {
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app")
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(403));
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.ACCESS_DENIED));
 
         verifyNoInteractions(fileManagementService);
     }

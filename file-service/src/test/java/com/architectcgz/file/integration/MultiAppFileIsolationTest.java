@@ -1,5 +1,6 @@
 package com.architectcgz.file.integration;
 
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.result.ApiResponse;
 import com.architectcgz.file.config.TestStorageConfig;
 import com.architectcgz.file.interfaces.dto.UploadResult;
@@ -85,8 +86,8 @@ class MultiAppFileIsolationTest {
     }
 
     @Test
-    @DisplayName("Blog app uploads file, IM app cannot access - should return 403")
-    void blogUpload_imAccess_shouldReturn403() throws Exception {
+    @DisplayName("Blog app uploads file, IM app cannot access - should return 404")
+    void blogUpload_imAccess_shouldReturn404() throws Exception {
         // 1. Blog app uploads a file
         MvcResult uploadResult = mockMvc.perform(multipart("/api/v1/upload/image")
                 .file(testImageFile)
@@ -115,13 +116,13 @@ class MultiAppFileIsolationTest {
         assertThat(fileRecord.getAppId()).isEqualTo(BLOG_APP_ID);
         assertThat(fileRecord.getUserId()).isEqualTo(BLOG_USER_ID);
 
-        // 3. IM app tries to access the blog file - should fail with 403
+        // 3. IM app tries to access the blog file - should fail with 404 to avoid leaking existence
         mockMvc.perform(get("/api/v1/files/" + blogFileId + "/url")
                 .header("X-App-Id", IM_APP_ID)
                 .header("X-User-Id", String.valueOf(IM_USER_ID)))
-            .andExpect(status().isForbidden())
-            .andExpect(jsonPath("$.code").value(403))
-            .andExpect(jsonPath("$.message").value("Access denied: file belongs to different app"));
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value(404))
+            .andExpect(jsonPath("$.message").value(String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, blogFileId)));
 
         // 4. Blog app can access its own file - should succeed
         mockMvc.perform(get("/api/v1/files/" + blogFileId + "/url")
@@ -221,7 +222,7 @@ class MultiAppFileIsolationTest {
                 .header("X-User-Id", String.valueOf(IM_USER_ID)))
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.code").value(403))
-            .andExpect(jsonPath("$.message").value("Access denied: file belongs to different app"));
+            .andExpect(jsonPath("$.message").value("文件不属于该应用"));
 
         // 3. Verify file still exists
         FileRecord fileRecord = fileRecordRepository.findById(blogFileId).orElse(null);
@@ -242,8 +243,8 @@ class MultiAppFileIsolationTest {
     }
 
     @Test
-    @DisplayName("Cross-appId file detail access should be denied")
-    void getFileDetail_crossAppId_shouldBeDenied() throws Exception {
+    @DisplayName("Cross-appId file detail access should return 404")
+    void getFileDetail_crossAppId_shouldReturn404() throws Exception {
         // 1. Blog app uploads a file
         MvcResult uploadResult = mockMvc.perform(multipart("/api/v1/upload/image")
                 .file(testImageFile)
@@ -254,12 +255,13 @@ class MultiAppFileIsolationTest {
 
         String blogFileId = extractFileId(uploadResult);
 
-        // 2. IM app tries to get file details - should fail with 403
+        // 2. IM app tries to get file details - should fail with 404 to avoid leaking existence
         mockMvc.perform(get("/api/v1/files/" + blogFileId)
                 .header("X-App-Id", IM_APP_ID)
                 .header("X-User-Id", String.valueOf(IM_USER_ID)))
-            .andExpect(status().isForbidden())
-            .andExpect(jsonPath("$.code").value(403));
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value(404))
+            .andExpect(jsonPath("$.message").value(String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, blogFileId)));
 
         // 3. Blog app can get its own file details - should succeed
         mockMvc.perform(get("/api/v1/files/" + blogFileId)

@@ -55,6 +55,11 @@ class UploadPartMapperTest {
     static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
             .withExposedPorts(6379);
 
+    static {
+        postgres.start();
+        redis.start();
+    }
+
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         // PostgreSQL 配置

@@ -1,11 +1,11 @@
 package com.architectcgz.file.application.service;
 
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.infrastructure.config.FileTypeProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -20,13 +20,12 @@ class FileTypeValidatorTest {
     
     @Mock
     private FileTypeProperties fileTypeProperties;
-    
-    @InjectMocks
+
     private FileTypeValidator fileTypeValidator;
     
     @BeforeEach
     void setUp() {
-        // Setup is done per test to avoid unnecessary stubbing warnings
+        fileTypeValidator = new FileTypeValidator(fileTypeProperties);
     }
     
     // ========== 文件扩展名验证测或==========
@@ -64,6 +63,7 @@ class FileTypeValidatorTest {
             () -> fileTypeValidator.validateFileExtension(fileName));
         assertTrue(exception.getMessage().contains("不支持的文件扩展名"));
         assertTrue(exception.getMessage().contains("exe"));
+        assertEquals(FileServiceErrorCodes.EXTENSION_NOT_ALLOWED, exception.getCode());
     }
     
     @Test
@@ -86,6 +86,7 @@ class FileTypeValidatorTest {
         BusinessException exception = assertThrows(BusinessException.class,
             () -> fileTypeValidator.validateFileExtension(fileName));
         assertEquals("文件名不能为空", exception.getMessage());
+        assertEquals(FileServiceErrorCodes.FILENAME_EMPTY, exception.getCode());
     }
     
     @Test
@@ -156,6 +157,7 @@ class FileTypeValidatorTest {
             () -> fileTypeValidator.validateContentType(contentType));
         assertTrue(exception.getMessage().contains("不支持的文件类型"));
         assertTrue(exception.getMessage().contains("application/x-executable"));
+        assertEquals(FileServiceErrorCodes.CONTENT_TYPE_NOT_ALLOWED, exception.getCode());
     }
     
     @Test

@@ -1,5 +1,6 @@
 package com.architectcgz.file.interfaces.controller;
 
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.context.UserContext;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.result.ApiResponse;
@@ -146,7 +147,7 @@ public class FileController {
     private String requireUserId() {
         String userId = UserContext.getUserId();
         if (!StringUtils.hasText(userId)) {
-            throw new AccessDeniedException("未获取到用户身份");
+            throw new AccessDeniedException(FileServiceErrorMessages.USER_IDENTITY_MISSING);
         }
         return userId;
     }

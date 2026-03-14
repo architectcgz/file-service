@@ -1,5 +1,6 @@
 package com.architectcgz.file.integration;
 
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.result.ApiResponse;
 import com.architectcgz.file.config.TestStorageConfig;
 import com.architectcgz.file.interfaces.dto.UploadResult;
@@ -309,7 +310,7 @@ class FileDeduplicationTest {
                 .header("X-User-Id", String.valueOf(USER_ID_1)))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.code").value(404))
-            .andExpect(jsonPath("$.message").value("文件已被删除: " + fileId1));
+            .andExpect(jsonPath("$.message").value(String.format(FileServiceErrorMessages.FILE_DELETED_WITH_ID, fileId1)));
     }
 
     @Test

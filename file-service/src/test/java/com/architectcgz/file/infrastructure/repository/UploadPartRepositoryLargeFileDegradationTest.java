@@ -2,12 +2,11 @@ package com.architectcgz.file.infrastructure.repository;
 
 import com.architectcgz.file.common.config.BitmapProperties;
 import com.architectcgz.file.domain.model.UploadPart;
-import com.architectcgz.file.domain.model.UploadTask;
-import com.architectcgz.file.domain.model.UploadTaskStatus;
-import com.architectcgz.file.domain.repository.UploadTaskRepository;
 import com.architectcgz.file.infrastructure.monitoring.BitmapMetrics;
 import com.architectcgz.file.infrastructure.repository.mapper.UploadPartMapper;
+import com.architectcgz.file.infrastructure.repository.mapper.UploadTaskMapper;
 import com.architectcgz.file.infrastructure.repository.po.UploadPartPO;
+import com.architectcgz.file.infrastructure.repository.po.UploadTaskPO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,7 +19,6 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,7 +64,7 @@ class UploadPartRepositoryLargeFileDegradationTest {
     private BitmapMetrics metrics;
 
     @Mock
-    private UploadTaskRepository uploadTaskRepository;
+    private UploadTaskMapper uploadTaskMapper;
 
     @InjectMocks
     private UploadPartRepositoryImpl repository;
@@ -103,19 +101,8 @@ class UploadPartRepositoryLargeFileDegradationTest {
     void testDegradation_ExceedsMaxParts() {
         // Given - 文件有 15000 个分片（超过 maxParts 10000）
         String taskId = UUID.randomUUID().toString();
-        UploadTask largeTask = UploadTask.builder()
-                .id(taskId)
-                .userId("test-user")
-                .fileName("large-file.bin")
-                .fileSize(150L * 1024 * 1024 * 1024) // 150GB
-                .totalParts(15000) // 超过 maxParts
-                .uploadId("test-upload-id")
-                .status(UploadTaskStatus.UPLOADING)
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        when(uploadTaskRepository.findById(taskId))
-                .thenReturn(Optional.of(largeTask));
+        UploadTaskPO largeTask = createTaskPO(taskId, "large-file.bin", 150L * 1024 * 1024 * 1024, 15000);
+        when(uploadTaskMapper.selectById(taskId)).thenReturn(largeTask);
 
         UploadPart part = UploadPart.builder()
                 .id(UUID.randomUUID().toString())
@@ -130,13 +117,13 @@ class UploadPartRepositoryLargeFileDegradationTest {
         repository.savePart(part);
 
         // Then - 验证直接写入数据库，不使用 Redis
-        verify(uploadPartMapper, times(1)).insert(any(UploadPartPO.class));
+        verify(uploadPartMapper, times(1)).upsert(any(UploadPartPO.class));
         verify(redisTemplate, never()).opsForValue();
         verify(valueOperations, never()).setBit(anyString(), anyLong(), anyBoolean());
         
         // 验证插入的数据
         ArgumentCaptor<UploadPartPO> captor = ArgumentCaptor.forClass(UploadPartPO.class);
-        verify(uploadPartMapper).insert(captor.capture());
+        verify(uploadPartMapper).upsert(captor.capture());
         UploadPartPO insertedPart = captor.getValue();
         
         assertThat(insertedPart.getTaskId()).isEqualTo(taskId);
@@ -156,19 +143,8 @@ class UploadPartRepositoryLargeFileDegradationTest {
     void testNoDegradation_ExactlyMaxParts() {
         // Given - 文件恰好有 10000 个分片
         String taskId = UUID.randomUUID().toString();
-        UploadTask task = UploadTask.builder()
-                .id(taskId)
-                .userId("test-user")
-                .fileName("exact-file.bin")
-                .fileSize(100L * 1024 * 1024 * 1024) // 100GB
-                .totalParts(10000) // 恰好等于 maxParts
-                .uploadId("test-upload-id")
-                .status(UploadTaskStatus.UPLOADING)
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        when(uploadTaskRepository.findById(taskId))
-                .thenReturn(Optional.of(task));
+        UploadTaskPO task = createTaskPO(taskId, "exact-file.bin", 100L * 1024 * 1024 * 1024, 10000);
+        when(uploadTaskMapper.selectById(taskId)).thenReturn(task);
         
         when(valueOperations.setBit(anyString(), anyLong(), anyBoolean()))
                 .thenReturn(false);
@@ -202,19 +178,8 @@ class UploadPartRepositoryLargeFileDegradationTest {
     void testDegradation_JustOverMaxParts() {
         // Given - 文件有 10001 个分片（刚好超过 maxParts）
         String taskId = UUID.randomUUID().toString();
-        UploadTask task = UploadTask.builder()
-                .id(taskId)
-                .userId("test-user")
-                .fileName("just-over-file.bin")
-                .fileSize(100L * 1024 * 1024 * 1024) // 100GB
-                .totalParts(10001) // 刚好超过 maxParts
-                .uploadId("test-upload-id")
-                .status(UploadTaskStatus.UPLOADING)
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        when(uploadTaskRepository.findById(taskId))
-                .thenReturn(Optional.of(task));
+        UploadTaskPO task = createTaskPO(taskId, "just-over-file.bin", 100L * 1024 * 1024 * 1024, 10001);
+        when(uploadTaskMapper.selectById(taskId)).thenReturn(task);
 
         UploadPart part = UploadPart.builder()
                 .id(UUID.randomUUID().toString())
@@ -229,7 +194,7 @@ class UploadPartRepositoryLargeFileDegradationTest {
         repository.savePart(part);
 
         // Then - 验证直接写入数据库，不使用 Redis
-        verify(uploadPartMapper, times(1)).insert(any(UploadPartPO.class));
+        verify(uploadPartMapper, times(1)).upsert(any(UploadPartPO.class));
         verify(redisTemplate, never()).opsForValue();
         verify(valueOperations, never()).setBit(anyString(), anyLong(), anyBoolean());
     }
@@ -246,19 +211,8 @@ class UploadPartRepositoryLargeFileDegradationTest {
     void testDegradation_FarExceedsMaxParts() {
         // Given - 文件有 50000 个分片（远超 maxParts）
         String taskId = UUID.randomUUID().toString();
-        UploadTask hugeTask = UploadTask.builder()
-                .id(taskId)
-                .userId("test-user")
-                .fileName("huge-file.bin")
-                .fileSize(500L * 1024 * 1024 * 1024) // 500GB
-                .totalParts(50000) // 远超 maxParts
-                .uploadId("test-upload-id")
-                .status(UploadTaskStatus.UPLOADING)
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        when(uploadTaskRepository.findById(taskId))
-                .thenReturn(Optional.of(hugeTask));
+        UploadTaskPO hugeTask = createTaskPO(taskId, "huge-file.bin", 500L * 1024 * 1024 * 1024, 50000);
+        when(uploadTaskMapper.selectById(taskId)).thenReturn(hugeTask);
 
         UploadPart part = UploadPart.builder()
                 .id(UUID.randomUUID().toString())
@@ -273,7 +227,7 @@ class UploadPartRepositoryLargeFileDegradationTest {
         repository.savePart(part);
 
         // Then - 验证直接写入数据库，不使用 Redis
-        verify(uploadPartMapper, times(1)).insert(any(UploadPartPO.class));
+        verify(uploadPartMapper, times(1)).upsert(any(UploadPartPO.class));
         verify(redisTemplate, never()).opsForValue();
         verify(valueOperations, never()).setBit(anyString(), anyLong(), anyBoolean());
     }
@@ -290,19 +244,8 @@ class UploadPartRepositoryLargeFileDegradationTest {
     void testDegradation_MultiplePartsSequentially() {
         // Given - 文件有 20000 个分片
         String taskId = UUID.randomUUID().toString();
-        UploadTask largeTask = UploadTask.builder()
-                .id(taskId)
-                .userId("test-user")
-                .fileName("large-file.bin")
-                .fileSize(200L * 1024 * 1024 * 1024) // 200GB
-                .totalParts(20000)
-                .uploadId("test-upload-id")
-                .status(UploadTaskStatus.UPLOADING)
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        when(uploadTaskRepository.findById(taskId))
-                .thenReturn(Optional.of(largeTask));
+        UploadTaskPO largeTask = createTaskPO(taskId, "large-file.bin", 200L * 1024 * 1024 * 1024, 20000);
+        when(uploadTaskMapper.selectById(taskId)).thenReturn(largeTask);
 
         // When - 连续上传 5 个分片
         for (int i = 1; i <= 5; i++) {
@@ -319,7 +262,7 @@ class UploadPartRepositoryLargeFileDegradationTest {
         }
 
         // Then - 验证所有分片都直接写入数据库
-        verify(uploadPartMapper, times(5)).insert(any(UploadPartPO.class));
+        verify(uploadPartMapper, times(5)).upsert(any(UploadPartPO.class));
         verify(redisTemplate, never()).opsForValue();
         verify(valueOperations, never()).setBit(anyString(), anyLong(), anyBoolean());
     }
@@ -339,19 +282,8 @@ class UploadPartRepositoryLargeFileDegradationTest {
         lenient().when(bitmapProperties.getMaxParts()).thenReturn(10000);
 
         String taskId = UUID.randomUUID().toString();
-        UploadTask largeTask = UploadTask.builder()
-                .id(taskId)
-                .userId("test-user")
-                .fileName("large-file.bin")
-                .fileSize(150L * 1024 * 1024 * 1024)
-                .totalParts(15000)
-                .uploadId("test-upload-id")
-                .status(UploadTaskStatus.UPLOADING)
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        when(uploadTaskRepository.findById(taskId))
-                .thenReturn(Optional.of(largeTask));
+        UploadTaskPO largeTask = createTaskPO(taskId, "large-file.bin", 150L * 1024 * 1024 * 1024, 15000);
+        when(uploadTaskMapper.selectById(taskId)).thenReturn(largeTask);
 
         UploadPart part = UploadPart.builder()
                 .id(UUID.randomUUID().toString())
@@ -366,7 +298,7 @@ class UploadPartRepositoryLargeFileDegradationTest {
         repository.savePart(part);
 
         // Then - 验证降级到数据库
-        verify(uploadPartMapper, times(1)).insert(any(UploadPartPO.class));
+        verify(uploadPartMapper, times(1)).upsert(any(UploadPartPO.class));
         verify(redisTemplate, never()).opsForValue();
     }
 
@@ -383,19 +315,8 @@ class UploadPartRepositoryLargeFileDegradationTest {
         when(bitmapProperties.getMaxParts()).thenReturn(5000);
 
         String taskId = UUID.randomUUID().toString();
-        UploadTask task = UploadTask.builder()
-                .id(taskId)
-                .userId("test-user")
-                .fileName("medium-file.bin")
-                .fileSize(60L * 1024 * 1024 * 1024)
-                .totalParts(6000) // 超过配置的 5000
-                .uploadId("test-upload-id")
-                .status(UploadTaskStatus.UPLOADING)
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        when(uploadTaskRepository.findById(taskId))
-                .thenReturn(Optional.of(task));
+        UploadTaskPO task = createTaskPO(taskId, "medium-file.bin", 60L * 1024 * 1024 * 1024, 6000);
+        when(uploadTaskMapper.selectById(taskId)).thenReturn(task);
 
         UploadPart part = UploadPart.builder()
                 .id(UUID.randomUUID().toString())
@@ -410,7 +331,7 @@ class UploadPartRepositoryLargeFileDegradationTest {
         repository.savePart(part);
 
         // Then - 验证降级到数据库
-        verify(uploadPartMapper, times(1)).insert(any(UploadPartPO.class));
+        verify(uploadPartMapper, times(1)).upsert(any(UploadPartPO.class));
         verify(redisTemplate, never()).opsForValue();
     }
 
@@ -426,19 +347,8 @@ class UploadPartRepositoryLargeFileDegradationTest {
     void testNoDegradation_BelowMaxParts() {
         // Given - 文件有 5000 个分片（小于 maxParts 10000）
         String taskId = UUID.randomUUID().toString();
-        UploadTask task = UploadTask.builder()
-                .id(taskId)
-                .userId("test-user")
-                .fileName("normal-file.bin")
-                .fileSize(50L * 1024 * 1024 * 1024)
-                .totalParts(5000) // 小于 maxParts
-                .uploadId("test-upload-id")
-                .status(UploadTaskStatus.UPLOADING)
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        when(uploadTaskRepository.findById(taskId))
-                .thenReturn(Optional.of(task));
+        UploadTaskPO task = createTaskPO(taskId, "normal-file.bin", 50L * 1024 * 1024 * 1024, 5000);
+        when(uploadTaskMapper.selectById(taskId)).thenReturn(task);
         
         when(valueOperations.setBit(anyString(), anyLong(), anyBoolean()))
                 .thenReturn(false);
@@ -458,5 +368,21 @@ class UploadPartRepositoryLargeFileDegradationTest {
         // Then - 验证使用 Redis Bitmap
         verify(valueOperations, times(1)).setBit(anyString(), anyLong(), eq(true));
         verify(uploadPartMapper, never()).insert(any(UploadPartPO.class));
+    }
+
+    private UploadTaskPO createTaskPO(String taskId, String fileName, long fileSize, int totalParts) {
+        UploadTaskPO task = new UploadTaskPO();
+        task.setId(taskId);
+        task.setAppId("test-app");
+        task.setUserId("test-user");
+        task.setFileName(fileName);
+        task.setFileSize(fileSize);
+        task.setUploadId("test-upload-id");
+        task.setTotalParts(totalParts);
+        task.setStatus("uploading");
+        task.setStoragePath("test/" + taskId);
+        task.setCreatedAt(LocalDateTime.now());
+        task.setUpdatedAt(LocalDateTime.now());
+        return task;
     }
 }

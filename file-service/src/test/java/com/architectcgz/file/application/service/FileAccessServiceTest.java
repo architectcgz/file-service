@@ -1,5 +1,7 @@
 package com.architectcgz.file.application.service;
 
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
+import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.common.exception.FileNotFoundException;
 import com.architectcgz.file.application.dto.FileDetailResponse;
@@ -188,7 +190,8 @@ class FileAccessServiceTest {
             fileAccessService.getFileUrl("blog", "non-existent", "123");
         });
         
-        assertEquals("文件不存在: non-existent", exception.getMessage());
+        assertEquals(String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, "non-existent"), exception.getMessage());
+        assertEquals(FileServiceErrorCodes.FILE_NOT_FOUND, exception.getCode());
     }
     
     @Test
@@ -218,7 +221,8 @@ class FileAccessServiceTest {
             fileAccessService.getFileUrl("blog", "file-003", "123");
         });
         
-        assertEquals("文件已被删除: file-003", exception.getMessage());
+        assertEquals(String.format(FileServiceErrorMessages.FILE_DELETED_WITH_ID, "file-003"), exception.getMessage());
+        assertEquals(FileServiceErrorCodes.FILE_NOT_FOUND, exception.getCode());
     }
 
     @Test
@@ -412,7 +416,8 @@ class FileAccessServiceTest {
             fileAccessService.getFileDetail("blog", "non-existent", "123");
         });
         
-        assertEquals("文件不存在: non-existent", exception.getMessage());
+        assertEquals(String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, "non-existent"), exception.getMessage());
+        assertEquals(FileServiceErrorCodes.FILE_NOT_FOUND, exception.getCode());
     }
     
     @Test
@@ -442,7 +447,8 @@ class FileAccessServiceTest {
             fileAccessService.getFileDetail("blog", "file-003", "123");
         });
         
-        assertEquals("文件已被删除: file-003", exception.getMessage());
+        assertEquals(String.format(FileServiceErrorMessages.FILE_DELETED_WITH_ID, "file-003"), exception.getMessage());
+        assertEquals(FileServiceErrorCodes.FILE_NOT_FOUND, exception.getCode());
     }
     
     @Test
@@ -471,7 +477,8 @@ class FileAccessServiceTest {
             fileAccessService.getFileUrl("other-app", "file-001", "123");
         });
 
-        assertEquals("文件不存在: file-001", exception.getMessage());
+        assertEquals(String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, "file-001"), exception.getMessage());
+        assertEquals(FileServiceErrorCodes.FILE_NOT_FOUND, exception.getCode());
     }
 
     @Test
@@ -484,7 +491,8 @@ class FileAccessServiceTest {
             fileAccessService.getFileDetail("other-app", "file-001", "123");
         });
 
-        assertEquals("文件不存在: file-001", exception.getMessage());
+        assertEquals(String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, "file-001"), exception.getMessage());
+        assertEquals(FileServiceErrorCodes.FILE_NOT_FOUND, exception.getCode());
     }
 
     // ========== updateAccessLevel 测试（H3/M2/M3 补充） ==========
@@ -516,7 +524,8 @@ class FileAccessServiceTest {
             fileAccessService.updateAccessLevel("blog", "file-003", "123", AccessLevel.PRIVATE);
         });
 
-        assertEquals("文件已被删除: file-003", exception.getMessage());
+        assertEquals(String.format(FileServiceErrorMessages.FILE_DELETED_WITH_ID, "file-003"), exception.getMessage());
+        assertEquals(FileServiceErrorCodes.FILE_NOT_FOUND, exception.getCode());
     }
 
     @Test
@@ -529,6 +538,7 @@ class FileAccessServiceTest {
             fileAccessService.updateAccessLevel("other-app", "file-001", "123", AccessLevel.PRIVATE);
         });
 
-        assertEquals("文件不存在: file-001", exception.getMessage());
+        assertEquals(String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, "file-001"), exception.getMessage());
+        assertEquals(FileServiceErrorCodes.FILE_NOT_FOUND, exception.getCode());
     }
 }

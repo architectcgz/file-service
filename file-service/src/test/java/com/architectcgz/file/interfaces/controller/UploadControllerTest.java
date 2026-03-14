@@ -1,7 +1,9 @@
 package com.architectcgz.file.interfaces.controller;
 
 import com.architectcgz.file.application.service.UploadApplicationService;
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.context.UserContext;
+import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.config.WebMvcTestConfig;
 import com.architectcgz.file.interfaces.dto.UploadResult;
 import org.junit.jupiter.api.AfterEach;
@@ -89,9 +91,53 @@ class UploadControllerTest {
                         .file(file)
                         .header("X-App-Id", "test-app"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(403));
+                .andExpect(jsonPath("$.code").value(403))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.ACCESS_DENIED));
 
         verifyNoInteractions(uploadApplicationService);
+    }
+
+    @Test
+    void testUploadImageWithoutAppIdReturnsMissingHeaderErrorCode() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "avatar.jpg",
+                MediaType.IMAGE_JPEG_VALUE,
+                "image-data".getBytes()
+        );
+        UserContext.setUserId("context-user");
+
+        mockMvc.perform(multipart("/api/v1/upload/image")
+                        .file(file))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.MISSING_REQUEST_HEADER));
+
+        verifyNoInteractions(uploadApplicationService);
+    }
+
+    @Test
+    void testUploadFileReturnsBusinessErrorCode() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "report.pdf",
+                MediaType.APPLICATION_PDF_VALUE,
+                "pdf-data".getBytes()
+        );
+        UserContext.setUserId("context-user");
+        when(uploadApplicationService.uploadFile(anyString(), any(), anyString()))
+                .thenThrow(new BusinessException(
+                        FileServiceErrorCodes.FILE_TOO_LARGE,
+                        "文件过大"
+                ));
+
+        mockMvc.perform(multipart("/api/v1/upload/file")
+                        .file(file)
+                        .header("X-App-Id", "test-app"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.errorCode").value(FileServiceErrorCodes.FILE_TOO_LARGE))
+                .andExpect(jsonPath("$.message").value("文件过大"));
     }
 
     @Test

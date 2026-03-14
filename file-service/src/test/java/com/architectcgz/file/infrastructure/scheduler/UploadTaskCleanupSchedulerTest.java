@@ -1,5 +1,6 @@
 package com.architectcgz.file.infrastructure.scheduler;
 
+import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.UploadTask;
 import com.architectcgz.file.domain.model.UploadTaskStatus;
 import com.architectcgz.file.domain.repository.UploadTaskRepository;
@@ -19,6 +20,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.*;
 
 /**
@@ -44,6 +46,8 @@ class UploadTaskCleanupSchedulerTest {
     
     @BeforeEach
     void setUp() {
+        lenient().when(s3StorageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("platform-files-public");
+
         expiredTask1 = new UploadTask();
         expiredTask1.setId("task-1");
         expiredTask1.setUserId("1");
@@ -74,7 +78,7 @@ class UploadTaskCleanupSchedulerTest {
         
         // Then
         verify(uploadTaskRepository).findExpiredTasks(any(LocalDateTime.class));
-        verify(s3StorageService, never()).abortMultipartUpload(anyString(), anyString());
+        verify(s3StorageService, never()).abortMultipartUpload(anyString(), anyString(), any());
         verify(uploadTaskRepository, never()).updateStatus(anyString(), any(UploadTaskStatus.class));
     }
     
@@ -94,11 +98,13 @@ class UploadTaskCleanupSchedulerTest {
         // Verify S3 cleanup for both tasks
         verify(s3StorageService).abortMultipartUpload(
                 eq(expiredTask1.getStoragePath()), 
-                eq(expiredTask1.getUploadId())
+                eq(expiredTask1.getUploadId()),
+                eq("platform-files-public")
         );
         verify(s3StorageService).abortMultipartUpload(
                 eq(expiredTask2.getStoragePath()), 
-                eq(expiredTask2.getUploadId())
+                eq(expiredTask2.getUploadId()),
+                eq("platform-files-public")
         );
         
         // Verify status update for both tasks
@@ -122,7 +128,7 @@ class UploadTaskCleanupSchedulerTest {
         // S3 abort fails but should not prevent status update
         doThrow(new RuntimeException("S3 error"))
                 .when(s3StorageService)
-                .abortMultipartUpload(anyString(), anyString());
+                .abortMultipartUpload(anyString(), anyString(), any());
         
         // When
         scheduler.cleanupExpiredTasks();
@@ -130,7 +136,8 @@ class UploadTaskCleanupSchedulerTest {
         // Then
         verify(s3StorageService).abortMultipartUpload(
                 eq(expiredTask1.getStoragePath()), 
-                eq(expiredTask1.getUploadId())
+                eq(expiredTask1.getUploadId()),
+                eq("platform-files-public")
         );
         
         // Status should still be updated despite S3 failure
@@ -158,7 +165,8 @@ class UploadTaskCleanupSchedulerTest {
         // Then
         verify(s3StorageService).abortMultipartUpload(
                 eq(expiredTask1.getStoragePath()), 
-                eq(expiredTask1.getUploadId())
+                eq(expiredTask1.getUploadId()),
+                eq("platform-files-public")
         );
         verify(uploadTaskRepository).updateStatus(
                 eq(expiredTask1.getId()), 
@@ -191,11 +199,13 @@ class UploadTaskCleanupSchedulerTest {
         // Both tasks should be attempted
         verify(s3StorageService).abortMultipartUpload(
                 eq(expiredTask1.getStoragePath()), 
-                eq(expiredTask1.getUploadId())
+                eq(expiredTask1.getUploadId()),
+                eq("platform-files-public")
         );
         verify(s3StorageService).abortMultipartUpload(
                 eq(expiredTask2.getStoragePath()), 
-                eq(expiredTask2.getUploadId())
+                eq(expiredTask2.getUploadId()),
+                eq("platform-files-public")
         );
         
         verify(uploadTaskRepository).updateStatus(
@@ -221,7 +231,7 @@ class UploadTaskCleanupSchedulerTest {
         verify(uploadTaskRepository).findExpiredTasks(any(LocalDateTime.class));
         
         // Should not proceed to cleanup if query fails
-        verify(s3StorageService, never()).abortMultipartUpload(anyString(), anyString());
+        verify(s3StorageService, never()).abortMultipartUpload(anyString(), anyString(), any());
         verify(uploadTaskRepository, never()).updateStatus(anyString(), any(UploadTaskStatus.class));
     }
 }

@@ -1,5 +1,6 @@
 package com.architectcgz.file.infrastructure.interceptor;
 
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -72,6 +73,7 @@ class AppIdValidationInterceptorTest {
         assertFalse(result);
         assertEquals(400, response.getStatus());
         assertTrue(response.getContentAsString().contains("X-App-Id header is required"));
+        assertTrue(response.getContentAsString().contains("\"errorCode\":\"" + FileServiceErrorCodes.MISSING_REQUEST_HEADER + "\""));
     }
     
     @Test
@@ -86,6 +88,7 @@ class AppIdValidationInterceptorTest {
         assertFalse(result);
         assertEquals(400, response.getStatus());
         assertTrue(response.getContentAsString().contains("X-App-Id header is required"));
+        assertTrue(response.getContentAsString().contains("\"errorCode\":\"" + FileServiceErrorCodes.MISSING_REQUEST_HEADER + "\""));
     }
     
     @Test
@@ -101,6 +104,7 @@ class AppIdValidationInterceptorTest {
         assertFalse(result);
         assertEquals(400, response.getStatus());
         assertTrue(response.getContentAsString().contains("exceeds maximum length"));
+        assertTrue(response.getContentAsString().contains("\"errorCode\":\"" + FileServiceErrorCodes.VALIDATION_ERROR + "\""));
     }
     
     @Test
@@ -129,6 +133,7 @@ class AppIdValidationInterceptorTest {
         assertFalse(result);
         assertEquals(400, response.getStatus());
         assertTrue(response.getContentAsString().contains("Invalid X-App-Id format"));
+        assertTrue(response.getContentAsString().contains("\"errorCode\":\"" + FileServiceErrorCodes.VALIDATION_ERROR + "\""));
     }
     
     @Test
@@ -143,6 +148,7 @@ class AppIdValidationInterceptorTest {
         assertFalse(result);
         assertEquals(400, response.getStatus());
         assertTrue(response.getContentAsString().contains("Invalid X-App-Id format"));
+        assertTrue(response.getContentAsString().contains("\"errorCode\":\"" + FileServiceErrorCodes.VALIDATION_ERROR + "\""));
     }
     
     @Test
@@ -157,6 +163,7 @@ class AppIdValidationInterceptorTest {
         assertFalse(result);
         assertEquals(400, response.getStatus());
         assertTrue(response.getContentAsString().contains("Invalid X-App-Id format"));
+        assertTrue(response.getContentAsString().contains("\"errorCode\":\"" + FileServiceErrorCodes.VALIDATION_ERROR + "\""));
     }
     
     @Test

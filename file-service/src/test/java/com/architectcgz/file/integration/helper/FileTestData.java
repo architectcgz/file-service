@@ -2,6 +2,8 @@ package com.architectcgz.file.integration.helper;
 
 import org.springframework.mock.web.MockMultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -52,9 +54,7 @@ public class FileTestData {
      * @return MockMultipartFile
      */
     public static MockMultipartFile createImageFile(String filename) {
-        // 创建一个最小的JPEG文件
-        // JPEG文件以 FF D8 开始，以 FF D9 结束
-        byte[] jpegData = createMinimalJpegData();
+        byte[] jpegData = createMinimalImageData("jpg");
         
         return new MockMultipartFile(
             "file",
@@ -71,8 +71,7 @@ public class FileTestData {
      * @return MockMultipartFile
      */
     public static MockMultipartFile createPngImageFile(String filename) {
-        // 创建一个最小的PNG文件
-        byte[] pngData = createMinimalPngData();
+        byte[] pngData = createMinimalImageData("png");
         
         return new MockMultipartFile(
             "file",
@@ -137,97 +136,17 @@ public class FileTestData {
      * 
      * @return JPEG字节数组
      */
-    private static byte[] createMinimalJpegData() {
+    private static byte[] createMinimalImageData(String format) {
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            
-            // JPEG SOI (Start of Image) marker
-            baos.write(0xFF);
-            baos.write(0xD8);
-            
-            // JFIF APP0 marker
-            baos.write(0xFF);
-            baos.write(0xE0);
-            baos.write(0x00);
-            baos.write(0x10); // Length
-            baos.write("JFIF".getBytes(StandardCharsets.US_ASCII));
-            baos.write(0x00); // Null terminator
-            baos.write(0x01); // Version 1
-            baos.write(0x01); // Version 1
-            baos.write(0x00); // Density units
-            baos.write(0x00);
-            baos.write(0x01); // X density
-            baos.write(0x00);
-            baos.write(0x01); // Y density
-            baos.write(0x00); // Thumbnail width
-            baos.write(0x00); // Thumbnail height
-            
-            // Add some random data to make it more realistic
-            byte[] randomData = generateRandomBytes(100);
-            baos.write(randomData);
-            
-            // JPEG EOI (End of Image) marker
-            baos.write(0xFF);
-            baos.write(0xD9);
-            
+            BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+            image.setRGB(0, 0, 0x3366CC);
+            if (!ImageIO.write(image, format, baos)) {
+                throw new IOException("No ImageIO writer for format: " + format);
+            }
             return baos.toByteArray();
         } catch (IOException e) {
-            throw new RuntimeException("Failed to create JPEG data", e);
-        }
-    }
-    
-    /**
-     * 创建最小的PNG文件数据
-     * 包含PNG文件头和基本块
-     * 
-     * @return PNG字节数组
-     */
-    private static byte[] createMinimalPngData() {
-        try {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            
-            // PNG signature
-            baos.write(new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
-            
-            // IHDR chunk (Image Header)
-            baos.write(0x00);
-            baos.write(0x00);
-            baos.write(0x00);
-            baos.write(0x0D); // Length: 13 bytes
-            baos.write("IHDR".getBytes(StandardCharsets.US_ASCII));
-            baos.write(0x00);
-            baos.write(0x00);
-            baos.write(0x00);
-            baos.write(0x01); // Width: 1
-            baos.write(0x00);
-            baos.write(0x00);
-            baos.write(0x00);
-            baos.write(0x01); // Height: 1
-            baos.write(0x08); // Bit depth: 8
-            baos.write(0x02); // Color type: RGB
-            baos.write(0x00); // Compression: deflate
-            baos.write(0x00); // Filter: adaptive
-            baos.write(0x00); // Interlace: none
-            // CRC (simplified - not a real CRC)
-            baos.write(0x00);
-            baos.write(0x00);
-            baos.write(0x00);
-            baos.write(0x00);
-            
-            // IEND chunk (Image End)
-            baos.write(0x00);
-            baos.write(0x00);
-            baos.write(0x00);
-            baos.write(0x00); // Length: 0
-            baos.write("IEND".getBytes(StandardCharsets.US_ASCII));
-            baos.write(0x00);
-            baos.write(0x00);
-            baos.write(0x00);
-            baos.write(0x00); // CRC
-            
-            return baos.toByteArray();
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to create PNG data", e);
+            throw new RuntimeException("Failed to create image data for format: " + format, e);
         }
     }
 }

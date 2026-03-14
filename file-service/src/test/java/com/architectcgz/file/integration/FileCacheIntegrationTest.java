@@ -3,19 +3,25 @@ package com.architectcgz.file.integration;
 import com.architectcgz.file.application.dto.FileUrlResponse;
 import com.architectcgz.file.application.service.FileAccessService;
 import com.architectcgz.file.application.service.FileManagementService;
+import com.architectcgz.file.config.TestStorageConfig;
 import com.architectcgz.file.domain.model.AccessLevel;
 import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.model.FileStatus;
+import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
+import com.architectcgz.file.domain.repository.StorageObjectRepository;
 import com.architectcgz.file.infrastructure.cache.FileRedisKeys;
 import com.architectcgz.file.infrastructure.config.CacheProperties;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.jdbc.Sql;
+import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -41,10 +47,24 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @SpringBootTest
 @Testcontainers
+@ActiveProfiles("test")
+@Import(TestStorageConfig.class)
+@TestPropertySource(properties = {
+        "spring.cloud.nacos.discovery.enabled=false",
+        "spring.config.import=",
+        "storage.type=local",
+        "storage.local.base-path=./test-uploads",
+        "storage.access.private-url-expire-seconds=3600",
+        "storage.access.presigned-url-expire-seconds=900",
+        "upload.validation.enabled=false"
+})
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("文件 URL 缓存集成测试")
 @Sql(scripts = "/schema.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS)
 class FileCacheIntegrationTest {
+
+    private static final String APP_ID = "blog";
+    private static final String OWNER_USER_ID = "12345";
     
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
@@ -55,6 +75,14 @@ class FileCacheIntegrationTest {
     @Container
     static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
             .withExposedPorts(6379);
+
+    static {
+        // @DynamicPropertySource may resolve datasource properties before the JUnit
+        // Testcontainers extension starts containers when the Spring context boots.
+        // Start them eagerly so mapped ports are always available during context initialization.
+        postgres.start();
+        redis.start();
+    }
     
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
@@ -66,6 +94,12 @@ class FileCacheIntegrationTest {
         // Redis 配置
         registry.add("spring.data.redis.host", redis::getHost);
         registry.add("spring.data.redis.port", redis::getFirstMappedPort);
+        registry.add("spring.data.redis.password", () -> "");
+        registry.add("spring.redis.redisson.config", () ->
+                "singleServerConfig:\n" +
+                "  address: \"redis://" + redis.getHost() + ":" + redis.getFirstMappedPort() + "\"\n" +
+                "  password: null\n"
+        );
         
         // 缓存配置
         registry.add("file-service.cache.enabled", () -> "true");
@@ -80,6 +114,9 @@ class FileCacheIntegrationTest {
     
     @Autowired
     private FileRecordRepository fileRecordRepository;
+
+    @Autowired
+    private StorageObjectRepository storageObjectRepository;
     
     @Autowired
     private RedisTemplate<String, String> redisTemplate;
@@ -94,40 +131,70 @@ class FileCacheIntegrationTest {
     void setUp() {
         // 清空 Redis
         redisTemplate.getConnectionFactory().getConnection().flushAll();
+
+        LocalDateTime now = LocalDateTime.now();
+        StorageObject publicStorageObject = StorageObject.builder()
+                .id("storage-001")
+                .appId(APP_ID)
+                .fileHash("abc123")
+                .hashAlgorithm("MD5")
+                .storagePath("2026/02/11/12345/test-public.jpg")
+                .bucketName("local")
+                .fileSize(1024L)
+                .contentType("image/jpeg")
+                .referenceCount(1)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        StorageObject privateStorageObject = StorageObject.builder()
+                .id("storage-002")
+                .appId(APP_ID)
+                .fileHash("def456")
+                .hashAlgorithm("MD5")
+                .storagePath("2026/02/11/12345/test-private.jpg")
+                .bucketName("local")
+                .fileSize(2048L)
+                .contentType("image/jpeg")
+                .referenceCount(1)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        storageObjectRepository.save(publicStorageObject);
+        storageObjectRepository.save(privateStorageObject);
         
         // 准备测试数据
         testPublicFile = FileRecord.builder()
                 .id("test-file-001")
-                .appId("blog")
-                .userId("user-123")
+                .appId(APP_ID)
+                .userId(OWNER_USER_ID)
                 .storageObjectId("storage-001")
                 .originalFilename("test-public.jpg")
-                .storagePath("2026/02/11/user-123/test-public.jpg")
+                .storagePath("2026/02/11/12345/test-public.jpg")
                 .fileSize(1024L)
                 .contentType("image/jpeg")
                 .fileHash("abc123")
                 .hashAlgorithm("MD5")
                 .status(FileStatus.COMPLETED)
                 .accessLevel(AccessLevel.PUBLIC)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .createdAt(now)
+                .updatedAt(now)
                 .build();
         
         testPrivateFile = FileRecord.builder()
                 .id("test-file-002")
-                .appId("blog")
-                .userId("user-123")
+                .appId(APP_ID)
+                .userId(OWNER_USER_ID)
                 .storageObjectId("storage-002")
                 .originalFilename("test-private.jpg")
-                .storagePath("2026/02/11/user-123/test-private.jpg")
+                .storagePath("2026/02/11/12345/test-private.jpg")
                 .fileSize(2048L)
                 .contentType("image/jpeg")
                 .fileHash("def456")
                 .hashAlgorithm("MD5")
                 .status(FileStatus.COMPLETED)
                 .accessLevel(AccessLevel.PRIVATE)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .createdAt(now)
+                .updatedAt(now)
                 .build();
         
         // 保存到数据库
@@ -144,6 +211,18 @@ class FileCacheIntegrationTest {
         }
         try {
             fileRecordRepository.deleteById(testPrivateFile.getId());
+        } catch (Exception ignored) {
+        }
+        try {
+            storageObjectRepository.deleteById("storage-001");
+        } catch (Exception ignored) {
+        }
+        try {
+            storageObjectRepository.deleteById("storage-002");
+        } catch (Exception ignored) {
+        }
+        try {
+            storageObjectRepository.deleteById("storage-003");
         } catch (Exception ignored) {
         }
         
@@ -165,7 +244,7 @@ class FileCacheIntegrationTest {
         assertNull(cachedUrl, "初始状态缓存应该为空");
         
         // 2. 第一次查询（缓存未命中，查询数据库）
-        FileUrlResponse response1 = fileAccessService.getFileUrl("blog", fileId, "user-123");
+        FileUrlResponse response1 = fileAccessService.getFileUrl(APP_ID, fileId, OWNER_USER_ID);
         assertNotNull(response1);
         assertNotNull(response1.getUrl());
         assertTrue(response1.getPermanent());
@@ -177,7 +256,7 @@ class FileCacheIntegrationTest {
         assertEquals(response1.getUrl(), cachedUrl, "缓存的URL应该与返回的URL一致");
         
         // 4. 第二次查询（缓存命中）
-        FileUrlResponse response2 = fileAccessService.getFileUrl("blog", fileId, "user-123");
+        FileUrlResponse response2 = fileAccessService.getFileUrl(APP_ID, fileId, OWNER_USER_ID);
         assertNotNull(response2);
         assertEquals(response1.getUrl(), response2.getUrl(), "两次查询应该返回相同的URL");
         
@@ -196,7 +275,7 @@ class FileCacheIntegrationTest {
         String cacheKey = FileRedisKeys.fileUrl(fileId);
         
         // 1. 查询私有文件URL
-        FileUrlResponse response = fileAccessService.getFileUrl("blog", fileId, "user-123");
+        FileUrlResponse response = fileAccessService.getFileUrl(APP_ID, fileId, OWNER_USER_ID);
         assertNotNull(response);
         assertNotNull(response.getUrl());
         assertFalse(response.getPermanent());
@@ -217,7 +296,7 @@ class FileCacheIntegrationTest {
         String cacheKey = FileRedisKeys.fileUrl(fileId);
         
         // 1. 第一次查询，写入缓存
-        FileUrlResponse response = fileAccessService.getFileUrl("blog", fileId, "user-123");
+        FileUrlResponse response = fileAccessService.getFileUrl(APP_ID, fileId, OWNER_USER_ID);
         assertNotNull(response);
         
         // 2. 验证缓存已写入
@@ -246,7 +325,7 @@ class FileCacheIntegrationTest {
         String cacheKey = FileRedisKeys.fileUrl(fileId);
         
         // 1. 第一次查询，写入缓存
-        FileUrlResponse response1 = fileAccessService.getFileUrl("blog", fileId, "user-123");
+        FileUrlResponse response1 = fileAccessService.getFileUrl(APP_ID, fileId, OWNER_USER_ID);
         assertNotNull(response1);
         
         // 2. 验证缓存已写入
@@ -266,7 +345,7 @@ class FileCacheIntegrationTest {
         assertNull(cachedUrl, "TTL 过期后缓存应该被清除");
         
         // 6. 再次查询，应该重新从数据库查询并写入缓存
-        FileUrlResponse response2 = fileAccessService.getFileUrl("blog", fileId, "user-123");
+        FileUrlResponse response2 = fileAccessService.getFileUrl(APP_ID, fileId, OWNER_USER_ID);
         assertNotNull(response2);
         assertEquals(response1.getUrl(), response2.getUrl(), "URL 应该保持一致");
         
@@ -284,16 +363,16 @@ class FileCacheIntegrationTest {
         String fileId = testPublicFile.getId();
         
         // 1. 第一次查询（缓存未命中）
-        FileUrlResponse response1 = fileAccessService.getFileUrl("blog", fileId, "user-123");
+        FileUrlResponse response1 = fileAccessService.getFileUrl(APP_ID, fileId, OWNER_USER_ID);
         
         // 2. 第二次查询（缓存命中）
-        FileUrlResponse response2 = fileAccessService.getFileUrl("blog", fileId, "user-123");
+        FileUrlResponse response2 = fileAccessService.getFileUrl(APP_ID, fileId, OWNER_USER_ID);
         
         // 3. 清除缓存
         redisTemplate.delete(FileRedisKeys.fileUrl(fileId));
         
         // 4. 第三次查询（缓存未命中，重新查询数据库）
-        FileUrlResponse response3 = fileAccessService.getFileUrl("blog", fileId, "user-123");
+        FileUrlResponse response3 = fileAccessService.getFileUrl(APP_ID, fileId, OWNER_USER_ID);
         
         // 5. 验证三次查询的URL完全一致
         assertEquals(response1.getUrl(), response2.getUrl(), "第一次和第二次查询的URL应该一致");
@@ -315,7 +394,7 @@ class FileCacheIntegrationTest {
         for (int i = 0; i < threadCount; i++) {
             final int index = i;
             threads[i] = new Thread(() -> {
-                responses[index] = fileAccessService.getFileUrl("blog", fileId, "user-123");
+                responses[index] = fileAccessService.getFileUrl(APP_ID, fileId, OWNER_USER_ID);
             });
         }
         
@@ -383,7 +462,7 @@ class FileCacheIntegrationTest {
         String expectedKey = "file:" + fileId + ":url";
         
         // 查询文件，写入缓存
-        fileAccessService.getFileUrl("blog", fileId, "user-123");
+        fileAccessService.getFileUrl(APP_ID, fileId, OWNER_USER_ID);
         
         // 验证缓存 Key 格式
         String cachedUrl = redisTemplate.opsForValue().get(expectedKey);
@@ -402,11 +481,11 @@ class FileCacheIntegrationTest {
         // 创建第二个测试文件
         FileRecord testFile2 = FileRecord.builder()
                 .id(fileId2)
-                .appId("blog")
-                .userId("user-123")
+                .appId(APP_ID)
+                .userId(OWNER_USER_ID)
                 .storageObjectId("storage-003")
                 .originalFilename("test-public-2.jpg")
-                .storagePath("2026/02/11/user-123/test-public-2.jpg")
+                .storagePath("2026/02/11/12345/test-public-2.jpg")
                 .fileSize(1024L)
                 .contentType("image/jpeg")
                 .fileHash("ghi789")
@@ -416,12 +495,26 @@ class FileCacheIntegrationTest {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
+        StorageObject testStorageObject2 = StorageObject.builder()
+                .id("storage-003")
+                .appId(APP_ID)
+                .fileHash("ghi789")
+                .hashAlgorithm("MD5")
+                .storagePath("2026/02/11/12345/test-public-2.jpg")
+                .bucketName("local")
+                .fileSize(1024L)
+                .contentType("image/jpeg")
+                .referenceCount(1)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        storageObjectRepository.save(testStorageObject2);
         fileRecordRepository.save(testFile2);
         
         try {
             // 查询两个文件
-            FileUrlResponse response1 = fileAccessService.getFileUrl("blog", fileId1, "user-123");
-            FileUrlResponse response2 = fileAccessService.getFileUrl("blog", fileId2, "user-123");
+            FileUrlResponse response1 = fileAccessService.getFileUrl(APP_ID, fileId1, OWNER_USER_ID);
+            FileUrlResponse response2 = fileAccessService.getFileUrl(APP_ID, fileId2, OWNER_USER_ID);
             
             // 验证两个文件都被缓存
             String cachedUrl1 = redisTemplate.opsForValue().get(FileRedisKeys.fileUrl(fileId1));
@@ -437,6 +530,7 @@ class FileCacheIntegrationTest {
         } finally {
             // 清理测试数据
             fileRecordRepository.deleteById(fileId2);
+            storageObjectRepository.deleteById("storage-003");
         }
     }
 }

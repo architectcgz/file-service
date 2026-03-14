@@ -1,5 +1,6 @@
 package com.architectcgz.file.infrastructure.storage;
 
+import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.infrastructure.config.S3Properties;
 import org.junit.jupiter.api.*;
@@ -146,6 +147,7 @@ class S3StorageServiceTest {
             BusinessException exception = assertThrows(BusinessException.class, 
                     () -> storageService.upload(data, path));
             assertTrue(exception.getMessage().contains("文件上传失败"));
+            assertEquals(FileServiceErrorCodes.FILE_UPLOAD_FAILED, exception.getCode());
         }
 
         @Test
@@ -164,6 +166,7 @@ class S3StorageServiceTest {
             BusinessException exception = assertThrows(BusinessException.class, 
                     () -> storageService.upload(data, path));
             assertTrue(exception.getMessage().contains("S3 客户端错误"));
+            assertEquals(FileServiceErrorCodes.S3_CLIENT_ERROR, exception.getCode());
         }
 
         @Test

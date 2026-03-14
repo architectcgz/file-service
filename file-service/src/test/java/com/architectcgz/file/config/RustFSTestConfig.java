@@ -1,10 +1,13 @@
 package com.architectcgz.file.config;
 
 import com.architectcgz.file.infrastructure.config.S3Properties;
+import com.architectcgz.file.integration.helper.S3Verifier;
+import com.architectcgz.file.integration.helper.URLAccessVerifier;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.core5.util.Timeout;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Profile;
@@ -49,6 +52,16 @@ public class RustFSTestConfig {
                 .credentialsProvider(StaticCredentialsProvider.create(credentials))
                 .serviceConfiguration(s3Config)
                 .build();
+    }
+
+    @Bean
+    public S3Verifier s3Verifier(S3Client testS3Client, @Value("${storage.s3.bucket}") String bucket) {
+        return new S3Verifier(testS3Client, bucket);
+    }
+
+    @Bean
+    public URLAccessVerifier urlAccessVerifier() {
+        return new URLAccessVerifier();
     }
     
     /**

@@ -1,293 +1,127 @@
 package com.architectcgz.file.application.service;
 
-import com.architectcgz.file.application.dto.*;
-import com.architectcgz.file.common.context.AdminContext;
-import com.architectcgz.file.common.exception.AccessDeniedException;
-import com.architectcgz.file.common.exception.FileNotFoundException;
+import com.architectcgz.file.application.dto.BatchDeleteResult;
+import com.architectcgz.file.application.dto.FileQuery;
+import com.architectcgz.file.application.dto.StorageStatistics;
+import com.architectcgz.file.application.dto.TenantStorageStats;
+import com.architectcgz.file.application.service.filemanagement.audit.FileManagementAuditService;
+import com.architectcgz.file.application.service.filemanagement.command.FileAdminBatchDeleteCommandService;
+import com.architectcgz.file.application.service.filemanagement.command.FileAdminDeleteCommandService;
+import com.architectcgz.file.application.service.filemanagement.deletion.FileManagementDeletionService;
+import com.architectcgz.file.application.service.filemanagement.query.FileManagementRecordQueryService;
+import com.architectcgz.file.application.service.filemanagement.query.FileManagementQueryService;
+import com.architectcgz.file.application.service.filemanagement.query.FileManagementStatisticsQueryService;
+import com.architectcgz.file.application.service.filemanagement.validator.FileManagementAdminValidator;
 import com.architectcgz.file.common.result.PageResponse;
-import com.architectcgz.file.domain.model.*;
+import com.architectcgz.file.domain.model.FileRecord;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.TenantRepository;
 import com.architectcgz.file.domain.repository.TenantUsageRepository;
 import com.architectcgz.file.infrastructure.cache.FileUrlCacheManager;
 import com.architectcgz.file.infrastructure.storage.StorageService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.List;
+import java.util.Map;
 
 /**
- * 文件管理服务
- * 提供文件查询、删除和统计功能
+ * 文件管理应用层门面。
+ *
+ * 为管理端接口收口文件列表、详情、删除和统计入口，
+ * 具体用例拆分到 command/query service。
  */
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class FileManagementService {
-    
-    private final FileRecordRepository fileRecordRepository;
-    private final TenantRepository tenantRepository;
-    private final TenantUsageRepository tenantUsageRepository;
-    private final StorageService storageService;
-    private final AuditLogService auditLogService;
-    private final FileUrlCacheManager fileUrlCacheManager;
-    private final FileDeleteTransactionHelper deleteTransactionHelper;
-    
-    /**
-     * 查询文件列表
-     * 
-     * @param query 查询条件
-     * @return 分页文件列表
-     */
+
+    private final FileManagementQueryService fileManagementQueryService;
+    private final FileAdminDeleteCommandService fileAdminDeleteCommandService;
+    private final FileAdminBatchDeleteCommandService fileAdminBatchDeleteCommandService;
+
+    @Autowired
+    public FileManagementService(FileManagementQueryService fileManagementQueryService,
+                                 FileAdminDeleteCommandService fileAdminDeleteCommandService,
+                                 FileAdminBatchDeleteCommandService fileAdminBatchDeleteCommandService) {
+        this.fileManagementQueryService = fileManagementQueryService;
+        this.fileAdminDeleteCommandService = fileAdminDeleteCommandService;
+        this.fileAdminBatchDeleteCommandService = fileAdminBatchDeleteCommandService;
+    }
+
+    FileManagementService(FileRecordRepository fileRecordRepository,
+                          TenantRepository tenantRepository,
+                          TenantUsageRepository tenantUsageRepository,
+                          StorageService storageService,
+                          AuditLogService auditLogService,
+                          FileUrlCacheManager fileUrlCacheManager,
+                          FileDeleteTransactionHelper deleteTransactionHelper) {
+        this(
+                buildLegacyQueryService(fileRecordRepository, tenantRepository, tenantUsageRepository),
+                buildLegacyDeleteCommandService(fileRecordRepository, storageService, auditLogService,
+                        fileUrlCacheManager, deleteTransactionHelper),
+                buildLegacyBatchDeleteCommandService(fileRecordRepository, storageService, auditLogService,
+                        fileUrlCacheManager, deleteTransactionHelper)
+        );
+    }
+
     public PageResponse<FileRecord> listFiles(FileQuery query) {
-        log.debug("Listing files with query: {}", query);
-        
-        List<FileRecord> files = fileRecordRepository.findByQuery(query);
-        long total = fileRecordRepository.countByQuery(query);
-        
-        return PageResponse.of(files, query.getPage(), query.getSize(), total);
+        return fileManagementQueryService.listFiles(query);
     }
-    
-    /**
-     * 获取文件详情
-     * 
-     * @param fileId 文件ID
-     * @return 文件记录
-     */
+
     public FileRecord getFileDetail(String fileId) {
-        log.debug("Getting file detail for fileId: {}", fileId);
-        
-        return fileRecordRepository.findById(fileId)
-                .orElseThrow(() -> FileNotFoundException.notFound(fileId));
+        return fileManagementQueryService.getFileDetail(fileId);
     }
-    
-    /**
-     * 删除单个文件（管理员操作）
-     * 操作顺序：事务外判断是否需要删 S3 -> 先删 S3 -> 短事务更新数据库
-     *
-     * 为什么先删 S3 再更新数据库：
-     * - 若先删库再删 S3，S3 删除失败时 StorageObject 记录已丢失，孤立文件无法被定时任务追踪；
-     * - 先删 S3 再删库，S3 删除失败时整个操作中止，数据库保持完整，可重试或由定时任务兜底。
-     *
-     * @param fileId      文件ID
-     * @param adminUserId 管理员用户ID
-     */
+
     public void deleteFile(String fileId, String adminUserId) {
-        adminUserId = requireAdminUserId(adminUserId);
-        log.info("管理员删除文件: fileId={}, adminUserId={}", fileId, adminUserId);
-
-        // 查询文件记录
-        FileRecord fileRecord = fileRecordRepository.findById(fileId)
-                .orElseThrow(() -> FileNotFoundException.notFound(fileId));
-
-
-        // 1. 事务外预判：查询 StorageObject，判断引用计数是否为最后一个（递减后归零需删 S3）
-        String storageObjectId = fileRecord.getStorageObjectId();
-        Optional<StorageObject> storageObjectToDelete = deleteTransactionHelper
-                .findStorageObjectIfLastReference(storageObjectId);
-        boolean needDeleteS3 = storageObjectToDelete.isPresent();
-
-        // 2. 如果引用计数将归零，先执行 S3 删除；S3 删除失败则整个操作中止，数据库保持不变
-        if (needDeleteS3) {
-            StorageObject storageObject = storageObjectToDelete.get();
-            log.info("引用计数将归零，先删除 S3 对象: storageObjectId={}, bucket={}, path={}",
-                    storageObjectId, storageObject.getBucketName(), storageObject.getStoragePath());
-            storageService.delete(storageObject.getBucketName(), storageObject.getStoragePath());
-            log.info("S3 对象删除成功: path={}", storageObject.getStoragePath());
-        }
-
-        // 3. S3 删除成功后，短事务内原子更新数据库（硬删 FileRecord、递减引用计数、删 StorageObject 记录）
-        deleteTransactionHelper.commitAdminDelete(fileId, fileRecord);
-
-        // 4. 清除缓存（缓存操作不影响核心流程）
-        fileUrlCacheManager.evict(fileId);
-
-        // 5. 记录审计日志
-        recordDeleteFileAudit(fileId, fileRecord, adminUserId);
-
-        log.info("文件删除完成: fileId={}, s3Deleted={}", fileId, needDeleteS3);
+        fileAdminDeleteCommandService.deleteFile(fileId, adminUserId);
     }
-    
-    /**
-     * 批量删除文件
-     * 
-     * @param fileIds 文件ID列表
-     * @param adminUserId 管理员用户ID
-     * @return 批量删除结果
-     */
+
     public BatchDeleteResult batchDeleteFiles(List<String> fileIds, String adminUserId) {
-        adminUserId = requireAdminUserId(adminUserId);
-        log.info("Batch deleting {} files by admin: {}", fileIds.size(), adminUserId);
-        
-        BatchDeleteResult result = BatchDeleteResult.builder()
-                .totalRequested(fileIds.size())
-                .successCount(0)
-                .failureCount(0)
-                .failures(new ArrayList<>())
-                .build();
-        
-        for (String fileId : fileIds) {
-            try {
-                deleteFile(fileId, adminUserId);
-                result.setSuccessCount(result.getSuccessCount() + 1);
-            } catch (Exception e) {
-                log.error("Failed to delete file in batch: {}", fileId, e);
-                result.setFailureCount(result.getFailureCount() + 1);
-                result.getFailures().add(
-                        BatchDeleteResult.DeleteFailure.builder()
-                                .fileId(fileId)
-                                .reason(e.getMessage())
-                                .build()
-                );
-            }
-        }
-        
-        // 记录批量删除审计日志
-        recordBatchDeleteAudit(fileIds, result, adminUserId);
-        
-        log.info("Batch delete completed: {} succeeded, {} failed", 
-                result.getSuccessCount(), result.getFailureCount());
-        
-        return result;
+        return fileAdminBatchDeleteCommandService.batchDeleteFiles(fileIds, adminUserId);
     }
-    
-    /**
-     * 获取存储统计
-     * 聚合计算下推到 SQL 层，避免全量加载文件记录到内存导致 OOM
-     *
-     * @return 存储统计信息
-     */
+
     public StorageStatistics getStorageStatistics() {
-        log.debug("Getting storage statistics via SQL aggregation");
-
-        // 1. SQL 聚合：总文件数、总存储空间、公开/私有文件数（null 表示不过滤租户）
-        StorageStatisticsAggregation aggregation = fileRecordRepository.getStorageStatisticsAggregation(null);
-
-        // 2. SQL 聚合：按 content_type 分组计数（null 表示不过滤租户）
-        List<ContentTypeCount> typeCounts = fileRecordRepository.getFileCountByContentType(null);
-        Map<String, Long> filesByType = typeCounts.stream()
-                .collect(Collectors.toMap(
-                        ContentTypeCount::getContentType,
-                        ContentTypeCount::getFileCount
-                ));
-
-        // 3. SQL 聚合：按租户分组统计存储空间
-        List<TenantStorageAggregation> tenantAggregations = fileRecordRepository.getStorageByTenant();
-        Map<String, Long> storageByTenant = tenantAggregations.stream()
-                .collect(Collectors.toMap(
-                        TenantStorageAggregation::getAppId,
-                        TenantStorageAggregation::getStorageBytes
-                ));
-
-        return StorageStatistics.builder()
-                .totalFiles(aggregation.getTotalFiles())
-                .totalStorageBytes(aggregation.getTotalStorageBytes())
-                .publicFiles(aggregation.getPublicFiles())
-                .privateFiles(aggregation.getPrivateFiles())
-                .filesByType(filesByType)
-                .storageByTenant(storageByTenant)
-                .statisticsTime(LocalDateTime.now())
-                .build();
+        return fileManagementQueryService.getStorageStatistics();
     }
-    
-    /**
-     * 按租户获取存储统计
-     * 
-     * @return 租户存储统计映射（tenantId -> TenantStorageStats）
-     */
+
     public Map<String, TenantStorageStats> getStorageStatisticsByTenant() {
-        log.debug("Getting storage statistics by tenant");
-        
-        Map<String, TenantStorageStats> statsMap = new HashMap<>();
-        
-        // 查询所有租户
-        List<Tenant> tenants = tenantRepository.findAll();
-        
-        for (Tenant tenant : tenants) {
-            // 查询租户使用统计
-            Optional<TenantUsage> usageOpt = tenantUsageRepository.findById(tenant.getTenantId());
-            
-            if (usageOpt.isPresent()) {
-                TenantUsage usage = usageOpt.get();
-                
-                // 计算使用百分比
-                double storageUsagePercent = tenant.getMaxStorageBytes() > 0
-                        ? (double) usage.getUsedStorageBytes() / tenant.getMaxStorageBytes() * 100
-                        : 0;
-                double fileCountUsagePercent = tenant.getMaxFileCount() > 0
-                        ? (double) usage.getUsedFileCount() / tenant.getMaxFileCount() * 100
-                        : 0;
-                
-                TenantStorageStats stats = TenantStorageStats.builder()
-                        .tenantId(tenant.getTenantId())
-                        .tenantName(tenant.getTenantName())
-                        .fileCount(usage.getUsedFileCount())
-                        .storageBytes(usage.getUsedStorageBytes())
-                        .maxStorageBytes(tenant.getMaxStorageBytes())
-                        .maxFileCount(tenant.getMaxFileCount())
-                        .storageUsagePercent(storageUsagePercent)
-                        .fileCountUsagePercent(fileCountUsagePercent)
-                        .build();
-                
-                statsMap.put(tenant.getTenantId(), stats);
-            }
-        }
-        
-        return statsMap;
-    }
-    
-    /**
-     * 记录删除文件的审计日志
-     */
-    private void recordDeleteFileAudit(String fileId, FileRecord fileRecord, String adminUserId) {
-        Map<String, Object> details = new HashMap<>();
-        details.put("fileName", fileRecord.getOriginalFilename());
-        details.put("fileSize", fileRecord.getFileSize());
-        details.put("contentType", fileRecord.getContentType());
-        details.put("storagePath", fileRecord.getStoragePath());
-        
-        AuditLog auditLog = AuditLog.builder()
-                .adminUserId(adminUserId)
-                .action(AuditAction.DELETE_FILE)
-                .targetType(TargetType.FILE)
-                .targetId(fileId)
-                .tenantId(fileRecord.getAppId())
-                .details(details)
-                .ipAddress(AdminContext.getIpAddress())
-                .build();
-        
-        auditLogService.log(auditLog);
-    }
-    
-    /**
-     * 记录批量删除文件的审计日志
-     */
-    private void recordBatchDeleteAudit(List<String> fileIds, BatchDeleteResult result, String adminUserId) {
-        Map<String, Object> details = new HashMap<>();
-        details.put("totalRequested", result.getTotalRequested());
-        details.put("successCount", result.getSuccessCount());
-        details.put("failureCount", result.getFailureCount());
-        details.put("fileIds", fileIds);
-        
-        AuditLog auditLog = AuditLog.builder()
-                .adminUserId(adminUserId)
-                .action(AuditAction.BATCH_DELETE_FILES)
-                .targetType(TargetType.FILE)
-                .targetId(String.format("batch_%d_files", fileIds.size()))
-                .details(details)
-                .ipAddress(AdminContext.getIpAddress())
-                .build();
-        
-        auditLogService.log(auditLog);
+        return fileManagementQueryService.getStorageStatisticsByTenant();
     }
 
-    private String requireAdminUserId(String adminUserId) {
-        if (adminUserId == null || adminUserId.isBlank()) {
-            throw new AccessDeniedException("未获取到管理员身份");
-        }
-        return adminUserId;
+    private static FileManagementQueryService buildLegacyQueryService(FileRecordRepository fileRecordRepository,
+                                                                      TenantRepository tenantRepository,
+                                                                      TenantUsageRepository tenantUsageRepository) {
+        return new FileManagementQueryService(
+                new FileManagementRecordQueryService(fileRecordRepository),
+                new FileManagementStatisticsQueryService(fileRecordRepository, tenantRepository, tenantUsageRepository)
+        );
+    }
+
+    private static FileAdminDeleteCommandService buildLegacyDeleteCommandService(FileRecordRepository fileRecordRepository,
+                                                                                 StorageService storageService,
+                                                                                 AuditLogService auditLogService,
+                                                                                 FileUrlCacheManager fileUrlCacheManager,
+                                                                                 FileDeleteTransactionHelper deleteTransactionHelper) {
+        return new FileAdminDeleteCommandService(
+                new FileManagementAdminValidator(),
+                new FileManagementRecordQueryService(fileRecordRepository),
+                new FileManagementDeletionService(storageService, fileUrlCacheManager, deleteTransactionHelper),
+                new FileManagementAuditService(auditLogService)
+        );
+    }
+
+    private static FileAdminBatchDeleteCommandService buildLegacyBatchDeleteCommandService(FileRecordRepository fileRecordRepository,
+                                                                                           StorageService storageService,
+                                                                                           AuditLogService auditLogService,
+                                                                                           FileUrlCacheManager fileUrlCacheManager,
+                                                                                           FileDeleteTransactionHelper deleteTransactionHelper) {
+        FileManagementAdminValidator adminValidator = new FileManagementAdminValidator();
+        FileManagementAuditService auditService = new FileManagementAuditService(auditLogService);
+        FileAdminDeleteCommandService deleteCommandService = new FileAdminDeleteCommandService(
+                adminValidator,
+                new FileManagementRecordQueryService(fileRecordRepository),
+                new FileManagementDeletionService(storageService, fileUrlCacheManager, deleteTransactionHelper),
+                auditService
+        );
+        return new FileAdminBatchDeleteCommandService(adminValidator, auditService, deleteCommandService);
     }
 }
