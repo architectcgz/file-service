@@ -2,13 +2,11 @@ package com.architectcgz.file.infrastructure.config;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
 
 /**
  * 多实例部署安全校验开关。
  */
 @Data
-@Component
 @ConfigurationProperties(prefix = "file-service.deployment")
 public class MultiInstanceDeploymentProperties {
 
