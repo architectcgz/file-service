@@ -10,6 +10,8 @@ file:
       signing-secret: ${FILE_GATEWAY_SIGNING_SECRET:change-me-before-production}
     upload:
       session-ttl: ${FILE_CORE_UPLOAD_SESSION_TTL:24h}
+      completion-wait-timeout: ${FILE_CORE_UPLOAD_COMPLETION_WAIT_TIMEOUT:5s}
+      completion-poll-interval: ${FILE_CORE_UPLOAD_COMPLETION_POLL_INTERVAL:100ms}
     storage:
       s3:
         endpoint: ${S3_ENDPOINT:http://localhost:9000}

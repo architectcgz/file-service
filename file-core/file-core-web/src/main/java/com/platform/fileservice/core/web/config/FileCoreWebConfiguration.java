@@ -117,14 +117,17 @@ public class FileCoreWebConfiguration {
                                       FileAssetRepository fileAssetRepository,
                                       ObjectStoragePort objectStoragePort,
                                       ClockPort clockPort,
-                                      TransactionOperations transactionOperations) {
+                                      TransactionOperations transactionOperations,
+                                      FileCoreUploadProperties uploadProperties) {
         return new UploadAppService(
                 uploadSessionRepository,
                 blobObjectRepository,
                 fileAssetRepository,
                 objectStoragePort,
                 clockPort,
-                transactionOperations
+                transactionOperations,
+                uploadProperties.getCompletionWaitTimeout(),
+                uploadProperties.getCompletionPollInterval()
         );
     }
 

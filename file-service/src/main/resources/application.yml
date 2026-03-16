@@ -185,6 +185,8 @@ file:
     upload:
       session-ttl: ${FILE_CORE_UPLOAD_SESSION_TTL:24h}
       part-url-ttl: ${FILE_CORE_UPLOAD_PART_URL_TTL:15m}
+      completion-wait-timeout: ${FILE_CORE_UPLOAD_COMPLETION_WAIT_TIMEOUT:5s}
+      completion-poll-interval: ${FILE_CORE_UPLOAD_COMPLETION_POLL_INTERVAL:100ms}
       chunk-size-bytes: ${FILE_CORE_UPLOAD_CHUNK_SIZE_BYTES:${MULTIPART_CHUNK_SIZE:5242880}}
       max-parts: ${FILE_CORE_UPLOAD_MAX_PARTS:${MULTIPART_MAX_PARTS:10000}}
       auto-presigned-single-max-size-bytes: ${UPLOAD_AUTO_SINGLE_MAX_SIZE_BYTES:${UPLOAD_PROXY_MULTIPART_THRESHOLD_BYTES:10485760}}

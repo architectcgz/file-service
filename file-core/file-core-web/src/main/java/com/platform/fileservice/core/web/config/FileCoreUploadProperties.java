@@ -12,6 +12,8 @@ public class FileCoreUploadProperties {
 
     private Duration sessionTtl = Duration.ofHours(24);
     private Duration partUrlTtl = Duration.ofMinutes(15);
+    private Duration completionWaitTimeout = Duration.ofSeconds(5);
+    private Duration completionPollInterval = Duration.ofMillis(100);
     private int chunkSizeBytes = 5 * 1024 * 1024;
     private int maxParts = 10_000;
     private long autoPresignedSingleMaxSizeBytes = 10L * 1024 * 1024;
@@ -30,6 +32,22 @@ public class FileCoreUploadProperties {
 
     public void setPartUrlTtl(Duration partUrlTtl) {
         this.partUrlTtl = partUrlTtl;
+    }
+
+    public Duration getCompletionWaitTimeout() {
+        return completionWaitTimeout;
+    }
+
+    public void setCompletionWaitTimeout(Duration completionWaitTimeout) {
+        this.completionWaitTimeout = completionWaitTimeout;
+    }
+
+    public Duration getCompletionPollInterval() {
+        return completionPollInterval;
+    }
+
+    public void setCompletionPollInterval(Duration completionPollInterval) {
+        this.completionPollInterval = completionPollInterval;
     }
 
     public int getChunkSizeBytes() {

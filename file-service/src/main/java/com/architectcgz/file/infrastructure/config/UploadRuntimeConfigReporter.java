@@ -38,12 +38,15 @@ public class UploadRuntimeConfigReporter {
         log.info(
                 "Effective upload runtime config: multipartMaxFileSize={}B, multipartMaxRequestSize={}B, " +
                         "declaredMaxFileSize={}B, proxyMultipartThreshold={}B, autoSingleMaxSize={}B, " +
+                        "completionWaitTimeout={}, completionPollInterval={}, " +
                         "dedupNotificationMaxWait={}, dedupRenewSchedulerThreads={}",
                 multipartMaxFileSize.toBytes(),
                 multipartMaxRequestSize.toBytes(),
                 declaredMaxFileSize,
                 multipartThreshold,
                 autoSingleMaxSize,
+                fileCoreUploadProperties.getCompletionWaitTimeout(),
+                fileCoreUploadProperties.getCompletionPollInterval(),
                 uploadDedupProperties.getNotificationMaxWait(),
                 uploadDedupProperties.getRenewSchedulerThreads()
         );

@@ -217,6 +217,8 @@ file:
     upload:
       session-ttl: 24h
       part-url-ttl: 15m
+      completion-wait-timeout: 5s
+      completion-poll-interval: 100ms
       chunk-size-bytes: 5242880
       max-parts: 10000
 ```

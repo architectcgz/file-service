@@ -53,6 +53,8 @@ v2 上传会话默认配置位于 `file.core.upload`：
 
 - `session-ttl`
 - `part-url-ttl`
+- `completion-wait-timeout`
+- `completion-poll-interval`
 - `chunk-size-bytes`
 - `max-parts`
 - `auto-presigned-single-max-size-bytes`

@@ -51,8 +51,8 @@ public final class UploadAppService {
     private static final int MAX_FILENAME_LENGTH = 120;
     private static final String DEFAULT_HASH_ALGORITHM = "MD5";
     private static final String LEGACY_STORAGE_PROVIDER = "legacy-s3";
-    private static final Duration COMPLETION_WAIT_TIMEOUT = Duration.ofSeconds(5);
-    private static final Duration COMPLETION_POLL_INTERVAL = Duration.ofMillis(100);
+    private static final Duration DEFAULT_COMPLETION_WAIT_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration DEFAULT_COMPLETION_POLL_INTERVAL = Duration.ofMillis(100);
 
     private final UploadSessionRepository uploadSessionRepository;
     private final BlobObjectRepository blobObjectRepository;
@@ -60,6 +60,8 @@ public final class UploadAppService {
     private final ObjectStoragePort objectStoragePort;
     private final ClockPort clockPort;
     private final TransactionOperations transactionOperations;
+    private final Duration completionWaitTimeout;
+    private final Duration completionPollInterval;
 
     public UploadAppService(UploadSessionRepository uploadSessionRepository,
                             BlobObjectRepository blobObjectRepository,
@@ -67,12 +69,34 @@ public final class UploadAppService {
                             ObjectStoragePort objectStoragePort,
                             ClockPort clockPort,
                             TransactionOperations transactionOperations) {
+        this(
+                uploadSessionRepository,
+                blobObjectRepository,
+                fileAssetRepository,
+                objectStoragePort,
+                clockPort,
+                transactionOperations,
+                DEFAULT_COMPLETION_WAIT_TIMEOUT,
+                DEFAULT_COMPLETION_POLL_INTERVAL
+        );
+    }
+
+    public UploadAppService(UploadSessionRepository uploadSessionRepository,
+                            BlobObjectRepository blobObjectRepository,
+                            FileAssetRepository fileAssetRepository,
+                            ObjectStoragePort objectStoragePort,
+                            ClockPort clockPort,
+                            TransactionOperations transactionOperations,
+                            Duration completionWaitTimeout,
+                            Duration completionPollInterval) {
         this.uploadSessionRepository = uploadSessionRepository;
         this.blobObjectRepository = blobObjectRepository;
         this.fileAssetRepository = fileAssetRepository;
         this.objectStoragePort = objectStoragePort;
         this.clockPort = clockPort;
         this.transactionOperations = transactionOperations;
+        this.completionWaitTimeout = requirePositiveDuration(completionWaitTimeout, "completionWaitTimeout");
+        this.completionPollInterval = requirePositiveDuration(completionPollInterval, "completionPollInterval");
     }
 
     public UploadSessionCreationResult createSession(String tenantId,
@@ -800,7 +824,7 @@ public final class UploadAppService {
     }
 
     private UploadCompletion waitForCompletion(String uploadSessionId) {
-        long deadlineNanos = System.nanoTime() + COMPLETION_WAIT_TIMEOUT.toNanos();
+        long deadlineNanos = System.nanoTime() + completionWaitTimeout.toNanos();
         while (System.nanoTime() <= deadlineNanos) {
             UploadSession latestSession = uploadSessionRepository.findById(uploadSessionId)
                     .orElseThrow(() -> new UploadSessionMutationException(
@@ -824,12 +848,14 @@ public final class UploadAppService {
             }
             sleepCompletionPollInterval(uploadSessionId);
         }
-        throw new UploadSessionMutationException("timed out waiting for upload session completion: " + uploadSessionId);
+        throw new UploadSessionInvalidRequestException(
+                "upload session completion still in progress, retry later: " + uploadSessionId
+        );
     }
 
     private void sleepCompletionPollInterval(String uploadSessionId) {
         try {
-            Thread.sleep(COMPLETION_POLL_INTERVAL.toMillis());
+            Thread.sleep(completionPollInterval.toMillis());
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new UploadSessionMutationException(
@@ -860,5 +886,13 @@ public final class UploadAppService {
                 uploadSession.updatedAt(),
                 uploadSession.expiresAt()
         );
+    }
+
+    private Duration requirePositiveDuration(Duration duration, String fieldName) {
+        Objects.requireNonNull(duration, fieldName + " must not be null");
+        if (duration.isZero() || duration.isNegative()) {
+            throw new IllegalArgumentException(fieldName + " must be greater than zero");
+        }
+        return duration;
     }
 }

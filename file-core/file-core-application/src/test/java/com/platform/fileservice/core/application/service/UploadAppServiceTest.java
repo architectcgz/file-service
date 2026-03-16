@@ -658,6 +658,40 @@ class UploadAppServiceTest {
     }
 
     @Test
+    void shouldAskCallerToRetryWhenAnotherInstanceKeepsCompletingMultipartSession() {
+        UploadAppService shortWaitService = new UploadAppService(
+                uploadSessionRepository,
+                blobObjectRepository,
+                fileAssetRepository,
+                objectStoragePort,
+                () -> FIXED_NOW,
+                new ImmediateTransactionOperations(),
+                Duration.ofMillis(1),
+                Duration.ofMillis(1)
+        );
+        when(uploadSessionRepository.findById("session-001"))
+                .thenReturn(Optional.of(multipartSession(
+                        "session-001",
+                        UploadSessionStatus.UPLOADING,
+                        FIXED_NOW.plusSeconds(60)
+                )))
+                .thenReturn(Optional.of(multipartSession(
+                        "session-001",
+                        UploadSessionStatus.COMPLETING,
+                        FIXED_NOW.plusSeconds(60)
+                )));
+        when(uploadSessionRepository.markCompleting("session-001")).thenReturn(false);
+
+        UploadSessionInvalidRequestException exception = assertThrows(
+                UploadSessionInvalidRequestException.class,
+                () -> shortWaitService.completeSession("blog", "session-001", "user-001", "video/mp4", List.of())
+        );
+
+        assertTrue(exception.getMessage().contains("retry later"));
+        verify(objectStoragePort, never()).completeMultipartUpload(anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
     void shouldReturnDerivedExpiredSessionWhenSessionTimedOut() {
         when(uploadSessionRepository.findById("session-001"))
                 .thenReturn(Optional.of(multipartSession(
