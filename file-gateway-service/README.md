@@ -5,9 +5,10 @@
 ## 能力
 
 - 暴露统一访问入口：`GET /api/v1/files/{fileId}/content`
-- 支持两种身份传递方式
+- 支持三种身份传递方式
+- 票据访问：`ticket` 查询参数，作为 V2 目标方案优先使用
 - 受信任服务调用：`X-App-Id`、`X-User-Id`
-- 前端原生访问：`appId`、`userId`、`expiresAt`、`signature` 查询参数
+- 兼容旧方案：`appId`、`userId`、`expiresAt`、`signature` 查询参数
 - 原样透传 `file-service` 返回的 `Location` 与 `Cache-Control`
 
 ## 配置
@@ -17,7 +18,7 @@ gateway:
   upstream:
     base-url: http://localhost:8089
   auth:
-    allow-header-identity: true
+    allow-header-identity: false
     signing-secret: change-me-before-production
 ```
 
@@ -30,6 +31,25 @@ gateway:
 - `FILE_GATEWAY_READ_TIMEOUT`
 
 ## 签名参数
+
+优先建议使用 `ticket` 访问。旧的签名参数方式仍保留用于迁移期兼容。
+
+### Ticket 参数
+
+```text
+/api/v1/files/file-001/content?ticket=xxxxx
+```
+
+`ticket` 是一个自包含的 HMAC 票据，内部包含：
+
+- `fileId`
+- `appId`
+- `userId`
+- `expiresAt`
+
+网关会先校验 `ticket`，再向上游解析真实跳转地址。
+
+### Legacy 签名参数
 
 签名载荷格式：
 

@@ -118,7 +118,7 @@
 **Acceptance Criteria**:
 - [x] 创建 `file_records` 表，包含所有必要字段和索引
 - [x] 创建 `upload_tasks` 表，包含分片上传任务信息
-- [x] 创建 `upload_parts` 表，包含分片信息和外键约束
+- [x] 历史上曾创建 `upload_parts`；现已从当前代码与测试架构中移除
 - [x] 迁移脚本可以成功执行
 
 ---
@@ -176,6 +176,9 @@
 - [x] 实现 UploadTaskRepository 接口的所有方法
 - [x] MyBatis Mapper 正确映射数据库表
 - [x] PO 类与数据库表结构对应
+
+> 注：当前 `file-service` 生产架构已迁移到 `file-core upload session`。
+> 上述 `UploadTaskRepository / UploadPartMapper / UploadPartPO` 等 legacy upload 资产已从当前仓库代码中删除，仅作为历史任务记录保留在本文档。
 
 ---
 
@@ -692,7 +695,7 @@ cd tests/api/upload
    - 基础集成测试通过
 
 2. **数据库表和领域模型** (Tasks 7-10, 19-20)
-   - 数据库迁移脚本（storage_objects, file_records, upload_tasks, upload_parts）
+   - 数据库迁移脚本（storage_objects, file_records, upload_tasks）
    - 所有领域模型（StorageObject, FileRecord, UploadTask, UploadPart, AccessLevel）
    - 仓储层实现（MyBatis Mapper）
 

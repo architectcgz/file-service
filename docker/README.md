@@ -48,6 +48,13 @@ cd /home/azhi/workspace/projects/file-service/docker
 docker compose --profile minio up -d
 ```
 
+也可以使用独立部署入口目录启动：
+
+```bash
+cd /home/azhi/workspace/projects/docker-containers/file-service
+./start.sh
+```
+
 生产编排使用：
 
 ```bash

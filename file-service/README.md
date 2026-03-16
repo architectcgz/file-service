@@ -18,14 +18,44 @@ File Service 是从 `blog-upload` 重构而来的通用文件服务，提供：
 - `/api/v1/multipart/*`: 服务端中转的分片上传，前端把分片发给 `file-service`
 - `/api/v1/direct-upload/*`: 分片预签名直传，前端拿到分片 URL 后直接上传到 MinIO/S3
 - `/api/v1/upload/presign` + `/api/v1/upload/confirm`: 单文件预签名直传
+- `/api/v1/upload-sessions*`: `file-core` 驱动的统一上传会话 facade，当前已支持创建会话、查询会话、查询进度、签发分片上传 URL、完成上传、主动中止上传
 
-如果是大文件且希望减轻服务端带宽压力，优先使用 `/api/v1/direct-upload/*`。如果更看重服务端统一控制和兼容性，可以使用 `/api/v1/multipart/*`。
+默认建议是前台上传优先走直传链路，而不是代理上传。`/api/v1/upload/image`、`/api/v1/upload/file` 与 `/api/v1/multipart/*` 更适合低并发、后台或必须同步执行服务端处理的场景；如果上传流量本身并发高，即使文件小，也应优先使用 `/api/v1/direct-upload/*` 或 `/api/v1/upload-sessions*`。
+
+`/api/v1/multipart/*` 当前已支持：
+
+- 通过 `MultipartUploadCoreBridgeService` 复用 `file-core` 的 `DIRECT` upload session 生命周期
+- `init` 阶段基于 `fileHash` 复用同用户未过期会话，实现断点续传
+- `progress` 和 `complete` 阶段以对象存储中的 authoritative parts 为准，避免仅依赖旧任务表状态
+- `abort` 会收敛到底层 upload session 的中止语义，后续可直接把 v2 入口替换为 v1 协议层
 
 `/api/v1/direct-upload/*` 当前已支持：
 
 - 基于 `fileHash` 的断点续传匹配
 - 通过 `/api/v1/direct-upload/{taskId}/progress` 恢复已完成分片和 `etag`
 - `complete` 阶段以对象存储中的实际分片为准，减少前端丢失本地状态后的失败率
+
+`/api/v1/upload-sessions*` 当前行为：
+
+- `AUTO` 是前台默认推荐模式；服务端会按文件大小把小文件路由到 `PRESIGNED_SINGLE`，把更大的文件路由到 `DIRECT`
+- `DIRECT` 在创建会话时即初始化对象存储 multipart upload，并返回 `chunkSizeBytes` 与 `totalParts`
+- `PRESIGNED_SINGLE` 创建单对象上传会话，不初始化 multipart 上下文；响应中会直接携带对象级 `PUT` 上传 URL、过期时间和请求头
+- 当请求携带相同 `fileHash` 且存在同用户、同租户、同模式、同访问级别、同文件大小的未过期会话时，会优先复用原 upload session 以支持断点续传
+- 当请求携带的 `fileHash` 已命中目标 bucket 中的现有对象时，会直接创建 `COMPLETED` 状态的 upload session，并返回 `fileId`
+- `GET /api/v1/upload-sessions/{id}/progress` 直接从对象存储读取 authoritative uploaded parts，返回完成分片、上传字节数和进度百分比
+- `POST /api/v1/upload-sessions/{id}/part-urls` 根据指定分片号批量签发上传 URL
+- `POST /api/v1/upload-sessions/{id}/complete` 完成 multipart upload，并直接落 `storage_objects` / `file_records`
+- `POST /api/v1/upload-sessions/{id}/abort` 对 multipart 会话执行 abort，对单对象会话执行对象删除，并把会话状态收敛到 `ABORTED`
+- `INLINE` 可以创建会话，但不会签发分片 URL；对 `part-urls` 请求会返回 `400`
+- `INLINE` 不应作为前台默认上传模式，只保留给低并发且需要同步服务端处理的场景
+
+v2 上传会话默认配置位于 `file.core.upload`：
+
+- `session-ttl`
+- `part-url-ttl`
+- `chunk-size-bytes`
+- `max-parts`
+- `auto-presigned-single-max-size-bytes`
 
 ## 核心特性
 
@@ -195,12 +225,26 @@ curl -X POST http://localhost:8089/api/v1/upload/image \
 }
 ```
 
-### 获取文件访问 URL
+### 签发文件访问票据
 
 ```bash
-curl -X GET http://localhost:8089/api/v1/files/{fileId}/url \
+curl -X POST http://localhost:8089/api/v1/files/{fileId}:issue-access-ticket \
   -H "X-App-Id: blog" \
+  -H "X-User-Id: 12345" \
   -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+页面或列表里如果要一次加载多张图片，优先使用批量票据接口：
+
+```bash
+curl -X POST http://localhost:8089/api/v1/files:batch-issue-access-ticket \
+  -H "X-App-Id: blog" \
+  -H "X-User-Id: 12345" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fileIds": ["01JGFILE-001", "01JGFILE-002"]
+  }'
 ```
 
 ### 删除文件
@@ -212,6 +256,14 @@ curl -X DELETE http://localhost:8089/api/v1/upload/{fileId} \
 ```
 
 完整 API 文档请参考 [API.md](API.md)
+
+## API 文档界面
+
+服务启动后可直接访问：
+
+- Swagger UI: `http://localhost:8089/swagger-ui.html`
+- Knife4j UI: `http://localhost:8089/doc.html`
+- OpenAPI JSON: `http://localhost:8089/v3/api-docs`
 
 ## X-App-Id 使用规范
 

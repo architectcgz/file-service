@@ -68,6 +68,159 @@ Authorization: Bearer {your-jwt-token}
 
 ---
 
+## 0. V2 Upload Session API（开发中）
+
+`/api/v1/upload-sessions*` 是当前 `file-core` 驱动的统一上传会话 facade，用于把 legacy 直传初始化 / progress / complete / 分片 URL 签发 / 中止语义迁入新架构。
+
+### 0.1 创建上传会话
+
+**端点**: `POST /api/v1/upload-sessions`
+
+**请求体**:
+
+```json
+{
+  "uploadMode": "AUTO",
+  "accessLevel": "PRIVATE",
+  "originalFilename": "demo.mp4",
+  "contentType": "video/mp4",
+  "expectedSize": 11534336,
+  "fileHash": "hash-001"
+}
+```
+
+**当前行为**:
+
+- `AUTO` 是当前前台默认推荐模式；服务端会按文件大小自动路由到 `PRESIGNED_SINGLE` 或 `DIRECT`
+- `DIRECT` 会立即初始化 multipart upload，适合大文件和需要断点续传的场景
+- `PRESIGNED_SINGLE` 创建单对象上传会话，响应中直接返回 `singleUploadUrl`、`singleUploadMethod`、`singleUploadExpiresInSeconds`、`singleUploadHeaders`
+- 如果 `fileHash` 命中同租户、同用户、同模式、同访问级别、同文件大小的未过期会话，则直接返回已有会话用于续传
+- 如果 `fileHash` 已命中目标 bucket 中的现有对象，则直接创建 `COMPLETED` 状态会话，并在响应中返回 `fileId`
+- `DIRECT` 响应中会返回 `chunkSizeBytes`、`totalParts`、`status`
+- `PRESIGNED_SINGLE` 响应中的 `chunkSizeBytes=0`、`totalParts=1`
+- `INLINE` 会话可创建，但不会生成 multipart 上下文；它只适合低并发且需要同步服务端处理的场景，不建议作为前台默认上传模式
+
+**响应体示例（PRESIGNED_SINGLE）**:
+
+```json
+{
+  "uploadSession": {
+    "uploadSessionId": "session-ps-001",
+    "uploadMode": "PRESIGNED_SINGLE",
+    "accessLevel": "PUBLIC",
+    "originalFilename": "avatar.png",
+    "contentType": "image/png",
+    "expectedSize": 512,
+    "fileHash": "hash-ps-001",
+    "chunkSizeBytes": 0,
+    "totalParts": 1,
+    "fileId": null,
+    "status": "INITIATED"
+  },
+  "resumed": false,
+  "instantUpload": false,
+  "completedPartNumbers": [],
+  "completedPartInfos": [],
+  "singleUploadUrl": "https://storage.example.com/...",
+  "singleUploadMethod": "PUT",
+  "singleUploadExpiresInSeconds": 900,
+  "singleUploadHeaders": {
+    "Content-Type": "image/png"
+  }
+}
+```
+
+### 0.2 查询上传会话
+
+**端点**: `GET /api/v1/upload-sessions/{uploadSessionId}`
+
+用于恢复当前会话状态、分片规划和过期时间。
+
+### 0.3 批量签发分片上传 URL
+
+**端点**: `POST /api/v1/upload-sessions/{uploadSessionId}/part-urls`
+
+**请求体**:
+
+```json
+{
+  "partNumbers": [1, 2, 3]
+}
+```
+
+**响应体**:
+
+```json
+{
+  "uploadSessionId": "session-001",
+  "partUrls": [
+    {
+      "partNumber": 1,
+      "uploadUrl": "https://storage.example.com/...",
+      "expiresInSeconds": 900
+    }
+  ]
+}
+```
+
+**约束**:
+
+- `partNumbers` 不能为空、不能重复、必须落在 `1..totalParts` 范围内
+- `INLINE` 模式请求该接口返回 `400`，因为代理上传链路不签发分片直传 URL
+
+### 0.4 查询上传进度
+
+**端点**: `GET /api/v1/upload-sessions/{uploadSessionId}/progress`
+
+**当前行为**:
+
+- 直接从对象存储读取 authoritative uploaded parts，而不是信任客户端本地状态
+- 返回 `completedPartNumbers` 与包含 `etag/sizeBytes` 的 `completedPartInfos`
+
+### 0.5 完成上传会话
+
+**端点**: `POST /api/v1/upload-sessions/{uploadSessionId}/complete`
+
+**请求体**:
+
+```json
+{
+  "contentType": "video/mp4",
+  "parts": [
+    {
+      "partNumber": 1,
+      "etag": "etag-1"
+    }
+  ]
+}
+```
+
+**当前行为**:
+
+- 服务端会先从对象存储读取 authoritative parts，并与请求中的 `parts` 做交叉校验
+- 所有分片齐全后才会执行 multipart complete
+- complete 成功后会直接写入 `storage_objects` 与 `file_records`
+
+### 0.6 中止上传会话
+
+**端点**: `POST /api/v1/upload-sessions/{uploadSessionId}/abort`
+
+成功返回 `204 No Content`。如果会话已完成，则返回 `400`。`DIRECT` 会话会中止 multipart upload；`PRESIGNED_SINGLE` 会话会删除已上传对象。
+
+### 0.7 相关配置
+
+`file.core.upload` 当前支持以下配置：
+
+```yaml
+file:
+  core:
+    upload:
+      session-ttl: 24h
+      part-url-ttl: 15m
+      chunk-size-bytes: 5242880
+      max-parts: 10000
+```
+
 ## 1. 文件上传 API
 
 ### 1.1 上传图片
@@ -181,11 +334,11 @@ curl -X POST http://localhost:8089/api/v1/upload/file \
 
 ## 2. 文件访问 API
 
-### 2.1 获取文件访问 URL
+### 2.1 签发文件访问票据
 
-获取文件的访问 URL（可能是预签名 URL）。
+为文件签发短期访问票据，客户端随后应访问 `gatewayUrl`。
 
-**端点**: `GET /api/v1/files/{fileId}/url`
+**端点**: `POST /api/v1/files/{fileId}:issue-access-ticket`
 
 **路径参数**:
 
@@ -202,8 +355,9 @@ Authorization: Bearer {token}
 **请求示例**:
 
 ```bash
-curl -X GET http://localhost:8089/api/v1/files/01JGXXX-XXX-XXX/url \
+curl -X POST http://localhost:8089/api/v1/files/01JGXXX-XXX-XXX:issue-access-ticket \
   -H "X-App-Id: blog" \
+  -H "X-User-Id: 12345" \
   -H "Authorization: Bearer eyJhbGc..."
 ```
 
@@ -211,18 +365,67 @@ curl -X GET http://localhost:8089/api/v1/files/01JGXXX-XXX-XXX/url \
 
 ```json
 {
-  "code": 200,
-  "message": "success",
-  "data": {
-    "url": "https://cdn.example.com/blog/2026/01/19/12345/images/xxx.webp?X-Amz-Expires=3600",
-    "expiresAt": "2026-01-19T12:00:00Z"
-  }
+  "ticket": "encoded.ticket",
+  "gatewayUrl": "http://localhost:8090/api/v1/files/01JGXXX-XXX-XXX/content?ticket=encoded.ticket",
+  "expiresAt": "2026-01-19T12:00:00Z"
 }
 ```
 
 ---
 
-### 2.2 获取文件详情
+### 2.2 批量签发文件访问票据
+
+为多个文件一次性签发访问票据，适合页面或列表批量图片场景。每个 `fileId` 仍返回独立的 `ticket` 与 `gatewayUrl`。
+
+**端点**: `POST /api/v1/files:batch-issue-access-ticket`
+
+**请求头**:
+```http
+X-App-Id: blog
+Authorization: Bearer {token}
+```
+
+**请求示例**:
+
+```bash
+curl -X POST http://localhost:8089/api/v1/files:batch-issue-access-ticket \
+  -H "X-App-Id: blog" \
+  -H "X-User-Id: 12345" \
+  -H "Authorization: Bearer eyJhbGc..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fileIds": ["01JGFILE-001", "01JGFILE-002", "01JGFILE-003"]
+  }'
+```
+
+**响应示例**:
+
+```json
+{
+  "items": [
+    {
+      "fileId": "01JGFILE-001",
+      "ticket": "encoded.ticket.1",
+      "gatewayUrl": "http://localhost:8090/api/v1/files/01JGFILE-001/content?ticket=encoded.ticket.1",
+      "expiresAt": "2026-01-19T12:00:00Z",
+      "errorCode": null,
+      "message": null
+    },
+    {
+      "fileId": "01JGFILE-002",
+      "ticket": null,
+      "gatewayUrl": null,
+      "expiresAt": null,
+      "errorCode": "ACCESS_DENIED",
+      "message": "access denied for fileId: 01JGFILE-002"
+    }
+  ]
+}
+```
+
+---
+
+### 2.3 获取文件详情
 
 获取文件的详细信息。
 
@@ -252,18 +455,14 @@ curl -X GET http://localhost:8089/api/v1/files/01JGXXX-XXX-XXX \
 
 ```json
 {
-  "code": 200,
-  "message": "success",
-  "data": {
-    "fileId": "01JGXXX-XXX-XXX-XXX-XXXXXXXXXXXX",
-    "originalName": "photo.jpg",
-    "fileSize": 102400,
-    "contentType": "image/webp",
-    "url": "https://cdn.example.com/blog/2026/01/19/12345/images/xxx.webp",
-    "createdAt": "2026-01-19T10:00:00Z",
-    "status": "active",
-    "accessLevel": "public"
-  }
+  "fileId": "01JGXXX-XXX-XXX-XXX-XXXXXXXXXXXX",
+  "tenantId": "blog",
+  "ownerId": "12345",
+  "originalFilename": "photo.jpg",
+  "fileSize": 102400,
+  "contentType": "image/webp",
+  "accessLevel": "PUBLIC",
+  "status": "ACTIVE"
 }
 ```
 
@@ -320,12 +519,13 @@ curl -X DELETE http://localhost:8089/api/v1/upload/01JGXXX-XXX-XXX \
 
 - 前端把分片字节上传到 `file-service`
 - `file-service` 再调用 MinIO/S3 Multipart API 上传分片
+- 当前 v1 `multipart` 控制层已收口为 legacy 协议适配，底层通过 `MultipartUploadCoreBridgeService` 复用 `file-core` 的 `DIRECT` upload session
 
 如果需要“预签名直传分片”，请看后面的“5. 预签名直传 API”。
 
 ### 4.1 初始化分片上传
 
-初始化一个分片上传任务；如果传入 `fileHash` 且命中未完成任务，会返回已有任务用于断点续传。
+初始化一个分片上传任务；如果传入 `fileHash` 且命中同用户未过期会话，会直接返回已有任务用于断点续传。
 
 **端点**: `POST /api/v1/multipart/init`
 
@@ -422,7 +622,7 @@ curl -X PUT "http://localhost:8089/api/v1/multipart/01JGZZZ-ZZZ-ZZZ-ZZZ-ZZZZZZZZ
 
 ### 4.3 完成分片上传
 
-完成分片上传，服务端会根据已记录的分片信息调用 `CompleteMultipartUpload` 并生成 `fileId`。
+完成分片上传，服务端会读取对象存储中的 authoritative parts 调用 `CompleteMultipartUpload`，并生成 `fileId`。
 
 **端点**: `POST /api/v1/multipart/{taskId}/complete`
 
@@ -489,7 +689,7 @@ Authorization: Bearer {token}
 
 ### 4.5 查询上传进度
 
-查询当前上传任务的进度。
+查询当前上传任务的进度。当前进度视图直接来自底层 upload session 和对象存储分片状态，而不是仅依赖 legacy 任务表缓存。
 
 **端点**: `GET /api/v1/multipart/{taskId}/progress`
 

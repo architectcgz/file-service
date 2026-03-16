@@ -107,28 +107,28 @@ Content-Type: image/png
 
 ## 文件访问方式
 
-上传完成后，其他服务或前端应优先使用 `fileId` 再向 `file-service` 获取访问地址。
+上传完成后，其他服务或前端应优先使用 `fileId` 再向 `file-service` 申请访问票据。
 
-### 获取访问地址
+### 签发访问票据
 
-- `GET /api/v1/files/{fileId}/url`
+- `POST /api/v1/files/{fileId}:issue-access-ticket`
 
 返回字段：
 
-- `url`: 当前真实可访问地址
-- `gatewayUrl`: `file-service` 网关地址，格式为 `/api/v1/files/{fileId}/content`
-- `permanent`: 是否为永久地址
+- `ticket`: 当前下载票据
+- `gatewayUrl`: `file-gateway-service` 访问地址，格式为 `/api/v1/files/{fileId}/content?ticket=...`
+- `expiresAt`: 票据过期时间
 
 建议：
 
 - 前端优先使用 `gatewayUrl`
-- 内部服务如果只是换取当前可访问地址，可以使用 `url`
+- 业务后端如果只需要文件元信息，优先调用 `GET /api/v1/files/{fileId}`
 
 ### 网关访问
 
 - `GET /api/v1/files/{fileId}/content`
 
-该接口会先经过 `file-service` 做权限校验，再重定向到真实文件地址。
+该接口由 `file-gateway-service` 提供，负责校验票据后再重定向到真实文件地址。
 
 ## 当前实现约束
 

@@ -249,30 +249,13 @@ CREATE TABLE upload_tasks (
 );
 ```
 
-#### 4.4 上传分片表 (upload_parts)
-
-```sql
-CREATE TABLE upload_parts (
-    id              VARCHAR(36) PRIMARY KEY,  -- UUIDv7 (时间有序)
-    task_id         VARCHAR(36) NOT NULL,     -- 逻辑关联 upload_tasks.id，无物理外键
-    part_number     INT NOT NULL,
-    etag            VARCHAR(64) NOT NULL,     -- S3 返回的 ETag
-    size            BIGINT NOT NULL,
-    uploaded_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    UNIQUE INDEX uk_task_part (task_id, part_number),
-    INDEX idx_task_id (task_id)
-    -- 注意：不使用物理外键，通过应用层保证数据一致性
-);
-```
-
 > **设计说明**：
 > - 所有表的主键使用 UUIDv7 (VARCHAR(36))，时间有序的 UUID
 >   - UUIDv7 包含时间戳前缀，天然支持按时间排序
 >   - 适合分页查询和范围查询
 >   - 分布式环境下无需协调即可生成唯一 ID
 > - 不使用物理外键约束，通过应用层逻辑保证数据一致性
-> - 删除任务时，应用层负责级联删除相关的 upload_parts 记录
+> - 当前生产链路以 `upload_tasks` 作为 upload session 的持久化视图，分片完成状态由 file-core upload session 生命周期统一承载
 > - Java 实现：使用 `com.github.f4b6a3:uuid-creator` 库生成 UUIDv7
 
 ### 5. 分片上传流程设计
@@ -320,7 +303,8 @@ Client                    Upload Service                S3/RustFS
    │                            │  ETag                     │
    │                            │ ◄─────────────────────────│
    │                            │                           │
-   │                            │  保存 upload_part 记录    │
+   │                            │  记录分片完成状态         │
+   │                            │  (session/cache)         │
    │                            │                           │
    │  {partNumber, etag}        │                           │
    │ ◄───────────────────────── │                           │
@@ -335,7 +319,7 @@ Client                    Upload Service                S3/RustFS
    │       complete             │                           │
    │ ─────────────────────────► │                           │
    │                            │                           │
-   │                            │  查询所有 upload_parts    │
+   │                            │  汇总已完成分片状态       │
    │                            │                           │
    │                            │  CompleteMultipartUpload  │
    │                            │  (parts: [{partNum, etag}])│
@@ -1012,7 +996,7 @@ S3_CDN_DOMAIN=
 | `blog-upload/src/main/java/com/blog/upload/domain/model/UploadPart.java` | 新增 | 上传分片领域模型 |
 | `blog-upload/src/main/java/com/blog/upload/domain/repository/StorageObjectRepository.java` | 新增 | 存储对象仓储接口 |
 | `blog-upload/src/main/java/com/blog/upload/domain/repository/FileRecordRepository.java` | 新增 | 文件记录仓储接口 |
-| `blog-upload/src/main/java/com/blog/upload/domain/repository/UploadTaskRepository.java` | 新增 | 上传任务仓储接口 |
+| `blog-upload/src/main/java/com/blog/upload/domain/repository/UploadTaskRepository.java` | 新增 | 历史上传任务仓储接口，现已退化为 compat/test-only |
 | `blog-upload/src/main/java/com/blog/upload/infrastructure/repository/*` | 新增 | 仓储实现和 Mapper |
 | `blog-upload/src/main/java/com/blog/upload/application/service/MultipartUploadService.java` | 新增 | 分片上传应用服务 |
 | `blog-upload/src/main/java/com/blog/upload/application/service/InstantUploadService.java` | 新增 | 秒传服务 |

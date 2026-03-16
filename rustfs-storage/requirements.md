@@ -106,8 +106,8 @@ RustFS 是一个高性能、分布式的对象存储解决方案，100% 兼容 S
 2. THE Upload_Service SHALL split large files into configurable chunk sizes (default 5MB per chunk)
 3. THE Upload_Service SHALL store upload task information in `upload_tasks` table
 4. THE Upload_Task SHALL include: id, user_id, file_name, file_size, file_hash, upload_id (S3 multipart upload ID), total_parts, status, created_at, expires_at
-5. THE Upload_Service SHALL store uploaded parts information in `upload_parts` table
-6. THE Upload_Part SHALL include: id, task_id, part_number, etag, size, uploaded_at
+5. THE Upload_Service SHALL persist multipart session state via `upload_tasks`, and the current production path SHALL NOT depend on an `upload_parts` table
+6. THE Upload_Service SHALL treat uploaded-part state as part of the upload session lifecycle rather than a standalone legacy repository model
 
 ### Requirement 8: 断点续传
 
