@@ -430,6 +430,8 @@ class V1UploadSessionControllerTest {
 
     @Test
     void shouldCompleteUploadSession() throws Exception {
+        when(uploadAppService.getVisibleSession("blog", "session-001", "user-001"))
+                .thenReturn(uploadSession("session-001", UploadSessionStatus.UPLOADING));
         when(uploadAppService.completeSession(
                 "blog",
                 "session-001",
@@ -455,6 +457,33 @@ class V1UploadSessionControllerTest {
     }
 
     @Test
+    void shouldCompletePresignedSingleUploadSession() throws Exception {
+        when(uploadAppService.getVisibleSession("blog", "session-ps-001", "user-001"))
+                .thenReturn(presignedSingleSession("session-ps-001", UploadSessionStatus.INITIATED));
+        when(uploadAppService.completeSingleUpload(
+                "blog",
+                "session-ps-001",
+                "user-001",
+                "image/png"
+        )).thenReturn(new UploadCompletion("session-ps-001", "file-ps-001", UploadSessionStatus.COMPLETED));
+
+        mockMvc.perform(post("/api/v1/upload-sessions/{uploadSessionId}/complete", "session-ps-001")
+                        .header("X-App-Id", "blog")
+                        .header("X-User-Id", "user-001")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "contentType": "image/png",
+                                  "parts": []
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.uploadSessionId").value("session-ps-001"))
+                .andExpect(jsonPath("$.fileId").value("file-ps-001"))
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+    }
+
+    @Test
     void shouldReturnBadRequestWhenUploadSessionInvalid() throws Exception {
         doThrow(new UploadSessionInvalidRequestException("invalid"))
                 .when(uploadAppService)
@@ -475,6 +504,8 @@ class V1UploadSessionControllerTest {
 
     @Test
     void shouldReturnBadRequestWhenCompleteRequestInvalid() throws Exception {
+        when(uploadAppService.getVisibleSession("blog", "session-001", "user-001"))
+                .thenReturn(uploadSession("session-001", UploadSessionStatus.UPLOADING));
         doThrow(new UploadSessionInvalidRequestException("invalid"))
                 .when(uploadAppService)
                 .completeSession("blog", "session-001", "user-001", "video/mp4", List.of());

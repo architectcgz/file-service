@@ -145,7 +145,15 @@ public class V1UploadSessionController {
                                                       @RequestHeader("X-App-Id") String tenantId,
                                                       @RequestHeader("X-User-Id") String subjectId,
                                                       @Valid @RequestBody CompleteUploadSessionRequest request) {
-        UploadCompletion uploadCompletion = uploadAppService.completeSession(
+        UploadSession uploadSession = uploadAppService.getVisibleSession(tenantId, uploadSessionId, subjectId);
+        UploadCompletion uploadCompletion = uploadSession.uploadMode() == UploadMode.PRESIGNED_SINGLE
+                ? uploadAppService.completeSingleUpload(
+                tenantId,
+                uploadSessionId,
+                subjectId,
+                request.contentType()
+        )
+                : uploadAppService.completeSession(
                 tenantId,
                 uploadSessionId,
                 subjectId,
