@@ -42,6 +42,30 @@ class FileGatewayServiceTest {
     }
 
     @Test
+    void shouldResolveRedirectFromTicket() {
+        long expiresAt = Instant.now().plusSeconds(300).getEpochSecond();
+        String ticket = gatewaySigningService.signTicket("file-001", "blog", "user-001", expiresAt);
+        GatewayRedirectResponse expected = new GatewayRedirectResponse("https://cdn.example.com/file-001", "no-store");
+        when(upstreamRedirectClient.resolveContentRedirect("file-001",
+                new GatewayAccessIdentity("blog", "user-001"))).thenReturn(expected);
+
+        GatewayRedirectResponse actual = fileGatewayService.resolveRedirect(
+                "file-001",
+                ticket,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        assertSame(expected, actual);
+        verify(upstreamRedirectClient).resolveContentRedirect("file-001",
+                new GatewayAccessIdentity("blog", "user-001"));
+    }
+
+    @Test
     void shouldResolveRedirectFromSignedQuery() {
         long expiresAt = Instant.now().plusSeconds(300).getEpochSecond();
         String signature = gatewaySigningService.sign("file-001", "blog", "user-001", expiresAt);
@@ -51,6 +75,7 @@ class FileGatewayServiceTest {
 
         GatewayRedirectResponse actual = fileGatewayService.resolveRedirect(
                 "file-001",
+                null,
                 null,
                 null,
                 "blog",
@@ -72,6 +97,7 @@ class FileGatewayServiceTest {
 
         GatewayRedirectResponse actual = fileGatewayService.resolveRedirect(
                 "file-001",
+                null,
                 "blog",
                 "user-001",
                 null,
@@ -88,7 +114,7 @@ class FileGatewayServiceTest {
     @Test
     void shouldRejectMissingIdentity() {
         GatewayException exception = assertThrows(GatewayException.class, () ->
-                fileGatewayService.resolveRedirect("file-001", null, null, null, null, null, null));
+                fileGatewayService.resolveRedirect("file-001", null, null, null, null, null, null, null));
 
         assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatus());
     }
@@ -98,7 +124,7 @@ class FileGatewayServiceTest {
         gatewayProperties.getAuth().setAllowHeaderIdentity(false);
 
         GatewayException exception = assertThrows(GatewayException.class, () ->
-                fileGatewayService.resolveRedirect("file-001", "blog", "user-001", null, null, null, null));
+                fileGatewayService.resolveRedirect("file-001", null, "blog", "user-001", null, null, null, null));
 
         assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatus());
     }

@@ -31,6 +31,7 @@ class FileGatewayControllerTest {
     void shouldRedirectToResolvedLocation() throws Exception {
         when(fileGatewayService.resolveRedirect(
                 eq("file-001"),
+                eq(null),
                 eq("blog"),
                 eq("user-001"),
                 eq(null),
@@ -46,6 +47,6 @@ class FileGatewayControllerTest {
                 .andExpect(header().string("Location", "https://cdn.example.com/file-001"))
                 .andExpect(header().string("Cache-Control", "no-store"));
 
-        verify(fileGatewayService).resolveRedirect("file-001", "blog", "user-001", null, null, null, null);
+        verify(fileGatewayService).resolveRedirect("file-001", null, "blog", "user-001", null, null, null, null);
     }
 }

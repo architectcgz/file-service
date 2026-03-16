@@ -11,7 +11,7 @@ gateway:
     connect-timeout: ${FILE_GATEWAY_CONNECT_TIMEOUT:3s}
     read-timeout: ${FILE_GATEWAY_READ_TIMEOUT:5s}
   auth:
-    allow-header-identity: ${FILE_GATEWAY_ALLOW_HEADER_IDENTITY:true}
+    allow-header-identity: ${FILE_GATEWAY_ALLOW_HEADER_IDENTITY:false}
     signing-secret: ${FILE_GATEWAY_SIGNING_SECRET:change-me-before-production}
 
 management:

@@ -5,6 +5,7 @@ import com.platform.filegateway.common.exception.GatewayException;
 import com.platform.filegateway.config.GatewayProperties;
 import com.platform.filegateway.domain.GatewayAccessIdentity;
 import com.platform.filegateway.domain.GatewayRedirectResponse;
+import com.platform.filegateway.domain.GatewayTicketClaims;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ public class FileGatewayService {
     private final UpstreamRedirectClient upstreamRedirectClient;
 
     public GatewayRedirectResponse resolveRedirect(String fileId,
+                                                   String ticket,
                                                    String headerAppId,
                                                    String headerUserId,
                                                    String signedAppId,
@@ -27,6 +29,7 @@ public class FileGatewayService {
                                                    String signature) {
         GatewayAccessIdentity identity = resolveIdentity(
                 fileId,
+                ticket,
                 headerAppId,
                 headerUserId,
                 signedAppId,
@@ -39,12 +42,18 @@ public class FileGatewayService {
     }
 
     private GatewayAccessIdentity resolveIdentity(String fileId,
+                                                  String ticket,
                                                   String headerAppId,
                                                   String headerUserId,
                                                   String signedAppId,
                                                   String signedUserId,
                                                   Long expiresAt,
                                                   String signature) {
+        if (StringUtils.hasText(ticket)) {
+            GatewayTicketClaims claims = gatewaySigningService.verifyTicket(fileId, ticket);
+            return new GatewayAccessIdentity(claims.appId(), normalize(claims.userId()));
+        }
+
         if (containsSignedAccessParams(signedAppId, signedUserId, expiresAt, signature)) {
             gatewaySigningService.verify(fileId, signedAppId, normalize(signedUserId), expiresAt, signature);
             return new GatewayAccessIdentity(signedAppId, normalize(signedUserId));
@@ -55,7 +64,7 @@ public class FileGatewayService {
         }
 
         throw new GatewayException(HttpStatus.UNAUTHORIZED,
-                "缺少访问身份，请提供签名参数或受信任的请求头");
+                "缺少访问身份，请提供 ticket、签名参数或受信任的请求头");
     }
 
     private boolean containsSignedAccessParams(String signedAppId,

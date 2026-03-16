@@ -29,7 +29,11 @@ public class GatewayProperties {
     @Data
     public static class Auth {
 
-        private boolean allowHeaderIdentity = true;
+        /**
+         * 是否允许直接信任 Header 身份。
+         * V2 默认关闭，仅保留给受控的内部过渡环境。
+         */
+        private boolean allowHeaderIdentity = false;
 
         @NotBlank
         private String signingSecret = "change-me-before-production";

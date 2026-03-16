@@ -25,6 +25,7 @@ public class FileGatewayController {
 
     @GetMapping("/{fileId}/content")
     public ResponseEntity<Void> accessFileContent(@PathVariable String fileId,
+                                                  @RequestParam(value = "ticket", required = false) String ticket,
                                                   @RequestHeader(value = "X-App-Id", required = false) String headerAppId,
                                                   @RequestHeader(value = "X-User-Id", required = false) String headerUserId,
                                                   @RequestParam(value = "appId", required = false) String signedAppId,
@@ -33,6 +34,7 @@ public class FileGatewayController {
                                                   @RequestParam(value = "signature", required = false) String signature) {
         GatewayRedirectResponse redirectResponse = fileGatewayService.resolveRedirect(
                 fileId,
+                ticket,
                 headerAppId,
                 headerUserId,
                 signedAppId,
