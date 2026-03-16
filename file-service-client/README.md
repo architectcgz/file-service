@@ -297,6 +297,7 @@ PresignedUploadRequest request = PresignedUploadRequest.builder()
         .build();
 
 PresignedUploadResponse response = client.getPresignedUploadUrl(request);
+System.out.println("上传会话ID: " + response.getUploadSessionId());
 
 // 2. 使用预签名 URL 直接上传到 S3
 // (这部分需要使用 HTTP 客户端直接上传)

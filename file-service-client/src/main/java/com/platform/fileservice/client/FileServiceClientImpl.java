@@ -742,7 +742,6 @@ public class FileServiceClientImpl implements FileServiceClient {
         }
 
         PresignedUploadResponse result = new PresignedUploadResponse();
-        result.setFileId(response.getUploadSession().getUploadSessionId());
         result.setUploadSessionId(response.getUploadSession().getUploadSessionId());
         result.setUploadUrl(response.getSingleUploadUrl());
         result.setUploadMethod(response.getSingleUploadMethod());

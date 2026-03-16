@@ -15,12 +15,6 @@ import java.util.Map;
 @AllArgsConstructor
 public class PresignedUploadResponse {
     /**
-     * 上传会话标识符。
-     * 为兼容旧调用方，仍保留 fileId 字段名。
-     */
-    private String fileId;
-
-    /**
      * 上传会话标识符
      */
     private String uploadSessionId;
