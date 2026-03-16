@@ -93,6 +93,10 @@ CREATE INDEX IF NOT EXISTS idx_upload_tasks_app_user ON upload_tasks(app_id, use
 CREATE INDEX IF NOT EXISTS idx_upload_tasks_app_status ON upload_tasks(app_id, status);
 CREATE INDEX IF NOT EXISTS idx_upload_tasks_expires_at ON upload_tasks(expires_at) 
     WHERE expires_at IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_upload_tasks_active_hash
+    ON upload_tasks(app_id, user_id, file_hash)
+    WHERE file_hash IS NOT NULL
+      AND status IN ('initiated', 'uploading', 'completing');
 
 -- 租户表
 CREATE TABLE IF NOT EXISTS tenants (

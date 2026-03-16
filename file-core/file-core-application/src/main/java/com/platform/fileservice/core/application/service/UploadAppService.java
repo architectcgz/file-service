@@ -51,6 +51,7 @@ public final class UploadAppService {
     private static final int MAX_FILENAME_LENGTH = 120;
     private static final String DEFAULT_HASH_ALGORITHM = "MD5";
     private static final String LEGACY_STORAGE_PROVIDER = "legacy-s3";
+    private static final String ACTIVE_UPLOAD_SESSION_UNIQUE_INDEX = "uk_upload_tasks_active_hash";
     private static final Duration DEFAULT_COMPLETION_WAIT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration DEFAULT_COMPLETION_POLL_INTERVAL = Duration.ofMillis(100);
 
@@ -181,7 +182,24 @@ public final class UploadAppService {
                 now,
                 now.plus(ttl)
         );
-        return new UploadSessionCreationResult(uploadSessionRepository.save(uploadSession), false, false, List.of());
+        try {
+            return new UploadSessionCreationResult(uploadSessionRepository.save(uploadSession), false, false, List.of());
+        } catch (UploadSessionMutationException ex) {
+            UploadSessionCreationResult recovered = recoverFromActiveSessionConflict(
+                    tenantId,
+                    ownerId,
+                    uploadMode,
+                    accessLevel,
+                    expectedSize,
+                    fileHash,
+                    now,
+                    ex
+            );
+            if (recovered != null) {
+                return recovered;
+            }
+            throw ex;
+        }
     }
 
     public SingleUploadUrlGrant issueSingleUploadUrl(String tenantId,
@@ -607,6 +625,52 @@ public final class UploadAppService {
             uploadSessionRef.set(uploadSession);
         });
         return Optional.of(uploadSessionRef.get());
+    }
+
+    private UploadSessionCreationResult recoverFromActiveSessionConflict(String tenantId,
+                                                                         String ownerId,
+                                                                         UploadMode uploadMode,
+                                                                         AccessLevel accessLevel,
+                                                                         long expectedSize,
+                                                                         String fileHash,
+                                                                         Instant now,
+                                                                         UploadSessionMutationException ex) {
+        if (!isActiveSessionConflict(ex, fileHash)) {
+            return null;
+        }
+
+        Optional<UploadSession> resumableSession = findReusableSession(
+                tenantId,
+                ownerId,
+                uploadMode,
+                accessLevel,
+                expectedSize,
+                fileHash,
+                now
+        );
+        if (resumableSession.isEmpty()) {
+            return null;
+        }
+
+        UploadSession uploadSession = resumableSession.get();
+        return new UploadSessionCreationResult(uploadSession, true, false, loadUploadedParts(uploadSession));
+    }
+
+    private boolean isActiveSessionConflict(UploadSessionMutationException ex, String fileHash) {
+        if (fileHash == null || fileHash.isBlank()) {
+            return false;
+        }
+        Throwable current = ex;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null
+                    && (message.contains(ACTIVE_UPLOAD_SESSION_UNIQUE_INDEX)
+                    || message.contains("duplicate key value violates unique constraint"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private void expireStaleSession(UploadSession uploadSession) {

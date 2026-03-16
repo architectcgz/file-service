@@ -2,6 +2,7 @@ package com.platform.fileservice.core.application.service;
 
 import com.platform.fileservice.core.domain.exception.UploadSessionAccessDeniedException;
 import com.platform.fileservice.core.domain.exception.UploadSessionInvalidRequestException;
+import com.platform.fileservice.core.domain.exception.UploadSessionMutationException;
 import com.platform.fileservice.core.domain.exception.UploadSessionNotFoundException;
 import com.platform.fileservice.core.domain.model.AccessLevel;
 import com.platform.fileservice.core.domain.model.BlobObject;
@@ -223,6 +224,52 @@ class UploadAppServiceTest {
         assertEquals(0, creationResult.uploadedParts().size());
         verify(objectStoragePort, never()).createMultipartUpload(any(String.class), any(String.class), any(String.class));
         verify(uploadSessionRepository, never()).save(any(UploadSession.class));
+    }
+
+    @Test
+    void shouldReturnResumedSessionWhenActiveHashUniqueConstraintRejectsConcurrentInsert() {
+        UploadSession existingSession = multipartSession(
+                "session-001",
+                UploadSessionStatus.UPLOADING,
+                FIXED_NOW.plus(Duration.ofHours(1))
+        );
+        when(objectStoragePort.resolveBucketName(AccessLevel.PRIVATE)).thenReturn("private-bucket");
+        when(objectStoragePort.createMultipartUpload(
+                eq("private-bucket"),
+                any(String.class),
+                eq("video/mp4")
+        )).thenReturn("upload-001");
+        when(uploadSessionRepository.save(any(UploadSession.class)))
+                .thenThrow(new UploadSessionMutationException(
+                        "failed to save upload session: session-002",
+                        new RuntimeException("duplicate key value violates unique constraint \"uk_upload_tasks_active_hash\"")
+                ));
+        when(uploadSessionRepository.findActiveByHash("blog", "user-001", "hash-001"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(existingSession));
+        when(objectStoragePort.listUploadedParts(
+                "private-bucket",
+                "blog/2026/03/14/user-001/uploads/session-001-demo.mp4",
+                "provider-001"
+        )).thenReturn(List.of());
+
+        UploadSessionCreationResult creationResult = uploadAppService.createSession(
+                "blog",
+                "user-001",
+                UploadMode.DIRECT,
+                AccessLevel.PRIVATE,
+                "demo.mp4",
+                "video/mp4",
+                11L * 1024 * 1024,
+                "hash-001",
+                Duration.ofHours(24),
+                CHUNK_SIZE_BYTES,
+                10_000
+        );
+
+        assertEquals("session-001", creationResult.uploadSession().uploadSessionId());
+        assertTrue(creationResult.resumed());
+        verify(uploadSessionRepository).save(any(UploadSession.class));
     }
 
     @Test
