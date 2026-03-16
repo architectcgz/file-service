@@ -32,6 +32,7 @@
         <uuid-creator.version>5.3.3</uuid-creator.version>
         <hutool.version>5.8.24</hutool.version>
         <lombok.version>1.18.30</lombok.version>
+        <knife4j.version>4.4.0</knife4j.version>
     </properties>
 
     <dependencies>
@@ -47,6 +48,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+            <version>${knife4j.version}</version>
         </dependency>
         
         <!-- Micrometer Prometheus Registry for Monitoring -->
@@ -87,6 +93,26 @@
             <artifactId>postgresql</artifactId>
             <version>${postgresql.version}</version>
             <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.platform</groupId>
+            <artifactId>file-core-application</artifactId>
+            <version>2.0.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.platform</groupId>
+            <artifactId>file-core-adapters-db</artifactId>
+            <version>2.0.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.platform</groupId>
+            <artifactId>file-core-adapters-s3</artifactId>
+            <version>2.0.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.platform</groupId>
+            <artifactId>file-core-web</artifactId>
+            <version>2.0.0-SNAPSHOT</version>
         </dependency>
 
 

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.platform</groupId>
+        <artifactId>file-platform-parent</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>file-core</artifactId>
+    <packaging>pom</packaging>
+    <name>File Core</name>
+    <description>Aggregator for file-service v1 core modules</description>
+
+    <modules>
+        <module>file-core-domain</module>
+        <module>file-core-ports</module>
+        <module>file-core-application</module>
+        <module>file-core-adapters-db</module>
+        <module>file-core-adapters-s3</module>
+        <module>file-core-web</module>
+        <module>file-core-jobs</module>
+    </modules>
+</project>
