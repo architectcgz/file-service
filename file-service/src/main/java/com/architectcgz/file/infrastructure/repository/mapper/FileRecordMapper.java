@@ -92,7 +92,7 @@ public interface FileRecordMapper extends RuntimeMyBatisMapper {
         SELECT id, app_id, user_id, storage_object_id, original_name, storage_path, file_size,
                content_type, file_hash, hash_algorithm, access_level, status, created_at, updated_at
         FROM file_records
-        WHERE app_id = #{appId} AND file_hash = #{fileHash} AND status = 'COMPLETED'
+        WHERE app_id = #{appId} AND file_hash = #{fileHash} AND status = 'completed'
         ORDER BY created_at DESC
         LIMIT 1
     """)

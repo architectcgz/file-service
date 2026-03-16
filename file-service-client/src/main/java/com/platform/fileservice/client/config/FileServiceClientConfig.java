@@ -23,6 +23,7 @@ public class FileServiceClientConfig {
     private final String serverUrl;
     private final String tenantId;
     private final TokenProvider tokenProvider;
+    private final String subjectId;
     
     // 可选 - 连接设置
     private final int connectTimeout;
@@ -44,6 +45,7 @@ public class FileServiceClientConfig {
         this.serverUrl = builder.serverUrl;
         this.tenantId = builder.tenantId;
         this.tokenProvider = builder.tokenProvider;
+        this.subjectId = builder.subjectId;
         this.connectTimeout = builder.connectTimeout;
         this.readTimeout = builder.readTimeout;
         this.maxConnections = builder.maxConnections;
@@ -78,6 +80,9 @@ public class FileServiceClientConfig {
             throw new IllegalArgumentException(
                 "tenantId must contain only lowercase letters, numbers, underscores, and hyphens"
             );
+        }
+        if (subjectId != null && subjectId.isBlank()) {
+            throw new IllegalArgumentException("subjectId cannot be blank");
         }
         
         // 验证tokenProvider
@@ -132,6 +137,10 @@ public class FileServiceClientConfig {
     public TokenProvider getTokenProvider() {
         return tokenProvider;
     }
+
+    public String getSubjectId() {
+        return subjectId;
+    }
     
     public int getConnectTimeout() {
         return connectTimeout;
@@ -178,6 +187,7 @@ public class FileServiceClientConfig {
         private String serverUrl;
         private String tenantId;
         private TokenProvider tokenProvider;
+        private String subjectId;
         
         // 可选字段及默认值
         private int connectTimeout = 10000;      // 10秒
@@ -221,6 +231,17 @@ public class FileServiceClientConfig {
          */
         public Builder tokenProvider(TokenProvider tokenProvider) {
             this.tokenProvider = tokenProvider;
+            return this;
+        }
+
+        /**
+         * 设置当前调用主体ID，用于需要 `X-User-Id` 的接口。
+         *
+         * @param subjectId 当前调用主体标识
+         * @return 此构建器
+         */
+        public Builder subjectId(String subjectId) {
+            this.subjectId = subjectId;
             return this;
         }
         

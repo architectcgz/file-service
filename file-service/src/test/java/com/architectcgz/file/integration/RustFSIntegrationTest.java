@@ -14,9 +14,6 @@ import com.architectcgz.file.interfaces.controller.MultipartController;
 import com.architectcgz.file.application.dto.InitUploadRequest;
 import com.architectcgz.file.application.dto.InitUploadResponse;
 import com.architectcgz.file.application.dto.UploadProgressResponse;
-import com.architectcgz.file.application.dto.ConfirmUploadRequest;
-import com.architectcgz.file.application.dto.PresignedUploadRequest;
-import com.architectcgz.file.application.dto.PresignedUploadResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import net.jqwik.api.*;
 import net.jqwik.api.lifecycle.AfterTry;
@@ -42,6 +39,12 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.HttpWaitStrategy;
 import org.testcontainers.utility.DockerImageName;
+import com.platform.fileservice.contract.files.model.AccessLevelView;
+import com.platform.fileservice.contract.upload.model.CompleteUploadSessionRequest;
+import com.platform.fileservice.contract.upload.model.CreateUploadSessionRequest;
+import com.platform.fileservice.contract.upload.model.CreateUploadSessionResponse;
+import com.platform.fileservice.contract.upload.model.UploadCompletionView;
+import com.platform.fileservice.contract.upload.model.UploadModeView;
 import software.amazon.awssdk.services.s3.S3Client;
 
 import java.net.URI;
@@ -656,82 +659,90 @@ class RustFSIntegrationTest {
         byte[] content = FileTestData.generateRandomBytes(32 * 1024);
         String fileHash = md5Hex(content);
 
-        PresignedUploadRequest presignedRequest = new PresignedUploadRequest();
-        presignedRequest.setFileName(filename);
-        presignedRequest.setFileSize((long) content.length);
-        presignedRequest.setContentType(PDF_CONTENT_TYPE);
-        presignedRequest.setFileHash(fileHash);
-        presignedRequest.setAccessLevel("public");
+        CreateUploadSessionRequest createRequest = new CreateUploadSessionRequest(
+            UploadModeView.PRESIGNED_SINGLE,
+            AccessLevelView.PUBLIC,
+            filename,
+            PDF_CONTENT_TYPE,
+            content.length,
+            fileHash
+        );
 
-        String presignResponseJson = mockMvc.perform(post("/api/v1/upload/presign")
+        String createResponseJson = mockMvc.perform(post("/api/v1/upload-sessions")
                 .contentType("application/json")
-                .content(objectMapper.writeValueAsString(presignedRequest))
+                .content(objectMapper.writeValueAsString(createRequest))
                 .header("X-App-Id", TEST_APP_ID)
                 .header("X-User-Id", String.valueOf(TEST_USER_ID)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.code").value(200))
-            .andExpect(jsonPath("$.data.presignedUrl").exists())
-            .andExpect(jsonPath("$.data.storagePath").exists())
+            .andExpect(jsonPath("$.uploadSession.uploadSessionId").exists())
+            .andExpect(jsonPath("$.uploadSession.uploadMode").value("PRESIGNED_SINGLE"))
+            .andExpect(jsonPath("$.singleUploadUrl").exists())
             .andReturn()
             .getResponse()
             .getContentAsString();
 
-        ApiResponse<PresignedUploadResponse> presignResponse = objectMapper.readValue(
-            presignResponseJson,
-            objectMapper.getTypeFactory().constructParametricType(
-                ApiResponse.class, PresignedUploadResponse.class
-            )
-        );
-
-        PresignedUploadResponse presigned = presignResponse.getData();
+        CreateUploadSessionResponse createResponse =
+            objectMapper.readValue(createResponseJson, CreateUploadSessionResponse.class);
+        String uploadSessionId = createResponse.uploadSession().uploadSessionId();
         int putStatus = putObjectWithPresignedUrl(
-            presigned.getPresignedUrl(),
+            createResponse.singleUploadUrl(),
             PDF_CONTENT_TYPE,
             content
         );
         Assertions.assertTrue(putStatus == 200 || putStatus == 204,
             "Presigned PUT should succeed, but status was " + putStatus);
 
-        ConfirmUploadRequest confirmRequest = new ConfirmUploadRequest();
-        confirmRequest.setAppId(TEST_APP_ID);
-        confirmRequest.setStoragePath(presigned.getStoragePath());
-        confirmRequest.setFileHash(fileHash);
-        confirmRequest.setOriginalFilename(filename);
-        confirmRequest.setAccessLevel("public");
+        CompleteUploadSessionRequest completeRequest = new CompleteUploadSessionRequest(
+            PDF_CONTENT_TYPE,
+            null
+        );
 
-        String confirmResponseJson = mockMvc.perform(post("/api/v1/upload/confirm")
+        String completeResponseJson = mockMvc.perform(post("/api/v1/upload-sessions/{uploadSessionId}/complete", uploadSessionId)
                 .contentType("application/json")
-                .content(objectMapper.writeValueAsString(confirmRequest))
+                .content(objectMapper.writeValueAsString(completeRequest))
                 .header("X-App-Id", TEST_APP_ID)
                 .header("X-User-Id", String.valueOf(TEST_USER_ID)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.code").value(200))
-            .andExpect(jsonPath("$.data.fileId").exists())
-            .andExpect(jsonPath("$.data.url").exists())
+            .andExpect(jsonPath("$.uploadSessionId").value(uploadSessionId))
+            .andExpect(jsonPath("$.fileId").exists())
+            .andExpect(jsonPath("$.status").value("COMPLETED"))
             .andReturn()
             .getResponse()
             .getContentAsString();
 
-        String fileId = objectMapper.readTree(confirmResponseJson).path("data").path("fileId").asText();
-        String fileUrl = objectMapper.readTree(confirmResponseJson).path("data").path("url").asText();
+        UploadCompletionView completion =
+            objectMapper.readValue(completeResponseJson, UploadCompletionView.class);
+        String fileId = completion.fileId();
+
+        String ticketResponseJson = mockMvc.perform(post("/api/v1/files/{fileId}:issue-access-ticket", fileId)
+                .header("X-App-Id", TEST_APP_ID)
+                .header("X-User-Id", String.valueOf(TEST_USER_ID)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.ticket").exists())
+            .andExpect(jsonPath("$.gatewayUrl").exists())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+        String fileUrl = objectMapper.readTree(ticketResponseJson).path("gatewayUrl").asText();
 
         TestContext.TestFileInfo fileInfo = new TestContext.TestFileInfo(fileId, filename);
         fileInfo.setUrl(fileUrl);
         fileInfo.setContent(content);
         fileInfo.setContentType(PDF_CONTENT_TYPE);
-        fileInfo.setStoragePath(presigned.getStoragePath());
+        var fileRecord = fileRecordRepository.findById(fileId)
+            .orElseThrow(() -> new AssertionError("File record not found: " + fileId));
+        String objectKey = fileRecord.getStoragePath();
+        fileInfo.setStoragePath(objectKey);
         testContext.addUploadedFile(fileInfo);
 
-        boolean fileExists = s3Verifier.fileExists(presigned.getStoragePath());
+        boolean fileExists = s3Verifier.fileExists(objectKey);
         Assertions.assertTrue(fileExists,
-            "Presigned uploaded file should exist in MinIO at path: " + presigned.getStoragePath());
+            "Presigned uploaded file should exist in MinIO at path: " + objectKey);
 
-        byte[] s3Content = s3Verifier.getFileContent(presigned.getStoragePath());
+        byte[] s3Content = s3Verifier.getFileContent(objectKey);
         Assertions.assertArrayEquals(content, s3Content,
             "Content uploaded with presigned URL should match MinIO content");
 
-        var fileRecord = fileRecordRepository.findById(fileId)
-            .orElseThrow(() -> new AssertionError("File record not found: " + fileId));
         Assertions.assertEquals(content.length, fileRecord.getFileSize(),
             "Confirmed file size should come from storage metadata");
         Assertions.assertEquals(PDF_CONTENT_TYPE, fileRecord.getContentType(),

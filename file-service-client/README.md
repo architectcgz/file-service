@@ -44,6 +44,7 @@ import com.platform.fileservice.client.config.*;
 FileServiceClientConfig config = FileServiceClientConfig.builder()
         .serverUrl("http://localhost:8089")
         .tenantId("your-app-id")
+        .subjectId("current-user-id")
         .tokenProvider(TokenProvider.fixed("your-jwt-token"))
         .build();
 
@@ -103,6 +104,7 @@ client.close();
 | `connectTimeout` | int | 10000 | 连接超时（毫秒） |
 | `readTimeout` | int | 30000 | 读取超时（毫秒） |
 | `maxConnections` | int | 50 | 最大连接数 |
+| `subjectId` | String | null | 调用主体 ID；`upload-sessions` 等接口需要 |
 | `customDomain` | String | null | 自定义域名 |
 | `cdnDomain` | String | null | CDN 域名（用于公共文件） |
 | `maxRetries` | int | 3 | 最大重试次数 |
@@ -114,6 +116,7 @@ client.close();
 FileServiceClientConfig config = FileServiceClientConfig.builder()
         .serverUrl("http://localhost:8089")
         .tenantId("blog")
+        .subjectId("user-001")
         .tokenProvider(TokenProvider.fixed("eyJhbGciOiJIUzI1NiIs..."))
         .connectTimeout(15000)
         .readTimeout(60000)
@@ -286,23 +289,23 @@ try {
 ```java
 // 1. 获取预签名上传 URL
 PresignedUploadRequest request = PresignedUploadRequest.builder()
-        .fileName("document.pdf")
+        .filename("document.pdf")
         .fileSize(1024000)
         .contentType("application/pdf")
         .accessLevel(AccessLevel.PUBLIC)
+        .fileHash(calculateMD5(file))
         .build();
 
 PresignedUploadResponse response = client.getPresignedUploadUrl(request);
 
 // 2. 使用预签名 URL 直接上传到 S3
 // (这部分需要使用 HTTP 客户端直接上传)
-uploadToS3(response.getUploadUrl(), file);
+uploadToS3(response.getUploadUrl(), response.getUploadMethod(), response.getUploadHeaders(), file);
 
-// 3. 确认上传完成
-String fileHash = calculateMD5(file);
+// 3. 完成上传会话
 FileUploadResponse finalResponse = client.confirmPresignedUpload(
-        response.getFileId(), 
-        fileHash);
+        response.getUploadSessionId(),
+        request.getFileHash());
 ```
 
 ### 文件访问
@@ -344,6 +347,7 @@ try {
 FileServiceClientConfig config = FileServiceClientConfig.builder()
         .serverUrl("http://localhost:8089")
         .tenantId("blog")
+        .subjectId("user-001")
         .tokenProvider(tokenProvider)
         .customDomain("https://files.example.com")  // 自定义域名
         .cdnDomain("https://cdn.example.com")       // CDN 域名（用于公共文件）

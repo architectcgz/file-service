@@ -725,7 +725,7 @@ Authorization: Bearer {token}
 本项目有两类预签名直传：
 
 - 分片预签名直传：`/api/v1/direct-upload/*`
-- 单文件预签名直传：`/api/v1/upload/presign` + `/api/v1/upload/confirm`
+- 单文件预签名直传：`/api/v1/upload-sessions` + `uploadMode=PRESIGNED_SINGLE`
 
 ### 5.1 分片预签名直传初始化
 
@@ -903,28 +903,29 @@ Authorization: Bearer {token}
 
 ---
 
-### 5.5 获取单文件预签名上传 URL
+### 5.5 创建单文件预签名上传会话
 
 适用于不需要分片的单文件直传。
 
-**端点**: `POST /api/v1/upload/presign`
+**端点**: `POST /api/v1/upload-sessions`
 
 **请求头**:
 ```http
 Content-Type: application/json
 X-App-Id: blog
-Authorization: Bearer {token}
+X-User-Id: user-001
 ```
 
 **请求体**:
 
 ```json
 {
-  "fileName": "photo.jpg",
-  "fileSize": 102400,
-  "fileHash": "d41d8cd98f00b204e9800998ecf8427e",
+  "uploadMode": "PRESIGNED_SINGLE",
+  "accessLevel": "PUBLIC",
+  "originalFilename": "photo.jpg",
   "contentType": "image/jpeg",
-  "accessLevel": "public"
+  "expectedSize": 102400,
+  "fileHash": "d41d8cd98f00b204e9800998ecf8427e"
 }
 ```
 
@@ -932,43 +933,51 @@ Authorization: Bearer {token}
 
 ```json
 {
-  "code": 200,
-  "message": "success",
-  "data": {
-    "presignedUrl": "https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...",
-    "storagePath": "blog/2026/03/13/12345/files/01JGXXX.jpg",
-    "expiresAt": "2026-03-13T11:00:00",
-    "method": "PUT",
-    "headers": {
-      "Content-Type": "image/jpeg"
-    }
+  "uploadSession": {
+    "uploadSessionId": "session-001",
+    "tenantId": "blog",
+    "ownerId": "user-001",
+    "uploadMode": "PRESIGNED_SINGLE",
+    "accessLevel": "PUBLIC",
+    "originalFilename": "photo.jpg",
+    "contentType": "image/jpeg",
+    "expectedSize": 102400,
+    "fileHash": "d41d8cd98f00b204e9800998ecf8427e",
+    "status": "INITIATED"
+  },
+  "resumed": false,
+  "instantUpload": false,
+  "completedPartNumbers": [],
+  "completedPartInfos": [],
+  "singleUploadUrl": "https://s3.amazonaws.com/bucket/path?X-Amz-Signature=...",
+  "singleUploadMethod": "PUT",
+  "singleUploadExpiresInSeconds": 900,
+  "singleUploadHeaders": {
+    "Content-Type": "image/jpeg"
   }
 }
 ```
 
 ---
 
-### 5.6 确认单文件预签名上传
+### 5.6 完成单文件预签名上传
 
-客户端使用预签名 URL 上传完成后，调用此接口创建文件记录。
+客户端使用 `singleUploadUrl` 上传完成后，调用此接口完成上传会话并创建文件记录。
 
-**端点**: `POST /api/v1/upload/confirm`
+**端点**: `POST /api/v1/upload-sessions/{uploadSessionId}/complete`
 
 **请求头**:
 ```http
 Content-Type: application/json
 X-App-Id: blog
-Authorization: Bearer {token}
+X-User-Id: user-001
 ```
 
 **请求体**:
 
 ```json
 {
-  "storagePath": "blog/2026/03/13/12345/files/01JGXXX.jpg",
-  "fileHash": "d41d8cd98f00b204e9800998ecf8427e",
-  "originalFilename": "photo.jpg",
-  "accessLevel": "public"
+  "contentType": "image/jpeg"
 }
 ```
 
@@ -976,12 +985,9 @@ Authorization: Bearer {token}
 
 ```json
 {
-  "code": 200,
-  "message": "success",
-  "data": {
-    "fileId": "01JGXXX-XXX-XXX-XXX-XXXXXXXXXXXX",
-    "url": "https://cdn.example.com/blog/2026/03/13/12345/images/xxx.jpg"
-  }
+  "uploadSessionId": "session-001",
+  "fileId": "01JGXXX-XXX-XXX-XXX-XXXXXXXXXXXX",
+  "status": "COMPLETED"
 }
 ```
 

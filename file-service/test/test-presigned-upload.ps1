@@ -1,5 +1,5 @@
 # Presigned Upload API Test Script
-# Tests the presigned URL upload flow
+# Tests the presigned single upload-session flow
 
 param(
     [string]$ConfigPath = "../config/test-env.json",
@@ -50,95 +50,94 @@ function Invoke-ApiRequest {
 }
 
 # Global variables
+$Global:AppId = "blog"
 $Global:UserId = 1
 
-# === TEST 1: Get Presigned Upload URL ===
-Write-Host "[TEST-1] Getting presigned upload URL..." -ForegroundColor Yellow
+# === TEST 1: Create Upload Session ===
+Write-Host "[TEST-1] Creating PRESIGNED_SINGLE upload session..." -ForegroundColor Yellow
 $PresignBody = @{
-    fileName = "test-presigned-$(Get-Date -Format 'yyyyMMddHHmmss').mp4"
-    fileSize = 1048576
+    uploadMode = "PRESIGNED_SINGLE"
+    accessLevel = "PUBLIC"
+    originalFilename = "test-presigned-$(Get-Date -Format 'yyyyMMddHHmmss').mp4"
     contentType = "video/mp4"
+    expectedSize = 1048576
     fileHash = "$(New-Guid)".Replace("-", "")
-    accessLevel = "public"
 }
-$Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/upload/presign" -Body $PresignBody -Headers @{ "X-User-Id" = $Global:UserId }
+$Headers = @{ "X-App-Id" = $Global:AppId; "X-User-Id" = $Global:UserId }
+$Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/upload-sessions" -Body $PresignBody -Headers $Headers
 
-if ($Result.Success -and $Result.Body.code -eq 200) {
-    $PresignedUrl = $Result.Body.data.presignedUrl
-    $StoragePath = $Result.Body.data.storagePath
-    $ExpiresAt = $Result.Body.data.expiresAt
+if ($Result.Success -and $Result.Body.uploadSession.uploadSessionId) {
+    $UploadSessionId = $Result.Body.uploadSession.uploadSessionId
+    $PresignedUrl = $Result.Body.singleUploadUrl
+    $ExpiresIn = $Result.Body.singleUploadExpiresInSeconds
     
-    Add-TestResult -TestId "TEST-1" -TestName "Get Presigned Upload URL" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "URL generated successfully"
-    Write-Host "  PASS - Presigned URL generated ($($Result.ResponseTime)ms)" -ForegroundColor Green
-    Write-Host "    Storage Path: $StoragePath" -ForegroundColor Gray
-    Write-Host "    Expires At: $ExpiresAt" -ForegroundColor Gray
+    Add-TestResult -TestId "TEST-1" -TestName "Create Upload Session" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Upload session created successfully"
+    Write-Host "  PASS - Upload session created ($($Result.ResponseTime)ms)" -ForegroundColor Green
+    Write-Host "    Upload Session ID: $UploadSessionId" -ForegroundColor Gray
+    Write-Host "    Upload URL Present: $([string]::IsNullOrEmpty($PresignedUrl) -eq $false)" -ForegroundColor Gray
+    Write-Host "    Expires In: $ExpiresIn" -ForegroundColor Gray
 } else {
     $ErrorMsg = if ($Result.Body.message) { $Result.Body.message } else { $Result.Error }
-    Add-TestResult -TestId "TEST-1" -TestName "Get Presigned Upload URL" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note $ErrorMsg
+    Add-TestResult -TestId "TEST-1" -TestName "Create Upload Session" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note $ErrorMsg
     Write-Host "  FAIL - $ErrorMsg ($($Result.ResponseTime)ms)" -ForegroundColor Red
 }
 
 Write-Host ""
 
-# === TEST 2: Get Presigned URL for Existing File ===
-Write-Host "[TEST-2] Getting presigned URL for existing file (should fail)..." -ForegroundColor Yellow
+# === TEST 2: Create Session Again With Same Hash ===
+Write-Host "[TEST-2] Creating session again with the same hash..." -ForegroundColor Yellow
 $ExistingFileHash = "d41d8cd98f00b204e9800998ecf8427e"
 $PresignBody2 = @{
-    fileName = "existing-file.mp4"
-    fileSize = 1048576
+    uploadMode = "PRESIGNED_SINGLE"
+    accessLevel = "PUBLIC"
+    originalFilename = "existing-file.mp4"
     contentType = "video/mp4"
+    expectedSize = 1048576
     fileHash = $ExistingFileHash
-    accessLevel = "public"
 }
 
 # First request - should succeed
-$Result1 = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/upload/presign" -Body $PresignBody2 -Headers @{ "X-User-Id" = $Global:UserId }
+$Result1 = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/upload-sessions" -Body $PresignBody2 -Headers $Headers
 
-if ($Result1.Success -and $Result1.Body.code -eq 200) {
-    $StoragePath1 = $Result1.Body.data.storagePath
-    
-    # Simulate upload by confirming (without actual S3 upload - this will fail but that's expected)
-    # In real scenario, client would upload to S3 first
-    
-    # Second request with same hash - should fail if file exists for user
-    # Note: This test may pass if we haven't confirmed the upload yet
-    Write-Host "  INFO - First presigned URL generated successfully" -ForegroundColor Gray
-    Add-TestResult -TestId "TEST-2" -TestName "Presigned URL for Existing File" -Status "PASS" -ResponseTime "$($Result1.ResponseTime)ms" -Note "Correctly allows presigned URL before confirmation"
-    Write-Host "  PASS - Correctly allows presigned URL before confirmation ($($Result1.ResponseTime)ms)" -ForegroundColor Green
+$Result2 = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/upload-sessions" -Body $PresignBody2 -Headers $Headers
+
+if ($Result1.Success -and $Result2.Success -and $Result2.Body.uploadSession.uploadSessionId) {
+    $IsResumed = $Result2.Body.resumed
+    Add-TestResult -TestId "TEST-2" -TestName "Reuse Upload Session" -Status "PASS" -ResponseTime "$($Result2.ResponseTime)ms" -Note "Second request succeeded; resumed=$IsResumed"
+    Write-Host "  PASS - Second request succeeded, resumed=$IsResumed ($($Result2.ResponseTime)ms)" -ForegroundColor Green
 } else {
-    $ErrorMsg = if ($Result1.Body.message) { $Result1.Body.message } else { $Result1.Error }
-    Add-TestResult -TestId "TEST-2" -TestName "Presigned URL for Existing File" -Status "FAIL" -ResponseTime "$($Result1.ResponseTime)ms" -Note $ErrorMsg
-    Write-Host "  FAIL - $ErrorMsg ($($Result1.ResponseTime)ms)" -ForegroundColor Red
+    $ErrorMsg = if ($Result2.Body.message) { $Result2.Body.message } else { $Result2.Error }
+    Add-TestResult -TestId "TEST-2" -TestName "Reuse Upload Session" -Status "FAIL" -ResponseTime "$($Result2.ResponseTime)ms" -Note $ErrorMsg
+    Write-Host "  FAIL - $ErrorMsg ($($Result2.ResponseTime)ms)" -ForegroundColor Red
 }
 
 Write-Host ""
 
-# === TEST 3: Confirm Upload (without actual S3 upload - will fail) ===
-Write-Host "[TEST-3] Confirming upload (without S3 upload - expected to fail)..." -ForegroundColor Yellow
+# === TEST 3: Complete Upload Without S3 Object ===
+Write-Host "[TEST-3] Completing upload without S3 object (expected to fail)..." -ForegroundColor Yellow
 $ConfirmBody = @{
-    storagePath = "2026/01/19/1/test-file.mp4"
-    fileHash = "$(New-Guid)".Replace("-", "")
-    originalName = "test-file.mp4"
+    contentType = "video/mp4"
 }
-$Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/upload/confirm" -Body $ConfirmBody -Headers @{ "X-User-Id" = $Global:UserId }
+$Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/upload-sessions/$UploadSessionId/complete" -Body $ConfirmBody -Headers $Headers
 
-if ($Result.StatusCode -eq 400 -or ($Result.Body -and $Result.Body.code -ne 200)) {
-    Add-TestResult -TestId "TEST-3" -TestName "Confirm Upload Without S3 File" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Correctly rejected - file not in S3"
-    Write-Host "  PASS - Correctly rejected upload confirmation (file not in S3) ($($Result.ResponseTime)ms)" -ForegroundColor Green
+if (-not $Result.Success) {
+    Add-TestResult -TestId "TEST-3" -TestName "Complete Upload Without S3 File" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Correctly rejected - file not in S3"
+    Write-Host "  PASS - Correctly rejected upload completion (file not in S3) ($($Result.ResponseTime)ms)" -ForegroundColor Green
 } else {
-    Add-TestResult -TestId "TEST-3" -TestName "Confirm Upload Without S3 File" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note "Should have rejected"
-    Write-Host "  FAIL - Should have rejected confirmation ($($Result.ResponseTime)ms)" -ForegroundColor Red
+    Add-TestResult -TestId "TEST-3" -TestName "Complete Upload Without S3 File" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note "Should have rejected"
+    Write-Host "  FAIL - Should have rejected completion ($($Result.ResponseTime)ms)" -ForegroundColor Red
 }
 
 Write-Host ""
 
 # === TEST 4: Invalid Request - Missing Fields ===
-Write-Host "[TEST-4] Testing invalid request (missing fields)..." -ForegroundColor Yellow
+Write-Host "[TEST-4] Testing invalid upload-session request (missing fields)..." -ForegroundColor Yellow
 $InvalidBody = @{
-    fileName = "test.mp4"
-    # Missing fileSize, contentType, fileHash
+    uploadMode = "PRESIGNED_SINGLE"
+    originalFilename = "test.mp4"
+    # Missing accessLevel, contentType, expectedSize, fileHash
 }
-$Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/upload/presign" -Body $InvalidBody -Headers @{ "X-User-Id" = $Global:UserId }
+$Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/upload-sessions" -Body $InvalidBody -Headers $Headers
 
 if ($Result.StatusCode -eq 400 -or ($Result.Body -and $Result.Body.code -ne 200)) {
     Add-TestResult -TestId "TEST-4" -TestName "Invalid Request Validation" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Correctly rejected invalid request"

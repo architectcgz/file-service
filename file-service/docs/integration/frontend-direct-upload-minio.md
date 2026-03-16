@@ -6,86 +6,85 @@
 
 1. 向 `file-service` 申请直传 URL
 2. 直接把文件上传到 MinIO
-3. 上传完成后通知 `file-service` 确认落库
+3. 上传完成后通知 `file-service` 完成上传会话并落库
 4. 业务系统只保存 `fileId`
 
 这样可以把大文件流量从 `file-service` 剥离出去，只保留鉴权、配额、元数据和访问控制。
 
 ## 标准流程
 
-### 1. 获取预签名直传 URL
+### 1. 创建单文件上传会话
 
 请求：
 
-- `POST /api/v1/upload/presign`
+- `POST /api/v1/upload-sessions`
 - Header:
   - `X-App-Id: {appId}`
+  - `X-User-Id: {userId}`
   - 需要已登录用户身份
 
 请求体示例：
 
 ```json
 {
-  "fileName": "avatar.png",
-  "fileSize": 102400,
+  "uploadMode": "PRESIGNED_SINGLE",
+  "accessLevel": "PUBLIC",
+  "originalFilename": "avatar.png",
   "contentType": "image/png",
-  "fileHash": "md5-hex",
-  "accessLevel": "public"
+  "expectedSize": 102400,
+  "fileHash": "md5-hex"
 }
 ```
 
 返回关键信息：
 
-- `presignedUrl`: 前端真正上传到 MinIO 的地址
-- `storagePath`: 该文件在对象存储中的路径
-- `method`: 当前为 `PUT`
-- `headers`: 当前至少包含 `Content-Type`
-- `expiresAt`: 直传 URL 过期时间
+- `uploadSession.uploadSessionId`: 上传会话 ID
+- `singleUploadUrl`: 前端真正上传到 MinIO 的地址
+- `singleUploadMethod`: 当前为 `PUT`
+- `singleUploadHeaders`: 当前至少包含 `Content-Type`
+- `singleUploadExpiresInSeconds`: 直传 URL 过期时间（秒）
 
 ### 2. 前端直接上传到 MinIO
 
-前端使用上一步返回的 `presignedUrl` 直接发起 `PUT` 请求。
+前端使用上一步返回的 `singleUploadUrl` 直接发起 `PUT` 请求。
 
 要求：
 
-- 请求方法必须使用返回值中的 `method`
+- 请求方法必须使用返回值中的 `singleUploadMethod`
 - `Content-Type` 必须与申请预签名时保持一致
 - 文件内容直接上传到 MinIO，不经过 `file-service`
 
 示例：
 
 ```http
-PUT {presignedUrl}
+PUT {singleUploadUrl}
 Content-Type: image/png
 
 <binary>
 ```
 
-### 3. 上传成功后调用确认接口
+### 3. 上传成功后完成上传会话
 
 请求：
 
-- `POST /api/v1/upload/confirm`
+- `POST /api/v1/upload-sessions/{uploadSessionId}/complete`
 - Header:
   - `X-App-Id: {appId}`
+  - `X-User-Id: {userId}`
   - 需要已登录用户身份
 
 请求体示例：
 
 ```json
 {
-  "appId": "blog",
-  "storagePath": "blog/2026/03/12/10001/files/019c....png",
-  "fileHash": "md5-hex",
-  "originalFilename": "avatar.png",
-  "accessLevel": "public"
+  "contentType": "image/png"
 }
 ```
 
 返回关键信息：
 
 - `fileId`: 业务系统应保存的文件标识
-- `url`: 当前解析出的真实文件访问地址
+- `status`: 当前会话状态，成功时为 `COMPLETED`
 
 ## 业务系统应该保存什么
 
@@ -132,17 +131,17 @@ Content-Type: image/png
 
 ## 当前实现约束
 
-### `confirm` 之前文件不算完成
+### `complete` 之前文件不算完成
 
-文件上传到 MinIO 后，如果没有调用 `confirm`：
+文件上传到 MinIO 后，如果没有调用 `complete`：
 
 - 不会生成 `fileId`
 - 业务系统无法稳定引用该文件
 - 该对象只存在于底层存储，不属于完整业务记录
 
-### `confirm` 以对象存储真实元数据为准
+### `complete` 以对象存储真实元数据为准
 
-`file-service` 在确认时会通过 `HeadObject` 获取：
+`file-service` 在完成时会通过 `HeadObject` 获取：
 
 - 实际文件大小
 - 实际 `Content-Type`
@@ -158,18 +157,18 @@ Content-Type: image/png
 
 ## 前端失败处理建议
 
-### 申请预签名成功，但上传失败
+### 创建会话成功，但上传失败
 
 处理方式：
 
 - 重新申请新的预签名 URL
-- 不要复用已过期或已失败的 `presignedUrl`
+- 不要复用已过期或已失败的 `singleUploadUrl`
 
-### 上传到 MinIO 成功，但 `confirm` 失败
+### 上传到 MinIO 成功，但 `complete` 失败
 
 处理方式：
 
-- 可以用相同 `storagePath` 重试 `confirm`
+- 可以使用同一个 `uploadSessionId` 重试 `complete`
 - 如果长时间未确认成功，应由后台清理孤儿对象
 
 ### 文件重复上传
@@ -183,38 +182,39 @@ Content-Type: image/png
 async function uploadFile(file: File) {
   const fileHash = await calcMd5(file)
 
-  const presign = await api.post("/api/v1/upload/presign", {
-    fileName: file.name,
-    fileSize: file.size,
+  const session = await api.post("/api/v1/upload-sessions", {
+    uploadMode: "PRESIGNED_SINGLE",
+    accessLevel: "PUBLIC",
+    originalFilename: file.name,
     contentType: file.type,
-    fileHash,
-    accessLevel: "public"
+    expectedSize: file.size,
+    fileHash
   })
 
-  await fetch(presign.data.presignedUrl, {
-    method: presign.data.method,
-    headers: presign.data.headers,
+  await fetch(session.data.singleUploadUrl, {
+    method: session.data.singleUploadMethod,
+    headers: session.data.singleUploadHeaders,
     body: file
   })
 
-  const confirm = await api.post("/api/v1/upload/confirm", {
-    appId: currentAppId,
-    storagePath: presign.data.storagePath,
-    fileHash,
-    originalFilename: file.name,
-    accessLevel: "public"
-  })
+  const completion = await api.post(
+    `/api/v1/upload-sessions/${session.data.uploadSession.uploadSessionId}/complete`,
+    { contentType: file.type }
+  )
 
-  return confirm.data.fileId
+  const detail = await api.get(`/api/v1/files/${completion.data.fileId}`)
+
+  return detail.data.fileId
 }
 ```
 
 ## 结论
 
-推荐把上传链路统一为：
+推荐把单文件上传链路统一为：
 
+- 前端通过 `upload-sessions` 创建 `PRESIGNED_SINGLE` 会话
 - 前端直传 MinIO
-- `file-service` 只负责 `presign`、`confirm`、`fileId -> URL`
+- `file-service` 只负责会话创建、完成和 `fileId -> URL`
 - 业务系统只保存 `fileId`
 
-这也是当前项目最适合扩展并发的上传方案。
+这条链路已经不再依赖旧 `presign/confirm` 兼容接口。

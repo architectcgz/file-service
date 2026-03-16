@@ -194,13 +194,13 @@ public interface FileServiceClient extends AutoCloseable {
     // ==================== 预签名URL方法 ====================
     
     /**
-     * 获取直接上传到S3的预签名URL
+     * 获取单文件上传会话及对应的预签名上传URL
      * 
      * 这允许客户端直接上传到S3而无需通过文件服务，
      * 可以提高大文件的性能。
      * 
      * @param request 包含文件元数据的预签名URL请求
-     * @return 包含预签名上传URL和过期时间的响应
+     * @return 包含上传会话ID、预签名上传URL和过期时间的响应
      * @throws FileServiceException 如果URL生成失败
      */
     PresignedUploadResponse getPresignedUploadUrl(PresignedUploadRequest request) 
@@ -212,12 +212,12 @@ public interface FileServiceClient extends AutoCloseable {
      * 必须在上传到预签名URL后调用此方法，
      * 以在文件服务数据库中注册文件。
      * 
-     * @param fileId 来自预签名URL响应的文件标识符
-     * @param fileHash 已上传文件的哈希值用于验证
+     * @param uploadSessionId 来自预签名URL响应的上传会话标识符
+     * @param fileHash 已上传文件的哈希值，用于校验调用参数与会话一致
      * @return 包含文件元数据和访问URL的响应
      * @throws FileServiceException 如果确认失败
      */
-    FileUploadResponse confirmPresignedUpload(String fileId, String fileHash) 
+    FileUploadResponse confirmPresignedUpload(String uploadSessionId, String fileHash) 
             throws FileServiceException;
     
     // ==================== 资源管理 ====================

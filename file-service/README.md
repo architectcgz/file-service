@@ -8,7 +8,7 @@ File Service 是从 `blog-upload` 重构而来的通用文件服务，提供：
 
 - **多租户隔离**: 通过 `X-App-Id` 请求头实现不同应用的文件数据隔离
 - **文件去重**: 同一应用内相同文件自动去重，节省存储空间
-- **多种上传方式**: 支持直接上传、分片上传、预签名 URL 上传、秒传
+- **多种上传方式**: 支持代理上传、上传会话直传、分片直传、秒传
 - **独立部署**: 拥有独立数据库和存储，与其他服务完全解耦
 - **S3 兼容存储**: 当前默认使用 MinIO，也兼容标准 S3 接口
 
@@ -17,7 +17,6 @@ File Service 是从 `blog-upload` 重构而来的通用文件服务，提供：
 - `/api/v1/upload/image`、`/api/v1/upload/file`: 普通上传，请求先到 `file-service`
 - `/api/v1/multipart/*`: 服务端中转的分片上传，前端把分片发给 `file-service`
 - `/api/v1/direct-upload/*`: 分片预签名直传，前端拿到分片 URL 后直接上传到 MinIO/S3
-- `/api/v1/upload/presign` + `/api/v1/upload/confirm`: 单文件预签名直传
 - `/api/v1/upload-sessions*`: `file-core` 驱动的统一上传会话 facade，当前已支持创建会话、查询会话、查询进度、签发分片上传 URL、完成上传、主动中止上传
 
 默认建议是前台上传优先走直传链路，而不是代理上传。`/api/v1/upload/image`、`/api/v1/upload/file` 与 `/api/v1/multipart/*` 更适合低并发、后台或必须同步执行服务端处理的场景；如果上传流量本身并发高，即使文件小，也应优先使用 `/api/v1/direct-upload/*` 或 `/api/v1/upload-sessions*`。
@@ -38,6 +37,7 @@ File Service 是从 `blog-upload` 重构而来的通用文件服务，提供：
 `/api/v1/upload-sessions*` 当前行为：
 
 - `AUTO` 是前台默认推荐模式；服务端会按文件大小把小文件路由到 `PRESIGNED_SINGLE`，把更大的文件路由到 `DIRECT`
+- 单文件预签名直传已统一收口到 `POST /api/v1/upload-sessions` + `uploadMode=PRESIGNED_SINGLE`，旧 `/api/v1/upload/presign`、`/api/v1/upload/confirm` 已移除
 - `DIRECT` 在创建会话时即初始化对象存储 multipart upload，并返回 `chunkSizeBytes` 与 `totalParts`
 - `PRESIGNED_SINGLE` 创建单对象上传会话，不初始化 multipart 上下文；响应中会直接携带对象级 `PUT` 上传 URL、过期时间和请求头
 - 当请求携带相同 `fileHash` 且存在同用户、同租户、同模式、同访问级别、同文件大小的未过期会话时，会优先复用原 upload session 以支持断点续传

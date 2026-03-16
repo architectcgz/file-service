@@ -22,6 +22,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -683,13 +686,13 @@ public class FileServiceClientImpl implements FileServiceClient {
     // ==================== Presigned URL Methods ====================
     
     /**
-     * 获取预签名上传URL
+     * 获取单文件上传会话及预签名上传URL
      * 
-     * 向服务器发送POST请求以获取直接上传到S3的预签名URL。
-     * 这允许客户端直接上传到S3而无需通过文件服务，可以提高大文件的性能。
+     * 向服务器发送 POST /api/v1/upload-sessions 创建 `PRESIGNED_SINGLE` 上传会话。
+     * 服务端返回上传会话ID和一次性 PUT URL，客户端随后可直接向对象存储上传文件。
      *
-     * @param request 预签名URL请求，包含文件名、内容类型、大小和访问级别
-     * @return 预签名URL响应，包含fileId、上传URL和过期时间
+     * @param request 预签名URL请求，包含文件名、内容类型、大小、访问级别和文件哈希
+     * @return 预签名URL响应，包含上传会话ID、上传URL和过期时间
      * @throws InvalidRequestException 如果请求参数无效
      * @throws FileServiceException 如果URL生成失败
      */
@@ -710,87 +713,183 @@ public class FileServiceClientImpl implements FileServiceClient {
         if (request.getFileSize() == null || request.getFileSize() <= 0) {
             throw new InvalidRequestException("File size must be positive");
         }
+        if (request.getFileHash() == null || request.getFileHash().isBlank()) {
+            throw new InvalidRequestException("File hash cannot be null or empty");
+        }
+        requireSubjectId("presigned upload session APIs");
+
+        AccessLevel accessLevel = request.getAccessLevel() != null ? request.getAccessLevel() : AccessLevel.PUBLIC;
         
-        logger.debug("Getting presigned upload URL: filename={}, contentType={}, size={}, accessLevel={}", 
+        logger.debug("Creating presigned upload session: filename={}, contentType={}, size={}, accessLevel={}", 
                     request.getFilename(), request.getContentType(), request.getFileSize(), 
-                    request.getAccessLevel());
+                    accessLevel);
         
-        // 构建POST请求到 /api/v1/presigned/upload-url
-        HttpRequest httpRequest = buildPostRequest("/api/v1/presigned/upload-url", request).build();
+        CreateUploadSessionRequest requestBody = new CreateUploadSessionRequest(
+                "PRESIGNED_SINGLE",
+                accessLevel.name(),
+                request.getFilename(),
+                request.getContentType(),
+                request.getFileSize(),
+                request.getFileHash()
+        );
+        HttpRequest httpRequest = buildPostRequest("/api/v1/upload-sessions", requestBody).build();
         
-        // 执行请求并解析响应
-        PresignedUploadResponse response = executeRequest(httpRequest, 
-                new TypeReference<ApiResponse<PresignedUploadResponse>>() {});
+        CreateUploadSessionResponse response = executeRawRequest(httpRequest,
+                new TypeReference<CreateUploadSessionResponse>() {});
         
-        if (response == null) {
-            throw new FileServiceException("Server returned null response for presigned URL request");
+        if (response == null || response.getUploadSession() == null) {
+            throw new FileServiceException("Server returned null upload session for presigned URL request");
+        }
+
+        PresignedUploadResponse result = new PresignedUploadResponse();
+        result.setFileId(response.getUploadSession().getUploadSessionId());
+        result.setUploadSessionId(response.getUploadSession().getUploadSessionId());
+        result.setUploadUrl(response.getSingleUploadUrl());
+        result.setUploadMethod(response.getSingleUploadMethod());
+        result.setUploadHeaders(response.getSingleUploadHeaders());
+        if (response.getSingleUploadExpiresInSeconds() != null) {
+            result.setExpiresAt(LocalDateTime.now().plusSeconds(response.getSingleUploadExpiresInSeconds()));
         }
         
-        logger.debug("Presigned upload URL generated: fileId={}, expiresAt={}", 
-                    response.getFileId(), response.getExpiresAt());
+        logger.debug("Presigned upload session created: uploadSessionId={}, instantUpload={}, hasUploadUrl={}", 
+                    result.getUploadSessionId(), response.isInstantUpload(), result.getUploadUrl() != null);
         
-        return response;
+        return result;
     }
     
     /**
      * 确认文件已使用预签名URL成功上传
      * 
-     * 向服务器发送POST请求以确认文件已上传到S3。
-     * 必须在上传到预签名URL后调用此方法，以在文件服务数据库中注册文件。
+     * 向服务器发送 POST /api/v1/upload-sessions/{id}/complete 完成上传会话。
+     * 必须在客户端完成对象存储 PUT 之后调用，以注册文件元数据。
      *
-     * @param fileId 来自预签名URL响应的文件标识符
-     * @param fileHash 已上传文件的哈希值用于验证
+     * @param uploadSessionId 来自预签名URL响应的上传会话标识符
+     * @param fileHash 已上传文件的哈希值，用于校验调用参数与会话一致
      * @return 文件上传响应，包含fileId、url等信息
      * @throws InvalidRequestException 如果参数无效
      * @throws FileServiceException 如果确认失败
      */
     @Override
-    public FileUploadResponse confirmPresignedUpload(String fileId, String fileHash) 
+    public FileUploadResponse confirmPresignedUpload(String uploadSessionId, String fileHash) 
             throws FileServiceException {
         ensureNotClosed();
         
-        if (fileId == null || fileId.isBlank()) {
-            throw new InvalidRequestException("File ID cannot be null or empty");
+        if (uploadSessionId == null || uploadSessionId.isBlank()) {
+            throw new InvalidRequestException("Upload session ID cannot be null or empty");
         }
         if (fileHash == null || fileHash.isBlank()) {
             throw new InvalidRequestException("File hash cannot be null or empty");
         }
+        requireSubjectId("presigned upload session APIs");
         
-        logger.debug("Confirming presigned upload: fileId={}, fileHash={}", fileId, fileHash);
+        logger.debug("Confirming presigned upload session: uploadSessionId={}, fileHash={}", uploadSessionId, fileHash);
         
-        // 构建请求体
-        ConfirmPresignedUploadRequest requestBody = new ConfirmPresignedUploadRequest(fileHash);
-        
-        // 构建POST请求到 /api/v1/presigned/{fileId}/confirm
-        String path = "/api/v1/presigned/" + fileId + "/confirm";
-        HttpRequest request = buildPostRequest(path, requestBody).build();
-        
-        // 执行请求并解析响应
-        FileUploadResponse response = executeRequest(request, 
-                new TypeReference<ApiResponse<FileUploadResponse>>() {});
-        
-        if (response == null) {
-            throw new FileServiceException("Server returned null response for presigned upload confirmation");
+        UploadSessionView uploadSession = executeRawRequest(
+                buildGetRequest("/api/v1/upload-sessions/" + uploadSessionId).build(),
+                new TypeReference<UploadSessionView>() {}
+        );
+        if (uploadSession == null) {
+            throw new FileServiceException("Server returned null upload session for id: " + uploadSessionId);
         }
-        
-        // 应用URL域名替换（默认为PUBLIC，因为响应中没有accessLevel字段）
-        if (response.getUrl() != null) {
-            response.setUrl(replaceFileUrl(response.getUrl(), AccessLevel.PUBLIC));
+        if (uploadSession.getFileHash() != null
+                && !uploadSession.getFileHash().isBlank()
+                && !uploadSession.getFileHash().equals(fileHash)) {
+            throw new InvalidRequestException("File hash does not match upload session: " + uploadSessionId);
         }
-        
-        logger.debug("Presigned upload confirmed: fileId={}", response.getFileId());
-        
+
+        CompleteUploadSessionRequest requestBody = new CompleteUploadSessionRequest(
+                uploadSession.getContentType(),
+                null
+        );
+        UploadCompletionView completion = executeRawRequest(
+                buildPostRequest("/api/v1/upload-sessions/" + uploadSessionId + "/complete", requestBody).build(),
+                new TypeReference<UploadCompletionView>() {}
+        );
+
+        if (completion == null || completion.getFileId() == null || completion.getFileId().isBlank()) {
+            throw new FileServiceException("Server returned null fileId for presigned upload confirmation");
+        }
+
+        FileDetailResponse fileDetail = getFileDetail(completion.getFileId());
+        FileUploadResponse response = FileUploadResponse.builder()
+                .fileId(fileDetail.getFileId())
+                .url(fileDetail.getUrl())
+                .originalName(fileDetail.getOriginalName())
+                .fileSize(fileDetail.getFileSize())
+                .contentType(fileDetail.getContentType())
+                .accessLevel(fileDetail.getAccessLevel())
+                .build();
+
+        logger.debug("Presigned upload confirmed: uploadSessionId={}, fileId={}", uploadSessionId, response.getFileId());
         return response;
     }
     
     /**
-     * 确认预签名上传请求的内部类
+     * upload-session 创建请求体。
      */
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
-    private static class ConfirmPresignedUploadRequest {
+    private static class CreateUploadSessionRequest {
+        private String uploadMode;
+        private String accessLevel;
+        private String originalFilename;
+        private String contentType;
+        private Long expectedSize;
         private String fileHash;
+    }
+
+    /**
+     * upload-session 创建响应体。
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    private static class CreateUploadSessionResponse {
+        private UploadSessionView uploadSession;
+        private boolean resumed;
+        private boolean instantUpload;
+        private List<Integer> completedPartNumbers;
+        private List<Object> completedPartInfos;
+        private String singleUploadUrl;
+        private String singleUploadMethod;
+        private Integer singleUploadExpiresInSeconds;
+        private Map<String, String> singleUploadHeaders;
+    }
+
+    /**
+     * upload-session 视图。
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    private static class UploadSessionView {
+        private String uploadSessionId;
+        private String contentType;
+        private String fileHash;
+    }
+
+    /**
+     * upload-session 完成请求体。
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    private static class CompleteUploadSessionRequest {
+        private String contentType;
+        private List<Object> parts;
+    }
+
+    /**
+     * upload-session 完成响应体。
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    private static class UploadCompletionView {
+        private String uploadSessionId;
+        private String fileId;
+        private String status;
     }
     
     // ==================== Resource Management ====================
@@ -837,6 +936,14 @@ public class FileServiceClientImpl implements FileServiceClient {
             throw new IllegalStateException("FileServiceClient has been closed");
         }
     }
+
+    private void requireSubjectId(String operation) throws InvalidRequestException {
+        if (config.getSubjectId() == null || config.getSubjectId().isBlank()) {
+            throw new InvalidRequestException(
+                    "subjectId is required for " + operation + "; configure FileServiceClientConfig.subjectId(...)"
+            );
+        }
+    }
     
     // ==================== HTTP请求构建 ====================
     
@@ -845,6 +952,7 @@ public class FileServiceClientImpl implements FileServiceClient {
      * 
      * 自动添加以下请求头：
      * - X-App-Id: 租户ID
+     * - X-User-Id: 调用主体ID（如果已配置）
      * - Authorization: Bearer token
      * - Content-Type: 内容类型（如果指定）
      *
@@ -866,6 +974,9 @@ public class FileServiceClientImpl implements FileServiceClient {
                 .timeout(Duration.ofMillis(config.getReadTimeout()))
                 .header("X-App-Id", config.getTenantId())
                 .header("Authorization", "Bearer " + config.getTokenProvider().getToken());
+        if (config.getSubjectId() != null && !config.getSubjectId().isBlank()) {
+            builder.header("X-User-Id", config.getSubjectId());
+        }
         
         if (contentType != null && !contentType.isBlank()) {
             builder.header("Content-Type", contentType);
@@ -958,6 +1069,36 @@ public class FileServiceClientImpl implements FileServiceClient {
             throw new NetworkException("Request interrupted", e);
         }
     }
+
+    /**
+     * 执行直接返回 JSON 对象的请求。
+     */
+    private <T> T executeRawRequest(HttpRequest request, TypeReference<T> responseType)
+            throws FileServiceException {
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            int statusCode = response.statusCode();
+            String responseBody = response.body();
+
+            logger.debug("Received raw HTTP response: statusCode={}, bodyLength={}",
+                    statusCode, responseBody != null ? responseBody.length() : 0);
+
+            if (statusCode == 200) {
+                return parseRawSuccessResponse(responseBody, responseType);
+            }
+
+            handleErrorResponse(statusCode, responseBody);
+            throw new FileServiceException("Unexpected response status: " + statusCode);
+        } catch (IOException e) {
+            logger.error("Network error during HTTP request: {}", e.getMessage(), e);
+            throw new NetworkException("Network error: " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("HTTP request interrupted: {}", e.getMessage(), e);
+            throw new NetworkException("Request interrupted", e);
+        }
+    }
     
     /**
      * 执行不返回数据的HTTP请求（void响应）
@@ -1021,6 +1162,19 @@ public class FileServiceClientImpl implements FileServiceClient {
         } catch (IOException e) {
             logger.error("Failed to parse JSON response", e);
             throw new ParseException("Failed to parse JSON response: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 解析直接返回对象的成功响应。
+     */
+    private <T> T parseRawSuccessResponse(String responseBody, TypeReference<T> responseType)
+            throws ParseException {
+        try {
+            return objectMapper.readValue(responseBody, responseType);
+        } catch (IOException e) {
+            logger.error("Failed to parse raw JSON response", e);
+            throw new ParseException("Failed to parse raw JSON response: " + e.getMessage(), e);
         }
     }
     

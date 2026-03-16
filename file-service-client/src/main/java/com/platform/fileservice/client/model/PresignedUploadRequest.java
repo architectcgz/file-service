@@ -29,9 +29,15 @@ public class PresignedUploadRequest {
      * 文件访问级别（PUBLIC或PRIVATE）
      */
     private AccessLevel accessLevel;
+
+    /**
+     * 文件内容哈希（当前 upload-session 完成时必填）
+     */
+    private String fileHash;
     
     /**
      * URL过期时间（秒）（可选）
+     * 当前 upload-session 接口不支持自定义过期时间，该字段仅保留兼容。
      */
     private Integer expirationSeconds;
 }

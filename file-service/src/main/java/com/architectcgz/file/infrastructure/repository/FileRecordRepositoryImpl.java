@@ -57,7 +57,7 @@ public class FileRecordRepositoryImpl implements FileRecordRepository {
     
     @Override
     public boolean updateStatus(String id, FileStatus status) {
-        int rows = fileRecordMapper.updateStatus(id, status.name(), OffsetDateTime.now(ZoneOffset.UTC));
+        int rows = fileRecordMapper.updateStatus(id, status.name().toLowerCase(), OffsetDateTime.now(ZoneOffset.UTC));
         return rows > 0;
     }
     
@@ -136,7 +136,9 @@ public class FileRecordRepositoryImpl implements FileRecordRepository {
         po.setAccessLevel(fileRecord.getAccessLevel() != null
                 ? fileRecord.getAccessLevel().name().toLowerCase()
                 : AccessLevel.PUBLIC.name().toLowerCase());
-        po.setStatus(fileRecord.getStatus() != null ? fileRecord.getStatus().name() : FileStatus.COMPLETED.name());
+        po.setStatus(fileRecord.getStatus() != null
+                ? fileRecord.getStatus().name().toLowerCase()
+                : FileStatus.COMPLETED.name().toLowerCase());
         po.setCreatedAt(fileRecord.getCreatedAt());
         po.setUpdatedAt(fileRecord.getUpdatedAt());
         
@@ -165,7 +167,9 @@ public class FileRecordRepositoryImpl implements FileRecordRepository {
                 .accessLevel(po.getAccessLevel() != null
                         ? AccessLevel.valueOf(po.getAccessLevel().toUpperCase())
                         : AccessLevel.PUBLIC)
-                .status(FileStatus.valueOf(po.getStatus()))
+                .status(po.getStatus() != null
+                        ? FileStatus.valueOf(po.getStatus().toUpperCase())
+                        : null)
                 .createdAt(po.getCreatedAt())
                 .updatedAt(po.getUpdatedAt())
                 .build();
