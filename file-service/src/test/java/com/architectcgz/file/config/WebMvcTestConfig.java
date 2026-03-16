@@ -3,7 +3,11 @@ package com.architectcgz.file.config;
 import com.architectcgz.file.common.exception.GlobalExceptionHandler;
 import com.architectcgz.file.infrastructure.config.AdminProperties;
 import com.architectcgz.file.infrastructure.config.CacheProperties;
-import com.architectcgz.file.infrastructure.repository.mapper.*;
+import com.architectcgz.file.infrastructure.repository.mapper.AuditLogMapper;
+import com.architectcgz.file.infrastructure.repository.mapper.FileRecordMapper;
+import com.architectcgz.file.infrastructure.repository.mapper.StorageObjectMapper;
+import com.architectcgz.file.infrastructure.repository.mapper.TenantMapper;
+import com.architectcgz.file.infrastructure.repository.mapper.TenantUsageMapper;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -36,9 +40,4 @@ public class WebMvcTestConfig {
     @MockBean
     private TenantUsageMapper tenantUsageMapper;
     
-    @MockBean
-    private UploadTaskMapper uploadTaskMapper;
-    
-    @MockBean
-    private UploadPartMapper uploadPartMapper;
 }

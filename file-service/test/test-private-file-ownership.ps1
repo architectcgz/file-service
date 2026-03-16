@@ -12,6 +12,7 @@ $ConfigFullPath = Join-Path $ScriptDir $ConfigPath
 $Config = Get-Content $ConfigFullPath | ConvertFrom-Json
 $UploadServiceUrl = $Config.upload_service_url
 $UserServiceUrl = $Config.user_service_url
+$AppId = if ($Config.app_id) { $Config.app_id } else { "blog" }
 
 # === 全局变量 ===
 $TestResults = @()
@@ -63,8 +64,20 @@ function Invoke-ApiRequest {
     return $Result
 }
 
-function Get-User1AuthHeaders { return @{ "Authorization" = "Bearer $Global:User1AccessToken" } }
-function Get-User2AuthHeaders { return @{ "Authorization" = "Bearer $Global:User2AccessToken" } }
+function Get-User1AuthHeaders {
+    return @{
+        "Authorization" = "Bearer $Global:User1AccessToken"
+        "X-App-Id" = $AppId
+        "X-User-Id" = $Global:User1Id
+    }
+}
+function Get-User2AuthHeaders {
+    return @{
+        "Authorization" = "Bearer $Global:User2AccessToken"
+        "X-App-Id" = $AppId
+        "X-User-Id" = $Global:User2Id
+    }
+}
 
 # === 测试开始 ===
 Write-Host "========================================" -ForegroundColor Cyan
@@ -159,23 +172,22 @@ Write-Host ""
 Write-Host "=== SECTION 2: Owner Access Tests ===" -ForegroundColor Magenta
 Write-Host ""
 
-# [PRIV-002]: User 1 (owner) can get file URL
-Write-Host "[PRIV-002] User 1 (owner) getting file URL..." -ForegroundColor Yellow
+# [PRIV-002]: User 1 (owner) can issue access ticket
+Write-Host "[PRIV-002] User 1 (owner) issuing access ticket..." -ForegroundColor Yellow
 if ($Global:PrivateFileId) {
-    $Result = Invoke-ApiRequest -Method "GET" -Url "$UploadServiceUrl/api/v1/files/$Global:PrivateFileId/url" -Headers (Get-User1AuthHeaders)
+    $Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/files/$($Global:PrivateFileId):issue-access-ticket" -Headers (Get-User1AuthHeaders)
     
-    if ($Result.Success -and $Result.Body.code -eq 200 -and $Result.Body.data.url) {
-        $IsPermanent = $Result.Body.data.permanent
-        $ExpiresAt = $Result.Body.data.expiresAt
-        Add-TestResult -TestId "PRIV-002" -TestName "Owner get file URL" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Permanent: $IsPermanent, ExpiresAt: $ExpiresAt"
-        Write-Host "  PASS - Owner can get file URL (Permanent: $IsPermanent) ($($Result.ResponseTime)ms)" -ForegroundColor Green
+    if ($Result.Success -and $Result.Body.ticket -and $Result.Body.gatewayUrl) {
+        $ExpiresAt = $Result.Body.expiresAt
+        Add-TestResult -TestId "PRIV-002" -TestName "Owner issue access ticket" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "ExpiresAt: $ExpiresAt"
+        Write-Host "  PASS - Owner can issue access ticket ($($Result.ResponseTime)ms)" -ForegroundColor Green
     } else {
         $ErrorMsg = if ($Result.Body.message) { $Result.Body.message } else { $Result.Error }
-        Add-TestResult -TestId "PRIV-002" -TestName "Owner get file URL" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note $ErrorMsg
+        Add-TestResult -TestId "PRIV-002" -TestName "Owner issue access ticket" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note $ErrorMsg
         Write-Host "  FAIL - $ErrorMsg ($($Result.ResponseTime)ms)" -ForegroundColor Red
     }
 } else {
-    Add-TestResult -TestId "PRIV-002" -TestName "Owner get file URL" -Status "SKIP" -ResponseTime "-" -Note "No private file ID"
+    Add-TestResult -TestId "PRIV-002" -TestName "Owner issue access ticket" -Status "SKIP" -ResponseTime "-" -Note "No private file ID"
     Write-Host "  SKIP - No private file ID" -ForegroundColor Gray
 }
 
@@ -184,8 +196,8 @@ Write-Host "[PRIV-003] User 1 (owner) getting file details..." -ForegroundColor 
 if ($Global:PrivateFileId) {
     $Result = Invoke-ApiRequest -Method "GET" -Url "$UploadServiceUrl/api/v1/files/$Global:PrivateFileId" -Headers (Get-User1AuthHeaders)
     
-    if ($Result.Success -and $Result.Body.code -eq 200 -and $Result.Body.data.fileId) {
-        $AccessLevel = $Result.Body.data.accessLevel
+    if ($Result.Success -and $Result.Body.fileId) {
+        $AccessLevel = $Result.Body.accessLevel
         Add-TestResult -TestId "PRIV-003" -TestName "Owner get file details" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "AccessLevel: $AccessLevel"
         Write-Host "  PASS - Owner can get file details (AccessLevel: $AccessLevel) ($($Result.ResponseTime)ms)" -ForegroundColor Green
     } else {
@@ -198,26 +210,26 @@ if ($Global:PrivateFileId) {
     Write-Host "  SKIP - No private file ID" -ForegroundColor Gray
 }
 
-# [PRIV-004]: User 1 (owner) can update access level
-Write-Host "[PRIV-004] User 1 (owner) updating access level to PUBLIC..." -ForegroundColor Yellow
+# [PRIV-004]: User 1 (owner) can change access level
+Write-Host "[PRIV-004] User 1 (owner) changing access level to PUBLIC..." -ForegroundColor Yellow
 if ($Global:PrivateFileId) {
     $UpdateBody = @{ accessLevel = "PUBLIC" }
-    $Result = Invoke-ApiRequest -Method "PUT" -Url "$UploadServiceUrl/api/v1/files/$Global:PrivateFileId/access-level" -Body $UpdateBody -Headers (Get-User1AuthHeaders)
+    $Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/files/$($Global:PrivateFileId):change-access-level" -Body $UpdateBody -Headers (Get-User1AuthHeaders)
     
-    if ($Result.Success -and $Result.Body.code -eq 200) {
-        Add-TestResult -TestId "PRIV-004" -TestName "Owner update access level" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Updated to PUBLIC"
-        Write-Host "  PASS - Owner can update access level ($($Result.ResponseTime)ms)" -ForegroundColor Green
+    if ($Result.Success -and $Result.StatusCode -eq 200) {
+        Add-TestResult -TestId "PRIV-004" -TestName "Owner change access level" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Updated to PUBLIC"
+        Write-Host "  PASS - Owner can change access level ($($Result.ResponseTime)ms)" -ForegroundColor Green
         
         # 恢复为 PRIVATE
         $UpdateBody = @{ accessLevel = "PRIVATE" }
-        Invoke-ApiRequest -Method "PUT" -Url "$UploadServiceUrl/api/v1/files/$Global:PrivateFileId/access-level" -Body $UpdateBody -Headers (Get-User1AuthHeaders) | Out-Null
+        Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/files/$($Global:PrivateFileId):change-access-level" -Body $UpdateBody -Headers (Get-User1AuthHeaders) | Out-Null
     } else {
         $ErrorMsg = if ($Result.Body.message) { $Result.Body.message } else { $Result.Error }
-        Add-TestResult -TestId "PRIV-004" -TestName "Owner update access level" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note $ErrorMsg
+        Add-TestResult -TestId "PRIV-004" -TestName "Owner change access level" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note $ErrorMsg
         Write-Host "  FAIL - $ErrorMsg ($($Result.ResponseTime)ms)" -ForegroundColor Red
     }
 } else {
-    Add-TestResult -TestId "PRIV-004" -TestName "Owner update access level" -Status "SKIP" -ResponseTime "-" -Note "No private file ID"
+    Add-TestResult -TestId "PRIV-004" -TestName "Owner change access level" -Status "SKIP" -ResponseTime "-" -Note "No private file ID"
     Write-Host "  SKIP - No private file ID" -ForegroundColor Gray
 }
 
@@ -227,20 +239,20 @@ Write-Host ""
 Write-Host "=== SECTION 3: Non-Owner Access Tests (Should Fail) ===" -ForegroundColor Magenta
 Write-Host ""
 
-# [PRIV-005]: User 2 (non-owner) cannot get file URL
-Write-Host "[PRIV-005] User 2 (non-owner) attempting to get file URL..." -ForegroundColor Yellow
+# [PRIV-005]: User 2 (non-owner) cannot issue access ticket
+Write-Host "[PRIV-005] User 2 (non-owner) attempting to issue access ticket..." -ForegroundColor Yellow
 if ($Global:PrivateFileId) {
-    $Result = Invoke-ApiRequest -Method "GET" -Url "$UploadServiceUrl/api/v1/files/$Global:PrivateFileId/url" -Headers (Get-User2AuthHeaders)
+    $Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/files/$($Global:PrivateFileId):issue-access-ticket" -Headers (Get-User2AuthHeaders)
     
-    if ($Result.StatusCode -eq 400 -or ($Result.Body -and $Result.Body.code -ne 200)) {
-        Add-TestResult -TestId "PRIV-005" -TestName "Non-owner get file URL (should fail)" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Correctly rejected"
+    if ($Result.StatusCode -eq 403 -or ($Result.Body -and $Result.Body.status -eq 403)) {
+        Add-TestResult -TestId "PRIV-005" -TestName "Non-owner issue access ticket (should fail)" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Correctly rejected"
         Write-Host "  PASS - Non-owner correctly denied access ($($Result.ResponseTime)ms)" -ForegroundColor Green
     } else {
-        Add-TestResult -TestId "PRIV-005" -TestName "Non-owner get file URL (should fail)" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note "Should have been rejected"
+        Add-TestResult -TestId "PRIV-005" -TestName "Non-owner issue access ticket (should fail)" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note "Should have been rejected"
         Write-Host "  FAIL - Non-owner should not have access ($($Result.ResponseTime)ms)" -ForegroundColor Red
     }
 } else {
-    Add-TestResult -TestId "PRIV-005" -TestName "Non-owner get file URL (should fail)" -Status "SKIP" -ResponseTime "-" -Note "No private file ID"
+    Add-TestResult -TestId "PRIV-005" -TestName "Non-owner issue access ticket (should fail)" -Status "SKIP" -ResponseTime "-" -Note "No private file ID"
     Write-Host "  SKIP - No private file ID" -ForegroundColor Gray
 }
 
@@ -249,7 +261,7 @@ Write-Host "[PRIV-006] User 2 (non-owner) attempting to get file details..." -Fo
 if ($Global:PrivateFileId) {
     $Result = Invoke-ApiRequest -Method "GET" -Url "$UploadServiceUrl/api/v1/files/$Global:PrivateFileId" -Headers (Get-User2AuthHeaders)
     
-    if ($Result.StatusCode -eq 400 -or ($Result.Body -and $Result.Body.code -ne 200)) {
+    if ($Result.StatusCode -eq 403 -or $Result.StatusCode -eq 404 -or ($Result.Body -and ($Result.Body.status -eq 403 -or $Result.Body.status -eq 404))) {
         Add-TestResult -TestId "PRIV-006" -TestName "Non-owner get file details (should fail)" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Correctly rejected"
         Write-Host "  PASS - Non-owner correctly denied access ($($Result.ResponseTime)ms)" -ForegroundColor Green
     } else {
@@ -261,21 +273,21 @@ if ($Global:PrivateFileId) {
     Write-Host "  SKIP - No private file ID" -ForegroundColor Gray
 }
 
-# [PRIV-007]: User 2 (non-owner) cannot update access level
-Write-Host "[PRIV-007] User 2 (non-owner) attempting to update access level..." -ForegroundColor Yellow
+# [PRIV-007]: User 2 (non-owner) cannot change access level
+Write-Host "[PRIV-007] User 2 (non-owner) attempting to change access level..." -ForegroundColor Yellow
 if ($Global:PrivateFileId) {
     $UpdateBody = @{ accessLevel = "PUBLIC" }
-    $Result = Invoke-ApiRequest -Method "PUT" -Url "$UploadServiceUrl/api/v1/files/$Global:PrivateFileId/access-level" -Body $UpdateBody -Headers (Get-User2AuthHeaders)
+    $Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/files/$($Global:PrivateFileId):change-access-level" -Body $UpdateBody -Headers (Get-User2AuthHeaders)
     
-    if ($Result.StatusCode -eq 400 -or ($Result.Body -and $Result.Body.code -ne 200)) {
-        Add-TestResult -TestId "PRIV-007" -TestName "Non-owner update access level (should fail)" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Correctly rejected"
+    if ($Result.StatusCode -eq 403 -or ($Result.Body -and $Result.Body.status -eq 403)) {
+        Add-TestResult -TestId "PRIV-007" -TestName "Non-owner change access level (should fail)" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Correctly rejected"
         Write-Host "  PASS - Non-owner correctly denied access ($($Result.ResponseTime)ms)" -ForegroundColor Green
     } else {
-        Add-TestResult -TestId "PRIV-007" -TestName "Non-owner update access level (should fail)" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note "Should have been rejected"
+        Add-TestResult -TestId "PRIV-007" -TestName "Non-owner change access level (should fail)" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note "Should have been rejected"
         Write-Host "  FAIL - Non-owner should not have access ($($Result.ResponseTime)ms)" -ForegroundColor Red
     }
 } else {
-    Add-TestResult -TestId "PRIV-007" -TestName "Non-owner update access level (should fail)" -Status "SKIP" -ResponseTime "-" -Note "No private file ID"
+    Add-TestResult -TestId "PRIV-007" -TestName "Non-owner change access level (should fail)" -Status "SKIP" -ResponseTime "-" -Note "No private file ID"
     Write-Host "  SKIP - No private file ID" -ForegroundColor Gray
 }
 

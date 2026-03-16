@@ -1,5 +1,5 @@
-# Test Script for Update File Access Level API
-# Tests the PUT /api/v1/files/{fileId}/access-level endpoint
+# Test Script for Change File Access Level API
+# Tests the POST /api/v1/files/{fileId}:change-access-level endpoint
 
 param(
     [string]$ConfigPath = "../../config/test-env.json"
@@ -12,6 +12,7 @@ $Config = Get-Content $ConfigFullPath | ConvertFrom-Json
 $UploadServiceUrl = $Config.upload_service_url
 $UserServiceUrl = $Config.user_service_url
 $TestUser = $Config.test_user
+$AppId = if ($Config.app_id) { $Config.app_id } else { "blog" }
 
 # === 全局变量 ===
 $TestResults = @()
@@ -58,7 +59,13 @@ function Invoke-ApiRequest {
     return $Result
 }
 
-function Get-AuthHeaders { return @{ "Authorization" = "Bearer $Global:AccessToken" } }
+function Get-AuthHeaders {
+    return @{
+        "Authorization" = "Bearer $Global:AccessToken"
+        "X-App-Id" = $AppId
+        "X-User-Id" = $Global:TestUserId
+    }
+}
 
 # === 测试开始 ===
 Write-Host "========================================" -ForegroundColor Cyan
@@ -140,9 +147,9 @@ Write-Host ""
 Write-Host "[ACCESS-001] Testing update access level to PRIVATE..." -ForegroundColor Yellow
 if ($Global:TestFileId) {
     $Body = @{ accessLevel = "PRIVATE" }
-    $Result = Invoke-ApiRequest -Method "PUT" -Url "$UploadServiceUrl/api/v1/files/$Global:TestFileId/access-level" -Body $Body -Headers (Get-AuthHeaders)
+    $Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/files/$($Global:TestFileId):change-access-level" -Body $Body -Headers (Get-AuthHeaders)
     
-    if ($Result.Success -and $Result.Body.code -eq 200) {
+    if ($Result.Success -and $Result.StatusCode -eq 200) {
         Add-TestResult -TestId "ACCESS-001" -TestName "Update to PRIVATE" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Successfully updated"
         Write-Host "  [PASS] - Access level updated to PRIVATE ($($Result.ResponseTime)ms)" -ForegroundColor Green
     } else {
@@ -160,11 +167,11 @@ Write-Host "[ACCESS-002] Testing verify access level updated..." -ForegroundColo
 if ($Global:TestFileId) {
     $Result = Invoke-ApiRequest -Method "GET" -Url "$UploadServiceUrl/api/v1/files/$Global:TestFileId" -Headers (Get-AuthHeaders)
     
-    if ($Result.Success -and $Result.Body.code -eq 200 -and $Result.Body.data.accessLevel -eq "PRIVATE") {
+    if ($Result.Success -and $Result.Body.accessLevel -eq "PRIVATE") {
         Add-TestResult -TestId "ACCESS-002" -TestName "Verify PRIVATE" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Access level is PRIVATE"
         Write-Host "  [PASS] - Access level verified as PRIVATE ($($Result.ResponseTime)ms)" -ForegroundColor Green
     } else {
-        $ErrorMsg = if ($Result.Body.data.accessLevel) { "Expected PRIVATE, got $($Result.Body.data.accessLevel)" } else { $Result.Error }
+        $ErrorMsg = if ($Result.Body.accessLevel) { "Expected PRIVATE, got $($Result.Body.accessLevel)" } else { $Result.Error }
         Add-TestResult -TestId "ACCESS-002" -TestName "Verify PRIVATE" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note $ErrorMsg
         Write-Host "  [FAIL] - $ErrorMsg ($($Result.ResponseTime)ms)" -ForegroundColor Red
     }
@@ -177,9 +184,9 @@ if ($Global:TestFileId) {
 Write-Host "[ACCESS-003] Testing update access level to PUBLIC..." -ForegroundColor Yellow
 if ($Global:TestFileId) {
     $Body = @{ accessLevel = "PUBLIC" }
-    $Result = Invoke-ApiRequest -Method "PUT" -Url "$UploadServiceUrl/api/v1/files/$Global:TestFileId/access-level" -Body $Body -Headers (Get-AuthHeaders)
+    $Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/files/$($Global:TestFileId):change-access-level" -Body $Body -Headers (Get-AuthHeaders)
     
-    if ($Result.Success -and $Result.Body.code -eq 200) {
+    if ($Result.Success -and $Result.StatusCode -eq 200) {
         Add-TestResult -TestId "ACCESS-003" -TestName "Update to PUBLIC" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Successfully updated"
         Write-Host "  [PASS] - Access level updated to PUBLIC ($($Result.ResponseTime)ms)" -ForegroundColor Green
     } else {
@@ -197,11 +204,11 @@ Write-Host "[ACCESS-004] Testing verify access level updated..." -ForegroundColo
 if ($Global:TestFileId) {
     $Result = Invoke-ApiRequest -Method "GET" -Url "$UploadServiceUrl/api/v1/files/$Global:TestFileId" -Headers (Get-AuthHeaders)
     
-    if ($Result.Success -and $Result.Body.code -eq 200 -and $Result.Body.data.accessLevel -eq "PUBLIC") {
+    if ($Result.Success -and $Result.Body.accessLevel -eq "PUBLIC") {
         Add-TestResult -TestId "ACCESS-004" -TestName "Verify PUBLIC" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Access level is PUBLIC"
         Write-Host "  [PASS] - Access level verified as PUBLIC ($($Result.ResponseTime)ms)" -ForegroundColor Green
     } else {
-        $ErrorMsg = if ($Result.Body.data.accessLevel) { "Expected PUBLIC, got $($Result.Body.data.accessLevel)" } else { $Result.Error }
+        $ErrorMsg = if ($Result.Body.accessLevel) { "Expected PUBLIC, got $($Result.Body.accessLevel)" } else { $Result.Error }
         Add-TestResult -TestId "ACCESS-004" -TestName "Verify PUBLIC" -Status "FAIL" -ResponseTime "$($Result.ResponseTime)ms" -Note $ErrorMsg
         Write-Host "  [FAIL] - $ErrorMsg ($($Result.ResponseTime)ms)" -ForegroundColor Red
     }
@@ -213,9 +220,9 @@ if ($Global:TestFileId) {
 # [ACCESS-005]: 修改不存在的文件
 Write-Host "[ACCESS-005] Testing update non-existent file..." -ForegroundColor Yellow
 $Body = @{ accessLevel = "PRIVATE" }
-$Result = Invoke-ApiRequest -Method "PUT" -Url "$UploadServiceUrl/api/v1/files/non-existent-file/access-level" -Body $Body -Headers (Get-AuthHeaders)
+$Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/files/non-existent-file:change-access-level" -Body $Body -Headers (Get-AuthHeaders)
 
-if ($Result.StatusCode -eq 400 -or ($Result.Body -and $Result.Body.code -ne 200)) {
+if ($Result.StatusCode -eq 404 -or ($Result.Body -and $Result.Body.status -eq 404)) {
     Add-TestResult -TestId "ACCESS-005" -TestName "Update non-existent" -Status "PASS" -ResponseTime "$($Result.ResponseTime)ms" -Note "Correctly rejected"
     Write-Host "  [PASS] - Correctly rejected non-existent file ($($Result.ResponseTime)ms)" -ForegroundColor Green
 } else {

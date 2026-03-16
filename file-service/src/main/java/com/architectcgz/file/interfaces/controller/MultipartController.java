@@ -47,11 +47,11 @@ public class MultipartController {
         String appId = (String) httpRequest.getAttribute("appId");
         String userId = resolveUserId();
         
-        log.info("Init multipart upload - appId: {}, userId: {}, fileName: {}, fileSize: {}", 
+        log.debug("Init multipart upload - appId: {}, userId: {}, fileName: {}, fileSize: {}", 
                 appId, userId, request.getFileName(), request.getFileSize());
         InitUploadResponse response = multipartUploadService.initUpload(appId, request, userId);
         
-        log.info("Init multipart upload success - appId: {}, userId: {}, taskId: {}", 
+        log.debug("Init multipart upload success - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, response.getTaskId());
         
         return ApiResponse.success(response);
@@ -77,7 +77,7 @@ public class MultipartController {
         String appId = (String) httpRequest.getAttribute("appId");
         String userId = resolveUserId();
         
-        log.info("Upload part - appId: {}, userId: {}, taskId: {}, partNumber: {}, size: {}", 
+        log.debug("Upload part - appId: {}, userId: {}, taskId: {}, partNumber: {}, size: {}", 
                 appId, userId, taskId, partNumber, data.length);
         String etag = multipartUploadService.uploadPart(appId, taskId, partNumber, data, userId);
         
@@ -100,7 +100,7 @@ public class MultipartController {
         String appId = (String) httpRequest.getAttribute("appId");
         String userId = resolveUserId();
         
-        log.info("Complete multipart upload - appId: {}, userId: {}, taskId: {}", 
+        log.debug("Complete multipart upload - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
         String fileId = multipartUploadService.completeUpload(appId, taskId, userId);
         FileUrlResponse fileUrl = fileAccessService.getFileUrl(appId, fileId, userId);
@@ -108,7 +108,7 @@ public class MultipartController {
         
         CompleteUploadResponse response = new CompleteUploadResponse(fileId, url);
         
-        log.info("Complete multipart upload success - appId: {}, userId: {}, fileId: {}", 
+        log.debug("Complete multipart upload success - appId: {}, userId: {}, fileId: {}", 
                 appId, userId, fileId);
         
         return ApiResponse.success(response);
@@ -130,11 +130,11 @@ public class MultipartController {
         String appId = (String) httpRequest.getAttribute("appId");
         String userId = resolveUserId();
         
-        log.info("Abort multipart upload - appId: {}, userId: {}, taskId: {}", 
+        log.debug("Abort multipart upload - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
         multipartUploadService.abortUpload(appId, taskId, userId);
         
-        log.info("Abort multipart upload success - appId: {}, userId: {}, taskId: {}", 
+        log.debug("Abort multipart upload success - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
         
         return ApiResponse.success(null);
@@ -156,7 +156,7 @@ public class MultipartController {
         String appId = (String) httpRequest.getAttribute("appId");
         String userId = resolveUserId();
         
-        log.info("Get upload progress - appId: {}, userId: {}, taskId: {}", 
+        log.debug("Get upload progress - appId: {}, userId: {}, taskId: {}", 
                 appId, userId, taskId);
         UploadProgressResponse response = multipartUploadService.getProgress(appId, taskId, userId);
         
@@ -177,7 +177,7 @@ public class MultipartController {
         String appId = (String) httpRequest.getAttribute("appId");
         String userId = resolveUserId();
         
-        log.info("List upload tasks - appId: {}, userId: {}", appId, userId);
+        log.debug("List upload tasks - appId: {}, userId: {}", appId, userId);
         List<UploadTask> tasks = multipartUploadService.listTasks(appId, userId);
         
         return ApiResponse.success(tasks);

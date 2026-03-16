@@ -6,8 +6,7 @@ import org.apache.ibatis.annotations.*;
 /**
  * 租户使用统计 MyBatis Mapper
  */
-@Mapper
-public interface TenantUsageMapper {
+public interface TenantUsageMapper extends RuntimeMyBatisMapper {
     /**
      * 根据租户ID查找使用统计
      */
@@ -66,6 +65,24 @@ public interface TenantUsageMapper {
         WHERE tenant_id = #{tenantId}
     """)
     void incrementUsage(@Param("tenantId") String tenantId, @Param("fileSize") long fileSize);
+
+    /**
+     * 在租户仍处于活跃状态且更新后不超过配额时，原子性增加使用量。
+     */
+    @Update("""
+        UPDATE tenant_usage tu
+        SET used_storage_bytes = tu.used_storage_bytes + #{fileSize},
+            used_file_count = tu.used_file_count + 1,
+            last_upload_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        FROM tenants t
+        WHERE tu.tenant_id = #{tenantId}
+          AND t.tenant_id = tu.tenant_id
+          AND t.status = 'active'
+          AND tu.used_storage_bytes + #{fileSize} <= t.max_storage_bytes
+          AND tu.used_file_count + 1 <= t.max_file_count
+    """)
+    int incrementUsageIfWithinQuota(@Param("tenantId") String tenantId, @Param("fileSize") long fileSize);
 
     /**
      * 原子性减少使用量

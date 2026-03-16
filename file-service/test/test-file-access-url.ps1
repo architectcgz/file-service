@@ -1,5 +1,5 @@
-# File Access URL API Test Script
-# Test Case: UPLOAD-FILE-URL-001 - Get file access URL
+# File Access Ticket API Test Script
+# Test Case: FILE-ACCESS-TICKET-001 - Issue file access ticket
 
 param(
     [string]$ConfigPath = "../../config/test-env.json"
@@ -12,6 +12,7 @@ $Config = Get-Content $ConfigFullPath | ConvertFrom-Json
 $UploadServiceUrl = $Config.upload_service_url
 $UserServiceUrl = $Config.user_service_url
 $TestUser = $Config.test_user
+$AppId = if ($Config.app_id) { $Config.app_id } else { "blog" }
 
 # === 全局变量 ===
 $Global:AccessToken = ""
@@ -49,11 +50,17 @@ function Invoke-ApiRequest {
     return $Result
 }
 
-function Get-AuthHeaders { return @{ "Authorization" = "Bearer $Global:AccessToken" } }
+function Get-AuthHeaders {
+    return @{
+        "Authorization" = "Bearer $Global:AccessToken"
+        "X-App-Id" = $AppId
+        "X-User-Id" = $Global:TestUserId
+    }
+}
 
 # === 测试开始 ===
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "File Access URL API Test" -ForegroundColor Cyan
+Write-Host "File Access Ticket API Test" -ForegroundColor Cyan
 Write-Host "Upload Service URL: $UploadServiceUrl" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
@@ -147,40 +154,40 @@ finally {
 
 Write-Host ""
 
-# === Test 2: Get file access URL ===
-Write-Host "=== Test 2: Get File Access URL ===" -ForegroundColor Magenta
+# === Test 2: Issue file access ticket ===
+Write-Host "=== Test 2: Issue File Access Ticket ===" -ForegroundColor Magenta
 Write-Host ""
 
-Write-Host "[TEST-002] Getting file access URL..." -ForegroundColor Yellow
-$Result = Invoke-ApiRequest -Method "GET" -Url "$UploadServiceUrl/api/v1/files/$Global:TestFileId/url" -Headers (Get-AuthHeaders)
+Write-Host "[TEST-002] Issuing file access ticket..." -ForegroundColor Yellow
+$Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/files/$($Global:TestFileId):issue-access-ticket" -Headers (Get-AuthHeaders)
 
-if ($Result.Success -and $Result.Body.code -eq 200) {
-    $FileUrl = $Result.Body.data.url
-    $IsPermanent = $Result.Body.data.permanent
-    $ExpiresAt = $Result.Body.data.expiresAt
+if ($Result.Success -and $Result.Body.ticket -and $Result.Body.gatewayUrl) {
+    $Ticket = $Result.Body.ticket
+    $GatewayUrl = $Result.Body.gatewayUrl
+    $ExpiresAt = $Result.Body.expiresAt
     
-    Write-Host "  [PASS] - File URL retrieved successfully ($($Result.ResponseTime)ms)" -ForegroundColor Green
-    Write-Host "    URL: $FileUrl" -ForegroundColor Cyan
-    Write-Host "    Permanent: $IsPermanent" -ForegroundColor Cyan
+    Write-Host "  [PASS] - File access ticket issued successfully ($($Result.ResponseTime)ms)" -ForegroundColor Green
+    Write-Host "    Ticket: $Ticket" -ForegroundColor Cyan
+    Write-Host "    Gateway URL: $GatewayUrl" -ForegroundColor Cyan
     if ($ExpiresAt) {
         Write-Host "    Expires At: $ExpiresAt" -ForegroundColor Cyan
     }
 } else {
-    $ErrorMsg = if ($Result.Body.message) { $Result.Body.message } else { $Result.Error }
+    $ErrorMsg = if ($Result.Body.message) { $Result.Body.message } elseif ($Result.Body.status) { "HTTP $($Result.Body.status)" } else { $Result.Error }
     Write-Host "  [FAIL] - $ErrorMsg ($($Result.ResponseTime)ms)" -ForegroundColor Red
     exit 1
 }
 
 Write-Host ""
 
-# === Test 3: Get non-existent file URL ===
-Write-Host "=== Test 3: Get Non-existent File URL ===" -ForegroundColor Magenta
+# === Test 3: Issue ticket for non-existent file ===
+Write-Host "=== Test 3: Issue Ticket For Non-existent File ===" -ForegroundColor Magenta
 Write-Host ""
 
-Write-Host "[TEST-003] Getting non-existent file URL..." -ForegroundColor Yellow
-$Result = Invoke-ApiRequest -Method "GET" -Url "$UploadServiceUrl/api/v1/files/non-existent-file-id/url" -Headers (Get-AuthHeaders)
+Write-Host "[TEST-003] Issuing ticket for non-existent file..." -ForegroundColor Yellow
+$Result = Invoke-ApiRequest -Method "POST" -Url "$UploadServiceUrl/api/v1/files/non-existent-file-id:issue-access-ticket" -Headers (Get-AuthHeaders)
 
-if ($Result.StatusCode -eq 404 -or ($Result.Body -and $Result.Body.code -ne 200)) {
+if ($Result.StatusCode -eq 404 -or ($Result.Body -and $Result.Body.status -eq 404)) {
     Write-Host "  [PASS] - Correctly rejected non-existent file ($($Result.ResponseTime)ms)" -ForegroundColor Green
 } else {
     Write-Host "  [FAIL] - Should reject non-existent file ($($Result.ResponseTime)ms)" -ForegroundColor Red

@@ -12,6 +12,7 @@ import com.architectcgz.file.domain.repository.TenantUsageRepository;
 import com.architectcgz.file.infrastructure.config.TenantProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -76,6 +77,26 @@ public class TenantDomainService {
     }
 
     /**
+     * 轻量上传预检查。
+     *
+     * 仅校验租户存在、租户状态和单文件大小，不读取 tenant_usage。
+     * 真正的存储空间 / 文件数占用在事务内通过原子更新完成。
+     */
+    public Tenant validateUploadPrerequisites(String tenantId, long fileSize) {
+        Tenant tenant = getOrCreateTenant(tenantId);
+
+        if (tenant.getStatus() != TenantStatus.ACTIVE) {
+            throw new TenantSuspendedException(tenantId);
+        }
+
+        if (fileSize > tenant.getMaxSingleFileSize()) {
+            throw new FileTooLargeException(fileSize, tenant.getMaxSingleFileSize());
+        }
+
+        return tenant;
+    }
+
+    /**
      * 获取或创建租户
      * @param tenantId 租户ID
      * @return 租户对象
@@ -107,13 +128,27 @@ public class TenantDomainService {
         tenant.setMaxSingleFileSize(tenantProperties.getDefaultMaxSingleFileSize());
         tenant.setCreatedAt(LocalDateTime.now());
         tenant.setUpdatedAt(LocalDateTime.now());
-        
-        Tenant savedTenant = tenantRepository.save(tenant);
 
-        // 同时创建租户使用统计记录
-        TenantUsage usage = new TenantUsage(tenantId);
-        tenantUsageRepository.save(usage);
+        Tenant savedTenant = saveTenantIfAbsent(tenant);
+        ensureTenantUsageExists(tenantId);
 
         return savedTenant;
+    }
+
+    private Tenant saveTenantIfAbsent(Tenant tenant) {
+        try {
+            return tenantRepository.save(tenant);
+        } catch (DataIntegrityViolationException ex) {
+            log.info("Tenant auto-create raced with another request, reusing existing tenant: {}", tenant.getTenantId());
+            return tenantRepository.findById(tenant.getTenantId()).orElse(tenant);
+        }
+    }
+
+    private void ensureTenantUsageExists(String tenantId) {
+        try {
+            tenantUsageRepository.save(new TenantUsage(tenantId));
+        } catch (DataIntegrityViolationException ex) {
+            log.info("Tenant usage auto-create raced with another request, reusing existing usage row: {}", tenantId);
+        }
     }
 }

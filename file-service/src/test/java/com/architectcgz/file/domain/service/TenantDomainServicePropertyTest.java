@@ -11,6 +11,8 @@ import com.architectcgz.file.domain.repository.TenantRepository;
 import com.architectcgz.file.domain.repository.TenantUsageRepository;
 import com.architectcgz.file.infrastructure.config.TenantProperties;
 import net.jqwik.api.*;
+import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -26,6 +28,45 @@ import static org.mockito.Mockito.*;
  * 使用基于属性的测试验证租户配额检查的正确性属性
  */
 class TenantDomainServicePropertyTest {
+
+    @Test
+    void getOrCreateTenant_shouldReuseExistingTenantWhenConcurrentAutoCreateRaces() {
+        String tenantId = "blog";
+        TenantRepository mockTenantRepository = mock(TenantRepository.class);
+        TenantUsageRepository mockUsageRepository = mock(TenantUsageRepository.class);
+        TenantProperties mockProperties = mock(TenantProperties.class);
+        Tenant existingTenant = new Tenant();
+        existingTenant.setTenantId(tenantId);
+        existingTenant.setTenantName(tenantId);
+        existingTenant.setStatus(TenantStatus.ACTIVE);
+        existingTenant.setMaxStorageBytes(10737418240L);
+        existingTenant.setMaxFileCount(10000);
+        existingTenant.setMaxSingleFileSize(104857600L);
+        existingTenant.setCreatedAt(LocalDateTime.now());
+        existingTenant.setUpdatedAt(LocalDateTime.now());
+
+        when(mockTenantRepository.findById(tenantId))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(existingTenant));
+        when(mockTenantRepository.save(any(Tenant.class))).thenThrow(new DuplicateKeyException("tenant already exists"));
+        when(mockUsageRepository.save(any(TenantUsage.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(mockProperties.isAutoCreate()).thenReturn(true);
+        when(mockProperties.getDefaultMaxStorageBytes()).thenReturn(existingTenant.getMaxStorageBytes());
+        when(mockProperties.getDefaultMaxFileCount()).thenReturn(existingTenant.getMaxFileCount());
+        when(mockProperties.getDefaultMaxSingleFileSize()).thenReturn(existingTenant.getMaxSingleFileSize());
+
+        TenantDomainService service = new TenantDomainService(
+                mockTenantRepository,
+                mockUsageRepository,
+                mockProperties
+        );
+
+        Tenant tenant = service.getOrCreateTenant(tenantId);
+
+        assertEquals(existingTenant, tenant);
+        verify(mockTenantRepository, times(1)).save(any(Tenant.class));
+        verify(mockUsageRepository, times(1)).save(any(TenantUsage.class));
+    }
 
     /**
      * Feature: file-service-optimization, Property 5: 新租户默认配额初始化

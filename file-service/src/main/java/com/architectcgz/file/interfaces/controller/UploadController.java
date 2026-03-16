@@ -38,12 +38,12 @@ public class UploadController {
         String appId = (String) request.getAttribute("appId");
         String userId = resolveUserId();
         
-        log.info("Upload image request - appId: {}, userId: {}, fileName: {}, size: {}", 
+        log.debug("Upload image request - appId: {}, userId: {}, fileName: {}, size: {}", 
                 appId, userId, file.getOriginalFilename(), file.getSize());
         
         UploadResult result = uploadApplicationService.uploadImage(appId, file, userId);
         
-        log.info("Upload image success - appId: {}, userId: {}, fileId: {}", 
+        log.debug("Upload image success - appId: {}, userId: {}, fileId: {}", 
                 appId, userId, result.getFileId());
         
         return ApiResponse.success(result);
@@ -63,12 +63,12 @@ public class UploadController {
         String appId = (String) request.getAttribute("appId");
         String userId = resolveUserId();
         
-        log.info("Upload file request - appId: {}, userId: {}, fileName: {}, size: {}", 
+        log.debug("Upload file request - appId: {}, userId: {}, fileName: {}, size: {}", 
                 appId, userId, file.getOriginalFilename(), file.getSize());
         
         UploadResult result = uploadApplicationService.uploadFile(appId, file, userId);
         
-        log.info("Upload file success - appId: {}, userId: {}, fileId: {}", 
+        log.debug("Upload file success - appId: {}, userId: {}, fileId: {}", 
                 appId, userId, result.getFileId());
         
         return ApiResponse.success(result);

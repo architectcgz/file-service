@@ -2,7 +2,9 @@ package com.architectcgz.file.application.service.upload.command;
 
 import com.architectcgz.file.application.service.FileTypeValidator;
 import com.architectcgz.file.application.service.UploadTransactionHelper;
+import com.architectcgz.file.application.service.upload.UploadDedupCoordinatorService;
 import com.architectcgz.file.application.service.upload.factory.UploadObjectFactory;
+import com.architectcgz.file.application.service.upload.file.PreparedUploadSource;
 import com.architectcgz.file.application.service.upload.file.UploadFileHashService;
 import com.architectcgz.file.application.service.upload.file.UploadTempFileService;
 import com.architectcgz.file.application.service.upload.image.UploadImageFormatResolver;
@@ -13,7 +15,6 @@ import com.architectcgz.file.common.exception.BusinessException;
 import com.architectcgz.file.domain.model.ImageProcessConfig;
 import com.architectcgz.file.domain.model.StorageObject;
 import com.architectcgz.file.domain.model.UploadFile;
-import com.architectcgz.file.domain.repository.StorageObjectRepository;
 import com.architectcgz.file.domain.service.TenantDomainService;
 import com.architectcgz.file.infrastructure.config.ImageProcessingProperties;
 import com.architectcgz.file.infrastructure.image.ImageProcessor;
@@ -28,7 +29,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 @Slf4j
 @Service
@@ -37,12 +37,12 @@ public class ImageUploadCommandService {
 
     private final UploadObjectFactory uploadObjectFactory;
     private final UploadStorageService uploadStorageService;
+    private final UploadDedupCoordinatorService uploadDedupCoordinatorService;
     private final UploadFileHashService uploadFileHashService;
     private final UploadTempFileService uploadTempFileService;
     private final UploadImageFormatResolver uploadImageFormatResolver;
     private final ImageProcessingProperties imageProcessingProperties;
     private final ImageProcessor imageProcessor;
-    private final StorageObjectRepository storageObjectRepository;
     private final FileTypeValidator fileTypeValidator;
     private final TenantDomainService tenantDomainService;
     private final UploadTransactionHelper uploadTransactionHelper;
@@ -54,17 +54,22 @@ public class ImageUploadCommandService {
         List<String> uploadedStoragePaths = new ArrayList<>();
 
         try {
-            tenantDomainService.checkQuota(appId, file.getSize());
+            tenantDomainService.validateUploadPrerequisites(appId, file.getSize());
 
             String prefix = imageProcessingProperties.getTempFilePrefix();
-            tempSourceFile = Files.createTempFile(prefix, ".tmp");
-            file.transferTo(tempSourceFile.toFile());
+            PreparedUploadSource preparedUploadSource = uploadTempFileService.prepareMultipartFile(
+                    file,
+                    prefix,
+                    ".tmp",
+                    12,
+                    false
+            );
+            tempSourceFile = preparedUploadSource.file();
 
-            byte[] fileHeader = uploadTempFileService.readHeader(tempSourceFile, 12);
             fileTypeValidator.validateFileWithMagicNumber(
                     file.getOriginalFilename(),
                     file.getContentType(),
-                    fileHeader,
+                    preparedUploadSource.header(),
                     file.getSize()
             );
 
@@ -95,21 +100,20 @@ public class ImageUploadCommandService {
 
             String fileHash = uploadFileHashService.calculateHash(tempProcessedFile);
             String targetBucketName = uploadStorageService.resolveUploadBucketName();
-
-            Optional<StorageObject> existingStorageObject = storageObjectRepository.findByFileHashAndBucket(
-                    appId, fileHash, targetBucketName
-            );
-
-            if (existingStorageObject.isPresent()) {
-                return handleInstantImageUpload(
-                        appId, userId, file, processedSize, processedImageContentType, fileHash,
-                        tempThumbnailFile, uploadedStoragePaths, existingStorageObject.get()
-                );
-            }
-
-            return handleNewImageUpload(
-                    appId, userId, file, processedSize, processedImageExtension, processedImageContentType,
-                    fileHash, tempProcessedFile, tempThumbnailFile, uploadedStoragePaths, targetBucketName
+            Path uploadTempProcessedFile = tempProcessedFile;
+            Path uploadTempThumbnailFile = tempThumbnailFile;
+            return uploadDedupCoordinatorService.executeWithDedupClaim(
+                    appId,
+                    fileHash,
+                    targetBucketName,
+                    storageObject -> handleInstantImageUpload(
+                            appId, userId, file, processedSize, processedImageContentType, fileHash,
+                            uploadTempThumbnailFile, uploadedStoragePaths, storageObject
+                    ),
+                    () -> handleNewImageUpload(
+                            appId, userId, file, processedSize, processedImageExtension, processedImageContentType,
+                            fileHash, uploadTempProcessedFile, uploadTempThumbnailFile, uploadedStoragePaths, targetBucketName
+                    )
             );
         } catch (IOException e) {
             log.error("Failed to upload image: {}", file.getOriginalFilename(), e);
@@ -132,7 +136,7 @@ public class ImageUploadCommandService {
         String thumbnailUrl = uploadStorageService.uploadTempFile(tempThumbnailFile, thumbnailPath, "image/jpeg");
         uploadedStoragePaths.add(thumbnailPath);
 
-        log.info("Image instant upload (deduplication): fileHash={}, userId={}, originalFilename={}",
+        log.debug("Image instant upload (deduplication): fileHash={}, userId={}, originalFilename={}",
                 fileHash, userId, file.getOriginalFilename());
 
         String fileRecordId = uploadObjectFactory.generateFileId();
@@ -184,7 +188,7 @@ public class ImageUploadCommandService {
         String thumbnailUrl = uploadStorageService.uploadTempFile(tempThumbnailFile, thumbnailPath, "image/jpeg");
         uploadedStoragePaths.add(thumbnailPath);
 
-        log.info("Image uploaded to storage: imagePath={}, userId={}, originalFilename={}",
+        log.debug("Image uploaded to storage: imagePath={}, userId={}, originalFilename={}",
                 imagePath, userId, file.getOriginalFilename());
 
         String storageObjectId = uploadObjectFactory.generateFileId();
@@ -205,7 +209,7 @@ public class ImageUploadCommandService {
             throw dbEx;
         }
 
-        log.info("Image upload completed: fileRecordId={}, imagePath={}", fileRecordId, imagePath);
+        log.debug("Image upload completed: fileRecordId={}, imagePath={}", fileRecordId, imagePath);
         return uploadObjectFactory.buildUploadResult(
                 fileRecordId,
                 imageUrl,

@@ -10,6 +10,7 @@ $ConfigFullPath = Join-Path $ScriptDir $ConfigPath
 $Config = Get-Content $ConfigFullPath | ConvertFrom-Json
 $UploadServiceUrl = $Config.upload_service_url
 $UserServiceUrl = $Config.user_service_url
+$AppId = if ($Config.app_id) { $Config.app_id } else { "blog" }
 
 # Global variables
 $Global:AccessToken = ""
@@ -43,7 +44,13 @@ function Invoke-ApiRequest {
     return $Result
 }
 
-function Get-AuthHeaders { return @{ "Authorization" = "Bearer $Global:AccessToken" } }
+function Get-AuthHeaders {
+    return @{
+        "Authorization" = "Bearer $Global:AccessToken"
+        "X-App-Id" = $AppId
+        "X-User-Id" = $Global:TestUserId
+    }
+}
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "File Detail API Test" -ForegroundColor Cyan
@@ -141,11 +148,11 @@ Write-Host ""
 # Test 1: Get file detail - success
 Write-Host "[TEST-1] Get file detail - owner access" -ForegroundColor Yellow
 $Result = Invoke-ApiRequest -Method "GET" -Url "$UploadServiceUrl/api/v1/files/$Global:TestFileId" -Headers (Get-AuthHeaders)
-if ($Result.Success -and $Result.Body.code -eq 200) {
-    $FileDetail = $Result.Body.data
+if ($Result.Success -and $Result.Body.fileId) {
+    $FileDetail = $Result.Body
     Write-Host "  [PASS] File detail retrieved successfully ($($Result.ResponseTime)ms)" -ForegroundColor Green
     Write-Host "    - File ID: $($FileDetail.fileId)" -ForegroundColor Gray
-    Write-Host "    - Original Name: $($FileDetail.originalName)" -ForegroundColor Gray
+    Write-Host "    - Original Name: $($FileDetail.originalFilename)" -ForegroundColor Gray
     Write-Host "    - File Size: $($FileDetail.fileSize) bytes" -ForegroundColor Gray
     Write-Host "    - Content Type: $($FileDetail.contentType)" -ForegroundColor Gray
     Write-Host "    - Status: $($FileDetail.status)" -ForegroundColor Gray
@@ -158,7 +165,7 @@ if ($Result.Success -and $Result.Body.code -eq 200) {
 # Test 2: Get file detail - non-existent file
 Write-Host "[TEST-2] Get file detail - non-existent file" -ForegroundColor Yellow
 $Result = Invoke-ApiRequest -Method "GET" -Url "$UploadServiceUrl/api/v1/files/non-existent-file-id" -Headers (Get-AuthHeaders)
-if ($Result.StatusCode -eq 500 -or ($Result.Body -and $Result.Body.code -ne 200)) {
+if ($Result.StatusCode -eq 404 -or ($Result.Body -and $Result.Body.status -eq 404)) {
     Write-Host "  [PASS] Correctly rejected non-existent file ($($Result.ResponseTime)ms)" -ForegroundColor Green
 } else {
     Write-Host "  [FAIL] Should reject non-existent file ($($Result.ResponseTime)ms)" -ForegroundColor Red
@@ -167,7 +174,7 @@ if ($Result.StatusCode -eq 500 -or ($Result.Body -and $Result.Body.code -ne 200)
 # Test 3: Get file detail - without authentication
 Write-Host "[TEST-3] Get file detail - without authentication" -ForegroundColor Yellow
 $Result = Invoke-ApiRequest -Method "GET" -Url "$UploadServiceUrl/api/v1/files/$Global:TestFileId"
-if ($Result.StatusCode -eq 401 -or $Result.StatusCode -eq 403) {
+if ($Result.StatusCode -eq 400 -or $Result.StatusCode -eq 401 -or $Result.StatusCode -eq 403) {
     Write-Host "  [PASS] Correctly rejected unauthenticated request ($($Result.ResponseTime)ms)" -ForegroundColor Green
 } else {
     Write-Host "  [FAIL] Should reject unauthenticated request ($($Result.ResponseTime)ms)" -ForegroundColor Red

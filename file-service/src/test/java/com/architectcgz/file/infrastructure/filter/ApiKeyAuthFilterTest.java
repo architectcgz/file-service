@@ -336,7 +336,7 @@ class ApiKeyAuthFilterTest {
         String[] nonAdminPaths = {
             "/api/v1/files/upload",
             "/api/v1/files/instant-upload",
-            "/api/v1/files/abc123/url",
+            "/api/v1/files/abc123:issue-access-ticket",
             "/api/v1/multipart/init",
             "/api/v1/multipart/upload",
             "/api/v1/presigned/upload",

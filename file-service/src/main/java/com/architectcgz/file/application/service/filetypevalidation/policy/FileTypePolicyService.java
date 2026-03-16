@@ -81,6 +81,6 @@ public class FileTypePolicyService {
         validateFileExtension(fileName);
         validateContentType(contentType);
         validateFileSize(fileSize);
-        log.info("文件验证通过: fileName={}, contentType={}, size={}", fileName, contentType, fileSize);
+        log.debug("文件验证通过: fileName={}, contentType={}, size={}", fileName, contentType, fileSize);
     }
 }

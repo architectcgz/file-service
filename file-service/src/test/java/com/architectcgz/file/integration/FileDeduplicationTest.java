@@ -1,6 +1,5 @@
 package com.architectcgz.file.integration;
 
-import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.result.ApiResponse;
 import com.architectcgz.file.config.TestStorageConfig;
 import com.architectcgz.file.interfaces.dto.UploadResult;
@@ -298,19 +297,19 @@ class FileDeduplicationTest {
         assertThat(storageAfter.getReferenceCount()).isEqualTo(1);
 
         // 5. Verify second file still accessible
-        mockMvc.perform(get("/api/v1/files/" + fileId2 + "/url")
+        mockMvc.perform(post("/api/v1/files/" + fileId2 + ":issue-access-ticket")
                 .header("X-App-Id", BLOG_APP_ID)
                 .header("X-User-Id", String.valueOf(USER_ID_1)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.code").value(200));
+            .andExpect(jsonPath("$.ticket").exists());
         
         // 6. Verify first file (deleted) is not accessible - should return 404
-        mockMvc.perform(get("/api/v1/files/" + fileId1 + "/url")
+        mockMvc.perform(post("/api/v1/files/" + fileId1 + ":issue-access-ticket")
                 .header("X-App-Id", BLOG_APP_ID)
                 .header("X-User-Id", String.valueOf(USER_ID_1)))
             .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.code").value(404))
-            .andExpect(jsonPath("$.message").value(String.format(FileServiceErrorMessages.FILE_DELETED_WITH_ID, fileId1)));
+            .andExpect(jsonPath("$.status").value(404))
+            .andExpect(jsonPath("$.message").value("fileId deleted: " + fileId1));
     }
 
     @Test
@@ -369,18 +368,18 @@ class FileDeduplicationTest {
             .andExpect(status().isOk());
 
         // 6. User 2 can still access their file
-        mockMvc.perform(get("/api/v1/files/" + fileId2 + "/url")
+        mockMvc.perform(post("/api/v1/files/" + fileId2 + ":issue-access-ticket")
                 .header("X-App-Id", BLOG_APP_ID)
                 .header("X-User-Id", String.valueOf(USER_ID_2)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.code").value(200));
+            .andExpect(jsonPath("$.ticket").exists());
         
         // 6.1. User 1's deleted file should return 404
-        mockMvc.perform(get("/api/v1/files/" + fileId1 + "/url")
+        mockMvc.perform(post("/api/v1/files/" + fileId1 + ":issue-access-ticket")
                 .header("X-App-Id", BLOG_APP_ID)
                 .header("X-User-Id", String.valueOf(USER_ID_1)))
             .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.code").value(404));
+            .andExpect(jsonPath("$.status").value(404));
 
         // 7. Verify reference count is now 1
         StorageObject storageAfterDelete = storageObjectRepository.findById(

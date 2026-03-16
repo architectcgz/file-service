@@ -32,7 +32,7 @@ public class FileSignatureValidationService {
         String detectedType = fileTypeSignatureInspector.detectFileTypeOrThrow(fileName, fileHeader);
         fileTypeSignatureInspector.requireTypeMatch(contentType, detectedType, fileName);
 
-        log.info("文件验证通过（含魔数检测）: fileName={}, contentType={}, detectedType={}, size={}",
+        log.debug("文件验证通过（含魔数检测）: fileName={}, contentType={}, detectedType={}, size={}",
                 fileName, contentType, detectedType, fileSize);
     }
 }

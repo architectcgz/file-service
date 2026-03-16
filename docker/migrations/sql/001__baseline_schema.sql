@@ -45,7 +45,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_storage_objects_app_hash
     ON storage_objects(app_id, file_hash, hash_algorithm);
 CREATE INDEX IF NOT EXISTS idx_storage_objects_ref_count ON storage_objects(reference_count);
 
--- 上传任务表（分片上传）
+-- 上传会话表（file-core upload session）
 CREATE TABLE IF NOT EXISTS upload_tasks (
     id VARCHAR(64) PRIMARY KEY,
     app_id VARCHAR(32) NOT NULL,
@@ -71,21 +71,6 @@ CREATE INDEX IF NOT EXISTS idx_upload_tasks_app_user ON upload_tasks(app_id, use
 CREATE INDEX IF NOT EXISTS idx_upload_tasks_app_status ON upload_tasks(app_id, status);
 CREATE INDEX IF NOT EXISTS idx_upload_tasks_expires_at ON upload_tasks(expires_at)
     WHERE expires_at IS NOT NULL;
-
--- 上传分片表
-CREATE TABLE IF NOT EXISTS upload_parts (
-    id VARCHAR(64) PRIMARY KEY,
-    task_id VARCHAR(64) NOT NULL,
-    part_number INT NOT NULL,
-    etag VARCHAR(255),
-    size BIGINT,
-    uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_upload_parts_unique ON upload_parts(task_id, part_number);
-CREATE INDEX IF NOT EXISTS idx_upload_parts_task_id ON upload_parts(task_id);
-CREATE INDEX IF NOT EXISTS idx_upload_parts_task_part ON upload_parts(task_id, part_number);
-CREATE INDEX IF NOT EXISTS idx_upload_parts_task_uploaded ON upload_parts(task_id, uploaded_at DESC);
 
 -- 租户表
 CREATE TABLE IF NOT EXISTS tenants (
@@ -138,15 +123,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_tenant ON admin_audit_logs(tenant_id);
 
 COMMENT ON TABLE file_records IS '文件记录表 - 存储用户上传的文件元数据';
 COMMENT ON TABLE storage_objects IS '存储对象表 - 用于文件去重，多个文件记录可共享同一存储对象';
-COMMENT ON TABLE upload_tasks IS '上传任务表 - 用于分片上传场景';
-COMMENT ON TABLE upload_parts IS '上传分片表 - 记录分片上传的每个分片信息';
+COMMENT ON TABLE upload_tasks IS '上传会话表 - file-core upload session 的持久化视图';
 COMMENT ON TABLE tenants IS '租户表 - 存储租户信息和配额配置';
 COMMENT ON TABLE tenant_usage IS '租户使用统计表 - 记录租户的存储使用情况';
 COMMENT ON TABLE admin_audit_logs IS '管理员审计日志表 - 记录所有管理操作';
-
-COMMENT ON INDEX idx_upload_parts_task_id IS '用于查询任务的所有分片';
-COMMENT ON INDEX idx_upload_parts_task_part IS '用于快速检查特定分片是否已上传';
-COMMENT ON INDEX idx_upload_parts_task_uploaded IS '用于按时间排序查询分片';
 
 COMMENT ON COLUMN file_records.app_id IS '应用标识符，用于多租户隔离（如：blog, im）';
 COMMENT ON COLUMN file_records.user_id IS '用户ID - 支持字符串类型的用户标识';

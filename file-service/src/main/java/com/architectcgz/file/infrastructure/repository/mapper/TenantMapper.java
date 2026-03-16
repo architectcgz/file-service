@@ -8,8 +8,7 @@ import java.util.List;
 /**
  * 租户 MyBatis Mapper
  */
-@Mapper
-public interface TenantMapper {
+public interface TenantMapper extends RuntimeMyBatisMapper {
     /**
      * 根据ID查找租户
      */

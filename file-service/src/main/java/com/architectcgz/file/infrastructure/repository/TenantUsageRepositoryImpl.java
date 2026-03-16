@@ -49,6 +49,12 @@ public class TenantUsageRepositoryImpl implements TenantUsageRepository {
 
     @Override
     @Transactional
+    public boolean incrementUsageIfWithinQuota(String tenantId, long fileSize) {
+        return tenantUsageMapper.incrementUsageIfWithinQuota(tenantId, fileSize) > 0;
+    }
+
+    @Override
+    @Transactional
     public void decrementUsage(String tenantId, long fileSize) {
         tenantUsageMapper.decrementUsage(tenantId, fileSize);
     }

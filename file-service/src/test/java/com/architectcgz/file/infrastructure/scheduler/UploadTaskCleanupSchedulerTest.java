@@ -1,11 +1,10 @@
 package com.architectcgz.file.infrastructure.scheduler;
 
-import com.architectcgz.file.domain.model.AccessLevel;
-import com.architectcgz.file.domain.model.UploadTask;
-import com.architectcgz.file.domain.model.UploadTaskStatus;
-import com.architectcgz.file.domain.repository.UploadTaskRepository;
-import com.architectcgz.file.infrastructure.config.MultipartProperties;
-import com.architectcgz.file.infrastructure.storage.S3StorageService;
+import com.platform.fileservice.core.application.service.CleanupAppService;
+import com.platform.fileservice.core.domain.model.AccessLevel;
+import com.platform.fileservice.core.domain.model.UploadMode;
+import com.platform.fileservice.core.domain.model.UploadSession;
+import com.platform.fileservice.core.domain.model.UploadSessionStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,225 +12,112 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
-import java.util.Arrays;
-import java.util.Collections;
+import java.time.Instant;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-/**
- * 上传任务清理定时任务测试
- */
 @ExtendWith(MockitoExtension.class)
 class UploadTaskCleanupSchedulerTest {
-    
+
     @Mock
-    private UploadTaskRepository uploadTaskRepository;
-    
-    @Mock
-    private S3StorageService s3StorageService;
-    
-    @Mock
-    private MultipartProperties multipartProperties;
-    
+    private CleanupAppService cleanupAppService;
+
     @InjectMocks
     private UploadTaskCleanupScheduler scheduler;
-    
-    private UploadTask expiredTask1;
-    private UploadTask expiredTask2;
-    
+
+    private UploadSession expiredSession1;
+    private UploadSession expiredSession2;
+
     @BeforeEach
     void setUp() {
-        lenient().when(s3StorageService.getBucketName(AccessLevel.PUBLIC)).thenReturn("platform-files-public");
-
-        expiredTask1 = new UploadTask();
-        expiredTask1.setId("task-1");
-        expiredTask1.setUserId("1");
-        expiredTask1.setFileName("file1.mp4");
-        expiredTask1.setStoragePath("2026/01/18/1/file1.mp4");
-        expiredTask1.setUploadId("upload-id-1");
-        expiredTask1.setStatus(UploadTaskStatus.UPLOADING);
-        expiredTask1.setExpiresAt(LocalDateTime.now().minusHours(1));
-        
-        expiredTask2 = new UploadTask();
-        expiredTask2.setId("task-2");
-        expiredTask2.setUserId("2");
-        expiredTask2.setFileName("file2.mp4");
-        expiredTask2.setStoragePath("2026/01/18/2/file2.mp4");
-        expiredTask2.setUploadId("upload-id-2");
-        expiredTask2.setStatus(UploadTaskStatus.UPLOADING);
-        expiredTask2.setExpiresAt(LocalDateTime.now().minusHours(2));
+        expiredSession1 = buildSession("session-1", "provider-1");
+        expiredSession2 = buildSession("session-2", "provider-2");
     }
-    
+
     @Test
     void testCleanupExpiredTasks_NoExpiredTasks() {
-        // Given
-        when(uploadTaskRepository.findExpiredTasks(any(LocalDateTime.class)))
-                .thenReturn(Collections.emptyList());
-        
-        // When
+        when(cleanupAppService.findExpiredUploadSessions()).thenReturn(List.of());
+
         scheduler.cleanupExpiredTasks();
-        
-        // Then
-        verify(uploadTaskRepository).findExpiredTasks(any(LocalDateTime.class));
-        verify(s3StorageService, never()).abortMultipartUpload(anyString(), anyString(), any());
-        verify(uploadTaskRepository, never()).updateStatus(anyString(), any(UploadTaskStatus.class));
+
+        verify(cleanupAppService).findExpiredUploadSessions();
+        verify(cleanupAppService, never()).expireUploadSession(any());
     }
-    
+
     @Test
     void testCleanupExpiredTasks_Success() {
-        // Given
-        List<UploadTask> expiredTasks = Arrays.asList(expiredTask1, expiredTask2);
-        when(uploadTaskRepository.findExpiredTasks(any(LocalDateTime.class)))
-                .thenReturn(expiredTasks);
-        
-        // When
+        when(cleanupAppService.findExpiredUploadSessions()).thenReturn(List.of(expiredSession1, expiredSession2));
+        when(cleanupAppService.expireUploadSession(expiredSession1)).thenReturn(true);
+        when(cleanupAppService.expireUploadSession(expiredSession2)).thenReturn(true);
+
         scheduler.cleanupExpiredTasks();
-        
-        // Then
-        verify(uploadTaskRepository).findExpiredTasks(any(LocalDateTime.class));
-        
-        // Verify S3 cleanup for both tasks
-        verify(s3StorageService).abortMultipartUpload(
-                eq(expiredTask1.getStoragePath()), 
-                eq(expiredTask1.getUploadId()),
-                eq("platform-files-public")
-        );
-        verify(s3StorageService).abortMultipartUpload(
-                eq(expiredTask2.getStoragePath()), 
-                eq(expiredTask2.getUploadId()),
-                eq("platform-files-public")
-        );
-        
-        // Verify status update for both tasks
-        verify(uploadTaskRepository).updateStatus(
-                eq(expiredTask1.getId()), 
-                eq(UploadTaskStatus.EXPIRED)
-        );
-        verify(uploadTaskRepository).updateStatus(
-                eq(expiredTask2.getId()), 
-                eq(UploadTaskStatus.EXPIRED)
-        );
+
+        verify(cleanupAppService).findExpiredUploadSessions();
+        verify(cleanupAppService).expireUploadSession(expiredSession1);
+        verify(cleanupAppService).expireUploadSession(expiredSession2);
     }
-    
+
     @Test
-    void testCleanupExpiredTasks_S3AbortFails() {
-        // Given
-        List<UploadTask> expiredTasks = Collections.singletonList(expiredTask1);
-        when(uploadTaskRepository.findExpiredTasks(any(LocalDateTime.class)))
-                .thenReturn(expiredTasks);
-        
-        // S3 abort fails but should not prevent status update
-        doThrow(new RuntimeException("S3 error"))
-                .when(s3StorageService)
-                .abortMultipartUpload(anyString(), anyString(), any());
-        
-        // When
+    void testCleanupExpiredTasks_SingleSessionFails() {
+        when(cleanupAppService.findExpiredUploadSessions()).thenReturn(List.of(expiredSession1, expiredSession2));
+        doThrow(new RuntimeException("storage error"))
+                .when(cleanupAppService)
+                .expireUploadSession(expiredSession1);
+        when(cleanupAppService.expireUploadSession(expiredSession2)).thenReturn(true);
+
         scheduler.cleanupExpiredTasks();
-        
-        // Then
-        verify(s3StorageService).abortMultipartUpload(
-                eq(expiredTask1.getStoragePath()), 
-                eq(expiredTask1.getUploadId()),
-                eq("platform-files-public")
-        );
-        
-        // Status should still be updated despite S3 failure
-        verify(uploadTaskRepository).updateStatus(
-                eq(expiredTask1.getId()), 
-                eq(UploadTaskStatus.EXPIRED)
-        );
+
+        verify(cleanupAppService).expireUploadSession(expiredSession1);
+        verify(cleanupAppService).expireUploadSession(expiredSession2);
     }
-    
+
     @Test
-    void testCleanupExpiredTasks_StatusUpdateFails() {
-        // Given
-        List<UploadTask> expiredTasks = Collections.singletonList(expiredTask1);
-        when(uploadTaskRepository.findExpiredTasks(any(LocalDateTime.class)))
-                .thenReturn(expiredTasks);
-        
-        // Status update fails
-        doThrow(new RuntimeException("Database error"))
-                .when(uploadTaskRepository)
-                .updateStatus(anyString(), any(UploadTaskStatus.class));
-        
-        // When
+    void testCleanupExpiredTasks_StatusUpdateSkipped() {
+        when(cleanupAppService.findExpiredUploadSessions()).thenReturn(List.of(expiredSession1));
+        when(cleanupAppService.expireUploadSession(expiredSession1)).thenReturn(false);
+
         scheduler.cleanupExpiredTasks();
-        
-        // Then
-        verify(s3StorageService).abortMultipartUpload(
-                eq(expiredTask1.getStoragePath()), 
-                eq(expiredTask1.getUploadId()),
-                eq("platform-files-public")
-        );
-        verify(uploadTaskRepository).updateStatus(
-                eq(expiredTask1.getId()), 
-                eq(UploadTaskStatus.EXPIRED)
-        );
-        
-        // Scheduler should continue despite failure (logged but not thrown)
+
+        verify(cleanupAppService).expireUploadSession(expiredSession1);
     }
-    
+
     @Test
-    void testCleanupExpiredTasks_PartialFailure() {
-        // Given
-        List<UploadTask> expiredTasks = Arrays.asList(expiredTask1, expiredTask2);
-        when(uploadTaskRepository.findExpiredTasks(any(LocalDateTime.class)))
-                .thenReturn(expiredTasks);
-        
-        // First task succeeds, second task fails on status update
-        doNothing()
-                .when(uploadTaskRepository)
-                .updateStatus(eq(expiredTask1.getId()), any(UploadTaskStatus.class));
-        
-        doThrow(new RuntimeException("Database error"))
-                .when(uploadTaskRepository)
-                .updateStatus(eq(expiredTask2.getId()), any(UploadTaskStatus.class));
-        
-        // When
-        scheduler.cleanupExpiredTasks();
-        
-        // Then
-        // Both tasks should be attempted
-        verify(s3StorageService).abortMultipartUpload(
-                eq(expiredTask1.getStoragePath()), 
-                eq(expiredTask1.getUploadId()),
-                eq("platform-files-public")
-        );
-        verify(s3StorageService).abortMultipartUpload(
-                eq(expiredTask2.getStoragePath()), 
-                eq(expiredTask2.getUploadId()),
-                eq("platform-files-public")
-        );
-        
-        verify(uploadTaskRepository).updateStatus(
-                eq(expiredTask1.getId()), 
-                eq(UploadTaskStatus.EXPIRED)
-        );
-        verify(uploadTaskRepository).updateStatus(
-                eq(expiredTask2.getId()), 
-                eq(UploadTaskStatus.EXPIRED)
-        );
-    }
-    
-    @Test
-    void testCleanupExpiredTasks_RepositoryQueryFails() {
-        // Given
-        when(uploadTaskRepository.findExpiredTasks(any(LocalDateTime.class)))
+    void testCleanupExpiredTasks_QueryFails() {
+        when(cleanupAppService.findExpiredUploadSessions())
                 .thenThrow(new RuntimeException("Database connection error"));
-        
-        // When
+
         scheduler.cleanupExpiredTasks();
-        
-        // Then
-        verify(uploadTaskRepository).findExpiredTasks(any(LocalDateTime.class));
-        
-        // Should not proceed to cleanup if query fails
-        verify(s3StorageService, never()).abortMultipartUpload(anyString(), anyString(), any());
-        verify(uploadTaskRepository, never()).updateStatus(anyString(), any(UploadTaskStatus.class));
+
+        verify(cleanupAppService).findExpiredUploadSessions();
+        verify(cleanupAppService, never()).expireUploadSession(any());
+    }
+
+    private UploadSession buildSession(String sessionId, String providerUploadId) {
+        Instant now = Instant.parse("2026-03-14T00:00:00Z");
+        return new UploadSession(
+                sessionId,
+                "blog",
+                "user-123",
+                UploadMode.DIRECT,
+                AccessLevel.PUBLIC,
+                "archive.zip",
+                "application/zip",
+                2048L,
+                "hash-456",
+                "blog/2026/03/14/user-123/files/archive.zip",
+                1024,
+                2,
+                providerUploadId,
+                null,
+                UploadSessionStatus.UPLOADING,
+                now,
+                now,
+                now.minusSeconds(60)
+        );
     }
 }

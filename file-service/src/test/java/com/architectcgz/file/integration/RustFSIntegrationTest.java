@@ -5,7 +5,6 @@ import com.architectcgz.file.config.RustFSTestConfig;
 import com.architectcgz.file.domain.model.FileStatus;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import com.architectcgz.file.domain.repository.StorageObjectRepository;
-import com.architectcgz.file.domain.repository.UploadTaskRepository;
 import com.architectcgz.file.integration.helper.FileTestData;
 import com.architectcgz.file.integration.helper.S3Verifier;
 import com.architectcgz.file.integration.helper.TestContext;
@@ -168,9 +167,6 @@ class RustFSIntegrationTest {
 
     @Autowired
     private StorageObjectRepository storageObjectRepository;
-
-    @Autowired
-    private UploadTaskRepository uploadTaskRepository;
 
     @Autowired
     private S3Client s3Client;
@@ -605,8 +601,8 @@ class RustFSIntegrationTest {
     }
 
     @Test
-    @DisplayName("Get file URL by fileId and access file content through returned URL")
-    void getFileUrlById_shouldReturnAccessibleUrl() throws Exception {
+    @DisplayName("Issue access ticket by fileId")
+    void issueAccessTicketById_shouldReturnGatewayUrl() throws Exception {
         String filename = "service-readme.txt";
         String content = "service-to-service file lookup by id";
         MockMultipartFile textFile = FileTestData.createTextFile(filename, content);
@@ -634,26 +630,23 @@ class RustFSIntegrationTest {
         fileInfo.setContent(content.getBytes());
         testContext.addUploadedFile(fileInfo);
 
-        String fileUrlResponseJson = mockMvc.perform(get("/api/v1/files/{fileId}/url", fileId)
-                .header("X-App-Id", TEST_APP_ID))
+        String fileUrlResponseJson = mockMvc.perform(post("/api/v1/files/{fileId}:issue-access-ticket", fileId)
+                .header("X-App-Id", TEST_APP_ID)
+                .header("X-User-Id", String.valueOf(TEST_USER_ID)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.code").value(200))
-            .andExpect(jsonPath("$.data.url").exists())
-            .andExpect(jsonPath("$.data.gatewayUrl").value("/api/v1/files/" + fileId + "/content"))
-            .andExpect(jsonPath("$.data.permanent").value(true))
+            .andExpect(jsonPath("$.ticket").exists())
+            .andExpect(jsonPath("$.gatewayUrl").value(org.hamcrest.Matchers.startsWith(
+                    "http://localhost:8090/api/v1/files/" + fileId + "/content?ticket="
+            )))
             .andReturn()
             .getResponse()
             .getContentAsString();
 
-        String resolvedUrl = objectMapper.readTree(fileUrlResponseJson).path("data").path("url").asText();
-        Assertions.assertFalse(resolvedUrl.isBlank(), "file-service 应返回可访问的文件 URL");
-
-        boolean accessible = urlAccessVerifier.isAccessible(resolvedUrl);
-        Assertions.assertTrue(accessible, "通过 fileId 获取到的 URL 应该可访问: " + resolvedUrl);
-
-        byte[] downloaded = urlAccessVerifier.downloadFile(resolvedUrl);
-        Assertions.assertArrayEquals(content.getBytes(), downloaded,
-            "通过 fileId 获取到的 URL 返回内容应与原始上传内容一致");
+        String ticket = objectMapper.readTree(fileUrlResponseJson).path("ticket").asText();
+        String gatewayUrl = objectMapper.readTree(fileUrlResponseJson).path("gatewayUrl").asText();
+        Assertions.assertFalse(ticket.isBlank(), "file-service 应返回可用的访问票据");
+        Assertions.assertTrue(gatewayUrl.contains("/api/v1/files/" + fileId + "/content?ticket="),
+            "gateway URL 应指向 file-gateway-service 内容入口: " + gatewayUrl);
     }
 
     @Test

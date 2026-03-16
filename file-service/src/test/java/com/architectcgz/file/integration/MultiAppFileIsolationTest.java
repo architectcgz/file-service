@@ -1,6 +1,5 @@
 package com.architectcgz.file.integration;
 
-import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.result.ApiResponse;
 import com.architectcgz.file.config.TestStorageConfig;
 import com.architectcgz.file.interfaces.dto.UploadResult;
@@ -117,20 +116,22 @@ class MultiAppFileIsolationTest {
         assertThat(fileRecord.getUserId()).isEqualTo(BLOG_USER_ID);
 
         // 3. IM app tries to access the blog file - should fail with 404 to avoid leaking existence
-        mockMvc.perform(get("/api/v1/files/" + blogFileId + "/url")
+        mockMvc.perform(post("/api/v1/files/" + blogFileId + ":issue-access-ticket")
                 .header("X-App-Id", IM_APP_ID)
                 .header("X-User-Id", String.valueOf(IM_USER_ID)))
             .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.code").value(404))
-            .andExpect(jsonPath("$.message").value(String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, blogFileId)));
+            .andExpect(jsonPath("$.status").value(404))
+            .andExpect(jsonPath("$.message").value("fileId not found: " + blogFileId));
 
         // 4. Blog app can access its own file - should succeed
-        mockMvc.perform(get("/api/v1/files/" + blogFileId + "/url")
+        mockMvc.perform(post("/api/v1/files/" + blogFileId + ":issue-access-ticket")
                 .header("X-App-Id", BLOG_APP_ID)
                 .header("X-User-Id", String.valueOf(BLOG_USER_ID)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.code").value(200))
-            .andExpect(jsonPath("$.data.url").exists());
+            .andExpect(jsonPath("$.ticket").exists())
+            .andExpect(jsonPath("$.gatewayUrl").value(org.hamcrest.Matchers.startsWith(
+                    "http://localhost:8090/api/v1/files/" + blogFileId + "/content?ticket="
+            )));
     }
 
     @Test
@@ -260,17 +261,16 @@ class MultiAppFileIsolationTest {
                 .header("X-App-Id", IM_APP_ID)
                 .header("X-User-Id", String.valueOf(IM_USER_ID)))
             .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.code").value(404))
-            .andExpect(jsonPath("$.message").value(String.format(FileServiceErrorMessages.FILE_NOT_FOUND_WITH_PATH, blogFileId)));
+            .andExpect(jsonPath("$.status").value(404))
+            .andExpect(jsonPath("$.message").value("fileId not found: " + blogFileId));
 
         // 3. Blog app can get its own file details - should succeed
         mockMvc.perform(get("/api/v1/files/" + blogFileId)
                 .header("X-App-Id", BLOG_APP_ID)
                 .header("X-User-Id", String.valueOf(BLOG_USER_ID)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.code").value(200))
-            .andExpect(jsonPath("$.data.fileId").value(blogFileId))
-            .andExpect(jsonPath("$.data.originalFilename").exists());
+            .andExpect(jsonPath("$.fileId").value(blogFileId))
+            .andExpect(jsonPath("$.originalFilename").exists());
     }
 
     /**

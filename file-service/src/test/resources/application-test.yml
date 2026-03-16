@@ -13,24 +13,13 @@ spring:
 # MyBatis 配置
 mybatis:
   mapper-locations: classpath:mapper/*.xml
-  type-aliases-package: com.architectcgz.file.infrastructure.repository.po
   type-handlers-package: com.architectcgz.file.infrastructure.mybatis
   configuration:
     map-underscore-to-camel-case: true
     default-statement-timeout: 30
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
-# Bitmap 配置（集成测试启用）
-storage:
-  multipart:
-    bitmap:
-      enabled: true
-      sync-batch-size: 10
-      expire-hours: 24
-      max-parts: 10000
-
 # 日志配置 - 调试 MyBatis
 logging:
   level:
-    com.architectcgz.file.infrastructure.repository.mapper: DEBUG
     org.mybatis: DEBUG

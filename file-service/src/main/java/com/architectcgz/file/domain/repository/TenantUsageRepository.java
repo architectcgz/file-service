@@ -26,6 +26,15 @@ public interface TenantUsageRepository {
     void incrementUsage(String tenantId, long fileSize);
 
     /**
+     * 在未超过租户配额时原子性增加使用量。
+     *
+     * @param tenantId 租户ID
+     * @param fileSize 文件大小（字节）
+     * @return 成功增加返回 true，若配额不足或租户不可用返回 false
+     */
+    boolean incrementUsageIfWithinQuota(String tenantId, long fileSize);
+
+    /**
      * 原子性减少使用量
      * @param tenantId 租户ID
      * @param fileSize 文件大小（字节）

@@ -85,6 +85,12 @@ public final class FileServiceErrorMessages {
     /** 等待并发分片上传超时 */
     public static final String WAIT_PART_UPLOAD_TIMEOUT = "等待分片上传完成超时，请重试";
 
+    /** 等待去重上传结果时被中断 */
+    public static final String WAIT_DEDUP_UPLOAD_INTERRUPTED = "等待去重上传结果时被中断";
+
+    /** 等待去重上传结果超时 */
+    public static final String WAIT_DEDUP_UPLOAD_TIMEOUT = "等待同内容文件上传结果超时，请重试";
+
     /** 文件大小不匹配，无法续传 */
     public static final String FILE_SIZE_MISMATCH = "文件大小不匹配，无法续传";
 

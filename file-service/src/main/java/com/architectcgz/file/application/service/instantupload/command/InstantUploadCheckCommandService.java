@@ -32,7 +32,7 @@ public class InstantUploadCheckCommandService {
      */
     @Transactional(rollbackFor = Exception.class)
     public InstantUploadCheckResponse checkInstantUpload(String appId, InstantUploadCheckRequest request, String userId) {
-        log.info("Checking instant upload: appId={}, fileHash={}, userId={}, fileName={}",
+        log.debug("Checking instant upload: appId={}, fileHash={}, userId={}, fileName={}",
                 appId, request.getFileHash(), userId, request.getFileName());
 
         Optional<FileRecord> existingFileRecord = instantUploadRecordQueryService.findExistingUserFile(
@@ -44,7 +44,7 @@ public class InstantUploadCheckCommandService {
             FileRecord fileRecord = existingFileRecord.get();
             String fileUrl = instantUploadStorageService.resolveFileUrl(fileRecord);
 
-            log.info("Instant upload: user already has file with same hash: userId={}, fileHash={}, fileId={}",
+            log.debug("Instant upload: user already has file with same hash: userId={}, fileHash={}, fileId={}",
                     userId, request.getFileHash(), fileRecord.getId());
 
             return instantUploadResponseAssembler.successResponse(fileRecord.getId(), fileUrl);
@@ -63,13 +63,13 @@ public class InstantUploadCheckCommandService {
 
             String fileUrl = instantUploadStorageService.buildPublicUrl(storageObject);
 
-            log.info("Instant upload successful: fileHash={}, userId={}, fileId={}, storageObjectId={}",
+            log.debug("Instant upload successful: fileHash={}, userId={}, fileId={}, storageObjectId={}",
                     request.getFileHash(), userId, fileRecord.getId(), storageObject.getId());
 
             return instantUploadResponseAssembler.successResponse(fileRecord.getId(), fileUrl);
         }
 
-        log.info("File not found for instant upload: fileHash={}, userId={}", request.getFileHash(), userId);
+        log.debug("File not found for instant upload: fileHash={}, userId={}", request.getFileHash(), userId);
         return instantUploadResponseAssembler.needUploadResponse();
     }
 }

@@ -28,6 +28,8 @@ public final class FileServiceErrorCodes {
     public static final String UPLOAD_TASK_FILE_HASH_MISSING = "UPLOAD_TASK_FILE_HASH_MISSING";
     public static final String WAIT_PART_UPLOAD_INTERRUPTED = "WAIT_PART_UPLOAD_INTERRUPTED";
     public static final String WAIT_PART_UPLOAD_TIMEOUT = "WAIT_PART_UPLOAD_TIMEOUT";
+    public static final String WAIT_DEDUP_UPLOAD_INTERRUPTED = "WAIT_DEDUP_UPLOAD_INTERRUPTED";
+    public static final String WAIT_DEDUP_UPLOAD_TIMEOUT = "WAIT_DEDUP_UPLOAD_TIMEOUT";
     public static final String TASK_STATUS_INVALID = "TASK_STATUS_INVALID";
     public static final String FILE_SIZE_MISMATCH = "FILE_SIZE_MISMATCH";
     public static final String PART_COUNT_EXCEEDED = "PART_COUNT_EXCEEDED";

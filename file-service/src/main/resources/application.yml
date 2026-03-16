@@ -14,8 +14,8 @@ spring:
         password: ${NACOS_PASSWORD:nacos}
   servlet:
     multipart:
-      max-file-size: 200MB
-      max-request-size: 200MB
+      max-file-size: ${UPLOAD_MAX_FILE_SIZE_BYTES:${MULTIPART_MAX_FILE_SIZE:5368709120}}
+      max-request-size: ${UPLOAD_MAX_REQUEST_SIZE_BYTES:${UPLOAD_MAX_FILE_SIZE_BYTES:${MULTIPART_MAX_REQUEST_SIZE:5368709120}}}
   # 数据源配置
   datasource:
     driver-class-name: org.postgresql.Driver
@@ -97,7 +97,7 @@ storage:
   # 分片上传配置
   multipart:
     enabled: ${MULTIPART_ENABLED:true}
-    threshold: ${MULTIPART_THRESHOLD:10485760}      # 10MB - 超过此大小使用分片上传
+    threshold: ${UPLOAD_PROXY_MULTIPART_THRESHOLD_BYTES:${MULTIPART_THRESHOLD:10485760}}      # 10MB - 超过此大小使用分片上传
     chunk-size: ${MULTIPART_CHUNK_SIZE:5242880}     # 5MB - 每个分片大小
     max-parts: ${MULTIPART_MAX_PARTS:10000}         # 最大分片数
     task-expire-hours: ${MULTIPART_EXPIRE_HOURS:24} # 任务过期时间（小时）
@@ -144,7 +144,7 @@ storage:
       - docx
       - txt
     # 最大文件大小（字节）- 5GB
-    max-file-size: ${MAX_FILE_SIZE:5368709120}
+    max-file-size: ${UPLOAD_MAX_FILE_SIZE_BYTES:${MAX_FILE_SIZE:5368709120}}
     # 是否启用文件魔数检测（防止文件类型伪造）
     enable-magic-number-check: ${ENABLE_MAGIC_CHECK:true}
   
@@ -160,6 +160,13 @@ upload:
   max-size: 10485760  # 10MB
   allowed-image-types: image/jpeg,image/png,image/gif,image/webp
   allowed-file-types: application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain
+  dedup:
+    claim-lease: ${UPLOAD_DEDUP_CLAIM_LEASE:10m}
+    wait-timeout: ${UPLOAD_DEDUP_WAIT_TIMEOUT:30s}
+    poll-interval: ${UPLOAD_DEDUP_POLL_INTERVAL:100ms}
+    renew-interval: ${UPLOAD_DEDUP_RENEW_INTERVAL:5s}
+    notification-max-wait: ${UPLOAD_DEDUP_NOTIFICATION_MAX_WAIT:3s}
+    renew-scheduler-threads: ${UPLOAD_DEDUP_RENEW_SCHEDULER_THREADS:2}
   image:
     max-width: 1920
     max-height: 1080
@@ -168,6 +175,19 @@ upload:
     thumbnail-height: 200
     convert-to-webp: true
     temp-file-prefix: ${IMAGE_TEMP_FILE_PREFIX:img-upload-}
+
+file:
+  core:
+    access:
+      gateway-base-url: ${FILE_CORE_GATEWAY_BASE_URL:http://localhost:8090}
+      ticket-ttl: ${FILE_CORE_ACCESS_TICKET_TTL:5m}
+      signing-secret: ${FILE_CORE_ACCESS_SIGNING_SECRET:change-me-before-production}
+    upload:
+      session-ttl: ${FILE_CORE_UPLOAD_SESSION_TTL:24h}
+      part-url-ttl: ${FILE_CORE_UPLOAD_PART_URL_TTL:15m}
+      chunk-size-bytes: ${FILE_CORE_UPLOAD_CHUNK_SIZE_BYTES:${MULTIPART_CHUNK_SIZE:5242880}}
+      max-parts: ${FILE_CORE_UPLOAD_MAX_PARTS:${MULTIPART_MAX_PARTS:10000}}
+      auto-presigned-single-max-size-bytes: ${UPLOAD_AUTO_SINGLE_MAX_SIZE_BYTES:${UPLOAD_PROXY_MULTIPART_THRESHOLD_BYTES:10485760}}
 
 # 租户配置
 tenant:
@@ -212,6 +232,27 @@ management:
     export:
       prometheus:
         enabled: true
+
+# OpenAPI / Knife4j
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+
+knife4j:
+  enable: true
+  title: File Service API 文档
+  version: 1.0.0
+  description: 统一文件上传、访问控制与内容分发接口文档
+  setting:
+    language: zh_cn
+    enable-swagger-models: true
+    enable-document-manage: true
+    swagger-model-name: 实体类列表
+  production: false
 
 # 日志配置
 logging:

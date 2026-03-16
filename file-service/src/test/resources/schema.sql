@@ -19,6 +19,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_storage_objects_app_hash ON storage_objects
 CREATE INDEX IF NOT EXISTS idx_storage_objects_reference_count ON storage_objects(reference_count);
 CREATE INDEX IF NOT EXISTS idx_storage_objects_created_at ON storage_objects(created_at);
 
+-- Upload Dedup Claims Table
+CREATE TABLE IF NOT EXISTS upload_dedup_claims (
+    app_id       VARCHAR(64) NOT NULL,
+    file_hash    VARCHAR(64) NOT NULL,
+    bucket_name  VARCHAR(128) NOT NULL,
+    owner_token  VARCHAR(64) NOT NULL,
+    expires_at   TIMESTAMP NOT NULL,
+    created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (app_id, file_hash, bucket_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_upload_dedup_claims_expires_at ON upload_dedup_claims(expires_at);
+
 -- File Records Table
 CREATE TABLE IF NOT EXISTS file_records (
     id                VARCHAR(36) PRIMARY KEY,
@@ -71,19 +85,6 @@ CREATE INDEX IF NOT EXISTS idx_upload_tasks_file_hash ON upload_tasks(file_hash)
 CREATE INDEX IF NOT EXISTS idx_upload_tasks_upload_id ON upload_tasks(upload_id);
 CREATE INDEX IF NOT EXISTS idx_upload_tasks_status ON upload_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_upload_tasks_expires_at ON upload_tasks(expires_at);
-
--- Upload Parts Table
-CREATE TABLE IF NOT EXISTS upload_parts (
-    id              VARCHAR(36) PRIMARY KEY,
-    task_id         VARCHAR(36) NOT NULL,
-    part_number     INT NOT NULL,
-    etag            VARCHAR(64) NOT NULL,
-    size            BIGINT NOT NULL,
-    uploaded_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uk_upload_parts_task_part ON upload_parts(task_id, part_number);
-CREATE INDEX IF NOT EXISTS idx_upload_parts_task_id ON upload_parts(task_id);
 
 -- Tenants Table
 CREATE TABLE IF NOT EXISTS tenants (

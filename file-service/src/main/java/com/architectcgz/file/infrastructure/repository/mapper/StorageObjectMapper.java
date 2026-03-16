@@ -11,8 +11,7 @@ import java.util.List;
  * 
  * @author Blog Team
  */
-@Mapper
-public interface StorageObjectMapper {
+public interface StorageObjectMapper extends RuntimeMyBatisMapper {
     
     /**
      * 插入存储对象

@@ -13,8 +13,7 @@ import java.util.List;
 /**
  * 文件记录 MyBatis Mapper
  */
-@Mapper
-public interface FileRecordMapper {
+public interface FileRecordMapper extends RuntimeMyBatisMapper {
     
     /**
      * 插入文件记录
