@@ -13,8 +13,7 @@
         <result property="tenantId" column="tenant_id"/>
         <result property="details" column="details"/>
         <result property="ipAddress" column="ip_address"/>
-        <result property="createdAt" column="created_at" 
-                typeHandler="com.architectcgz.file.infrastructure.config.OffsetDateTimeTypeHandler"/>
+        <result property="createdAt" column="created_at"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.architectcgz.file.infrastructure.repository.po.AuditLogPO">
@@ -37,7 +36,7 @@
             #{tenantId},
             #{details}::jsonb,
             #{ipAddress},
-            #{createdAt,typeHandler=com.architectcgz.file.infrastructure.config.OffsetDateTimeTypeHandler}
+            #{createdAt}
         )
     </insert>
 

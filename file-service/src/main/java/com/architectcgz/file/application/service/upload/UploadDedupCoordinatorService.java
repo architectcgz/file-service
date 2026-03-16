@@ -13,7 +13,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -85,10 +86,10 @@ public class UploadDedupCoordinatorService {
 
         String resolvedBucketName = normalizeBucketName(bucketName);
         String ownerToken = UUID.randomUUID().toString();
-        LocalDateTime deadline = LocalDateTime.now().plus(uploadDedupProperties.getWaitTimeout());
+        OffsetDateTime deadline = OffsetDateTime.now(ZoneOffset.UTC).plus(uploadDedupProperties.getWaitTimeout());
 
         while (true) {
-            LocalDateTime expiresAt = LocalDateTime.now().plus(uploadDedupProperties.getClaimLease());
+            OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC).plus(uploadDedupProperties.getClaimLease());
             if (uploadDedupClaimRepository.tryAcquireClaim(
                     appId,
                     fileHash,
@@ -132,7 +133,7 @@ public class UploadDedupCoordinatorService {
                 return existingUploadAction.apply(latestStorageObject.get());
             }
 
-            if (LocalDateTime.now().isAfter(deadline)) {
+            if (OffsetDateTime.now(ZoneOffset.UTC).isAfter(deadline)) {
                 log.warn("Timed out waiting for deduplicated upload to finish: appId={}, bucket={}, fileHash={}",
                         appId, resolvedBucketName, fileHash);
                 throw new BusinessException(
@@ -160,8 +161,8 @@ public class UploadDedupCoordinatorService {
         }
     }
 
-    private void waitForClaimResult(String appId, String fileHash, String bucketName, LocalDateTime deadline) {
-        Duration remaining = Duration.between(LocalDateTime.now(), deadline);
+    private void waitForClaimResult(String appId, String fileHash, String bucketName, OffsetDateTime deadline) {
+        Duration remaining = Duration.between(OffsetDateTime.now(ZoneOffset.UTC), deadline);
         Duration notificationWait = remaining.compareTo(uploadDedupProperties.getNotificationMaxWait()) > 0
                 ? uploadDedupProperties.getNotificationMaxWait()
                 : remaining;
@@ -202,7 +203,7 @@ public class UploadDedupCoordinatorService {
     }
 
     private void renewClaim(String appId, String fileHash, String bucketName, String ownerToken) {
-        LocalDateTime expiresAt = LocalDateTime.now().plus(uploadDedupProperties.getClaimLease());
+        OffsetDateTime expiresAt = OffsetDateTime.now(ZoneOffset.UTC).plus(uploadDedupProperties.getClaimLease());
         boolean renewed = uploadDedupClaimRepository.renewClaim(appId, fileHash, bucketName, ownerToken, expiresAt);
         if (!renewed) {
             log.warn("Failed to renew dedup claim ownership: appId={}, bucket={}, fileHash={}",

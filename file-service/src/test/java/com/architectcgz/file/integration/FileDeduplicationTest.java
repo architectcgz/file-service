@@ -17,10 +17,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 import java.nio.charset.StandardCharsets;
 
@@ -42,6 +49,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@Testcontainers
 @ActiveProfiles("test")
 @Import(TestStorageConfig.class)
 @TestPropertySource(properties = {
@@ -54,8 +62,27 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "upload.validation.enabled=false"
 })
 @Transactional
+@Sql(scripts = "/schema.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS)
 @DisplayName("File Deduplication Integration Test")
 class FileDeduplicationTest {
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:15-alpine"))
+            .withDatabaseName("file_service_test")
+            .withUsername("test")
+            .withPassword("test");
+
+    static {
+        postgres.start();
+    }
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -308,7 +335,8 @@ class FileDeduplicationTest {
                 .header("X-App-Id", BLOG_APP_ID)
                 .header("X-User-Id", String.valueOf(USER_ID_1)))
             .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.status").value(404))
+            .andExpect(jsonPath("$.code").value(404))
+            .andExpect(jsonPath("$.errorCode").value("FILE_NOT_FOUND"))
             .andExpect(jsonPath("$.message").value("fileId deleted: " + fileId1));
     }
 
@@ -379,7 +407,8 @@ class FileDeduplicationTest {
                 .header("X-App-Id", BLOG_APP_ID)
                 .header("X-User-Id", String.valueOf(USER_ID_1)))
             .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.status").value(404));
+            .andExpect(jsonPath("$.code").value(404))
+            .andExpect(jsonPath("$.errorCode").value("FILE_NOT_FOUND"));
 
         // 7. Verify reference count is now 1
         StorageObject storageAfterDelete = storageObjectRepository.findById(

@@ -11,11 +11,12 @@ CREATE TABLE IF NOT EXISTS storage_objects (
     file_size       BIGINT NOT NULL,
     content_type    VARCHAR(128) NOT NULL DEFAULT 'application/octet-stream',
     reference_count INT NOT NULL DEFAULT 1,
-    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uk_storage_objects_app_hash ON storage_objects(app_id, file_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_storage_objects_app_hash_bucket
+    ON storage_objects(app_id, file_hash, hash_algorithm, bucket_name);
 CREATE INDEX IF NOT EXISTS idx_storage_objects_reference_count ON storage_objects(reference_count);
 CREATE INDEX IF NOT EXISTS idx_storage_objects_created_at ON storage_objects(created_at);
 
@@ -25,9 +26,9 @@ CREATE TABLE IF NOT EXISTS upload_dedup_claims (
     file_hash    VARCHAR(64) NOT NULL,
     bucket_name  VARCHAR(128) NOT NULL,
     owner_token  VARCHAR(64) NOT NULL,
-    expires_at   TIMESTAMP NOT NULL,
-    created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at   TIMESTAMPTZ NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (app_id, file_hash, bucket_name)
 );
 
@@ -47,8 +48,8 @@ CREATE TABLE IF NOT EXISTS file_records (
     hash_algorithm    VARCHAR(16) NOT NULL DEFAULT 'MD5',
     access_level      VARCHAR(16) NOT NULL DEFAULT 'public',
     status            VARCHAR(32) NOT NULL DEFAULT 'completed',
-    created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_file_records_app_id ON file_records(app_id);
@@ -74,9 +75,9 @@ CREATE TABLE IF NOT EXISTS upload_tasks (
     total_chunks    INT NOT NULL,
     chunk_size      INT NOT NULL DEFAULT 5242880,
     status          VARCHAR(32) NOT NULL DEFAULT 'uploading',
-    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at      TIMESTAMP NOT NULL
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at      TIMESTAMPTZ NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_upload_tasks_app_id ON upload_tasks(app_id);
@@ -96,8 +97,8 @@ CREATE TABLE IF NOT EXISTS tenants (
     max_single_file_size BIGINT NOT NULL DEFAULT 104857600,
     allowed_file_types   TEXT ARRAY,
     contact_email        VARCHAR(255),
-    created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status);
@@ -108,8 +109,26 @@ CREATE TABLE IF NOT EXISTS tenant_usage (
     tenant_id           VARCHAR(32) PRIMARY KEY,
     used_storage_bytes  BIGINT NOT NULL DEFAULT 0,
     used_file_count     INT NOT NULL DEFAULT 0,
-    last_upload_at      TIMESTAMP,
-    updated_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    last_upload_at      TIMESTAMPTZ,
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_tenant_usage_updated_at ON tenant_usage(updated_at);
+
+-- Admin Audit Logs Table
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+    id             VARCHAR(36) PRIMARY KEY,
+    admin_user_id  VARCHAR(64) NOT NULL,
+    action         VARCHAR(50) NOT NULL,
+    target_type    VARCHAR(50) NOT NULL,
+    target_id      VARCHAR(64),
+    tenant_id      VARCHAR(32),
+    details        JSONB,
+    ip_address     VARCHAR(45),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_admin ON admin_audit_logs(admin_user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON admin_audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_audit_time ON admin_audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_tenant ON admin_audit_logs(tenant_id);

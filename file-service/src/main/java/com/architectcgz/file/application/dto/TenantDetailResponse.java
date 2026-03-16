@@ -3,7 +3,7 @@ package com.architectcgz.file.application.dto;
 import com.architectcgz.file.domain.model.TenantStatus;
 import lombok.Data;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -19,13 +19,13 @@ public class TenantDetailResponse {
     private Long maxSingleFileSize;
     private List<String> allowedFileTypes;
     private String contactEmail;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private OffsetDateTime createdAt;
+    private OffsetDateTime updatedAt;
     
     // 使用统计
     private Long usedStorageBytes;
     private Integer usedFileCount;
-    private LocalDateTime lastUploadAt;
+    private OffsetDateTime lastUploadAt;
     private Double storageUsagePercent;
     private Double fileCountUsagePercent;
 }

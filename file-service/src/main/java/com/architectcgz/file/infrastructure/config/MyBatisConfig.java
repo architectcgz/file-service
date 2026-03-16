@@ -40,8 +40,6 @@ public class MyBatisConfig {
         configuration.setMapUnderscoreToCamelCase(true);
         configuration.setDefaultStatementTimeout(30);
         configuration.getTypeHandlerRegistry().register(String[].class, StringArrayTypeHandler.class);
-        configuration.getTypeHandlerRegistry().register(java.time.LocalDateTime.class, LocalDateTimeTypeHandler.class);
-        
         sessionFactory.setConfiguration(configuration);
 
         return sessionFactory.getObject();

@@ -5,7 +5,8 @@ import com.architectcgz.file.domain.repository.TenantUsageRepository;
 import net.jqwik.api.*;
 import org.junit.jupiter.api.BeforeEach;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 
@@ -39,7 +40,7 @@ class UploadStatisticsPropertyTest {
         TenantUsageRepository mockUsageRepository = mock(TenantUsageRepository.class);
         
         // 记录调用前的时间
-        LocalDateTime beforeUpload = LocalDateTime.now();
+        OffsetDateTime beforeUpload = OffsetDateTime.now(ZoneOffset.UTC);
         
         // 模拟 incrementUsage 调用
         doAnswer(invocation -> {
@@ -57,8 +58,8 @@ class UploadStatisticsPropertyTest {
         TenantUsage updatedUsage = new TenantUsage(tenantId);
         updatedUsage.setUsedStorageBytes(1000L);
         updatedUsage.setUsedFileCount(1);
-        updatedUsage.setLastUploadAt(LocalDateTime.now()); // 模拟数据库更新后的时间
-        updatedUsage.setUpdatedAt(LocalDateTime.now());
+        updatedUsage.setLastUploadAt(OffsetDateTime.now(ZoneOffset.UTC)); // 模拟数据库更新后的时间
+        updatedUsage.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         
         when(mockUsageRepository.findById(tenantId)).thenReturn(Optional.of(updatedUsage));
         
@@ -66,7 +67,7 @@ class UploadStatisticsPropertyTest {
         mockUsageRepository.incrementUsage(tenantId, fileSize);
         
         // 记录调用后的时间
-        LocalDateTime afterUpload = LocalDateTime.now();
+        OffsetDateTime afterUpload = OffsetDateTime.now(ZoneOffset.UTC);
         
         // Then: 验证 incrementUsage 被调用
         verify(mockUsageRepository, times(1)).incrementUsage(tenantId, fileSize);
@@ -103,7 +104,7 @@ class UploadStatisticsPropertyTest {
         initialUsage.setTenantId(tenantId);
         long initialStorageBytes = initialUsage.getUsedStorageBytes();
         int initialFileCount = initialUsage.getUsedFileCount();
-        LocalDateTime initialLastUploadAt = initialUsage.getLastUploadAt();
+        OffsetDateTime initialLastUploadAt = initialUsage.getLastUploadAt();
         
         // 创建 mock 仓储
         TenantUsageRepository mockUsageRepository = mock(TenantUsageRepository.class);
@@ -113,7 +114,7 @@ class UploadStatisticsPropertyTest {
                 .thenReturn(Optional.of(initialUsage));
         
         // 记录上传前的时间
-        LocalDateTime beforeUpload = LocalDateTime.now();
+        OffsetDateTime beforeUpload = OffsetDateTime.now(ZoneOffset.UTC);
         
         // 模拟 incrementUsage 调用，并更新对象状态
         doAnswer(invocation -> {
@@ -127,8 +128,8 @@ class UploadStatisticsPropertyTest {
             // 模拟数据库更新：增加存储空间和文件数量
             initialUsage.setUsedStorageBytes(initialStorageBytes + fileSize);
             initialUsage.setUsedFileCount(initialFileCount + 1);
-            initialUsage.setLastUploadAt(LocalDateTime.now());
-            initialUsage.setUpdatedAt(LocalDateTime.now());
+            initialUsage.setLastUploadAt(OffsetDateTime.now(ZoneOffset.UTC));
+            initialUsage.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
             
             return null;
         }).when(mockUsageRepository).incrementUsage(eq(tenantId), eq(fileSize));
@@ -137,7 +138,7 @@ class UploadStatisticsPropertyTest {
         mockUsageRepository.incrementUsage(tenantId, fileSize);
         
         // 记录上传后的时间
-        LocalDateTime afterUpload = LocalDateTime.now();
+        OffsetDateTime afterUpload = OffsetDateTime.now(ZoneOffset.UTC);
         
         // Then: 验证 incrementUsage 被调用
         verify(mockUsageRepository, times(1)).incrementUsage(tenantId, fileSize);
@@ -221,7 +222,7 @@ class UploadStatisticsPropertyTest {
             usage.setUsedStorageBytes(usedStorage);
             usage.setUsedFileCount(usedFileCount);
             usage.setLastUploadAt(lastUploadAt);
-            usage.setUpdatedAt(LocalDateTime.now().minusHours(1));
+            usage.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC).minusHours(1));
             return usage;
         });
     }
@@ -251,14 +252,14 @@ class UploadStatisticsPropertyTest {
      * 可能为 null（首次上传）或过去的某个时间
      */
     @Provide
-    Arbitrary<LocalDateTime> lastUploadTimes() {
+    Arbitrary<OffsetDateTime> lastUploadTimes() {
         return Arbitraries.frequencyOf(
                 // 20% 概率为 null（首次上传）
                 Tuple.of(1, Arbitraries.just(null)),
                 // 80% 概率为过去的某个时间
                 Tuple.of(4, Arbitraries.longs()
                         .between(1L, 365L) // 1天到365天前
-                        .map(days -> LocalDateTime.now().minusDays(days)))
+                        .map(days -> OffsetDateTime.now(ZoneOffset.UTC).minusDays(days)))
         );
     }
 }

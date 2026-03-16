@@ -5,7 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 /**
  * 上传任务领域模型
@@ -80,23 +81,23 @@ public class UploadTask {
     /**
      * 创建时间
      */
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
     
     /**
      * 更新时间
      */
-    private LocalDateTime updatedAt;
+    private OffsetDateTime updatedAt;
     
     /**
      * 过期时间
      */
-    private LocalDateTime expiresAt;
+    private OffsetDateTime expiresAt;
     
     /**
      * 检查任务是否已过期
      */
     public boolean isExpired() {
-        return expiresAt != null && LocalDateTime.now().isAfter(expiresAt);
+        return expiresAt != null && OffsetDateTime.now(ZoneOffset.UTC).isAfter(expiresAt);
     }
     
     /**
@@ -111,7 +112,7 @@ public class UploadTask {
      */
     public void markCompleted() {
         this.status = UploadTaskStatus.COMPLETED;
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
     
     /**
@@ -119,7 +120,7 @@ public class UploadTask {
      */
     public void markAborted() {
         this.status = UploadTaskStatus.ABORTED;
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
     
     /**
@@ -127,6 +128,6 @@ public class UploadTask {
      */
     public void markExpired() {
         this.status = UploadTaskStatus.EXPIRED;
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
 }

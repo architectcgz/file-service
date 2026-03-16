@@ -3,7 +3,7 @@ package com.architectcgz.file.application.dto;
 import com.architectcgz.file.domain.model.AccessLevel;
 import lombok.Data;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 文件查询对象
@@ -35,12 +35,12 @@ public class FileQuery {
     /**
      * 开始时间（上传时间范围）
      */
-    private LocalDateTime startTime;
+    private OffsetDateTime startTime;
     
     /**
      * 结束时间（上传时间范围）
      */
-    private LocalDateTime endTime;
+    private OffsetDateTime endTime;
     
     /**
      * 最小文件大小（字节）

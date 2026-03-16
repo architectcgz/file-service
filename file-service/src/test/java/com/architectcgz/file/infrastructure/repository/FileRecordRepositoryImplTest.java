@@ -13,7 +13,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,8 +47,8 @@ class FileRecordRepositoryImplTest {
                 .hashAlgorithm("SHA256")
                 .accessLevel(AccessLevel.PRIVATE)
                 .status(FileStatus.COMPLETED)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .createdAt(OffsetDateTime.now(ZoneOffset.UTC))
+                .updatedAt(OffsetDateTime.now(ZoneOffset.UTC))
                 .build();
 
         fileRecordRepository.save(fileRecord);
@@ -74,8 +75,8 @@ class FileRecordRepositoryImplTest {
         po.setHashAlgorithm("SHA256");
         po.setAccessLevel("private");
         po.setStatus("COMPLETED");
-        po.setCreatedAt(LocalDateTime.now());
-        po.setUpdatedAt(LocalDateTime.now());
+        po.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        po.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
 
         when(fileRecordMapper.selectById("record-001")).thenReturn(po);
 

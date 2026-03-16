@@ -5,7 +5,8 @@ import com.architectcgz.file.domain.model.Tenant;
 import com.architectcgz.file.domain.model.TenantStatus;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -69,7 +70,7 @@ public class TenantMutationService {
             tenant.setContactEmail(request.getContactEmail());
         }
 
-        tenant.setUpdatedAt(LocalDateTime.now());
+        tenant.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         return changes;
     }
 

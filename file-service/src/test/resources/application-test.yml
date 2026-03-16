@@ -2,13 +2,10 @@
 spring:
   datasource:
     driver-class-name: org.postgresql.Driver
-  # Redis 配置（集成测试使用 Testcontainers）
+  # Redis 配置（默认对接本地共享 Redis，个别测试可用 DynamicPropertySource 覆盖）
   data:
     redis:
-      password:  # 空密码，Testcontainers Redis 不需要密码
-  # 禁用 Redisson 自动配置（使用 local storage 的测试不需要 Redis）
-  autoconfigure:
-    exclude: org.redisson.spring.starter.RedissonAutoConfigurationV2
+      password: ${REDIS_PASSWORD:redis123456}
 
 # MyBatis 配置
 mybatis:

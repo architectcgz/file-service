@@ -7,7 +7,7 @@ import com.architectcgz.file.domain.model.TenantStorageAggregation;
 import com.architectcgz.file.infrastructure.repository.po.FileRecordPO;
 import org.apache.ibatis.annotations.*;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -112,7 +112,7 @@ public interface FileRecordMapper extends RuntimeMyBatisMapper {
         SET status = #{status}, updated_at = #{updatedAt}
         WHERE id = #{id}
     """)
-    int updateStatus(@Param("id") String id, @Param("status") String status, @Param("updatedAt") LocalDateTime updatedAt);
+    int updateStatus(@Param("id") String id, @Param("status") String status, @Param("updatedAt") OffsetDateTime updatedAt);
     
     /**
      * 更新文件访问级别
@@ -127,7 +127,7 @@ public interface FileRecordMapper extends RuntimeMyBatisMapper {
         SET access_level = #{accessLevel}, updated_at = #{updatedAt}
         WHERE id = #{id}
     """)
-    int updateAccessLevel(@Param("id") String id, @Param("accessLevel") String accessLevel, @Param("updatedAt") LocalDateTime updatedAt);
+    int updateAccessLevel(@Param("id") String id, @Param("accessLevel") String accessLevel, @Param("updatedAt") OffsetDateTime updatedAt);
 
     /**
      * 更新文件记录绑定的存储对象和访问级别
@@ -151,7 +151,7 @@ public interface FileRecordMapper extends RuntimeMyBatisMapper {
                                            @Param("storageObjectId") String storageObjectId,
                                            @Param("storagePath") String storagePath,
                                            @Param("accessLevel") String accessLevel,
-                                           @Param("updatedAt") LocalDateTime updatedAt);
+                                           @Param("updatedAt") OffsetDateTime updatedAt);
     
     /**
      * 根据查询条件查找文件记录列表

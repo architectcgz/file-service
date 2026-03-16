@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Map;
 
 /**
@@ -32,7 +32,7 @@ public class PresignedUploadResponse {
     /**
      * URL 过期时间
      */
-    private LocalDateTime expiresAt;
+    private OffsetDateTime expiresAt;
     
     /**
      * HTTP 方法 (通常是PUT)

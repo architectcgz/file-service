@@ -6,7 +6,8 @@ import com.architectcgz.file.domain.model.TargetType;
 import com.architectcgz.file.domain.repository.AuditLogRepository;
 import net.jqwik.api.*;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -48,7 +49,7 @@ class AuditLogServicePropertyTest {
                 log.setId(UUID.randomUUID().toString());
             }
             if (log.getCreatedAt() == null) {
-                log.setCreatedAt(LocalDateTime.now());
+                log.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
             }
             capturedLog[0] = log;
             return log;

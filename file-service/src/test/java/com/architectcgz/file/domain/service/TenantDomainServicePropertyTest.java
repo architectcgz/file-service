@@ -14,7 +14,8 @@ import net.jqwik.api.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -42,8 +43,8 @@ class TenantDomainServicePropertyTest {
         existingTenant.setMaxStorageBytes(10737418240L);
         existingTenant.setMaxFileCount(10000);
         existingTenant.setMaxSingleFileSize(104857600L);
-        existingTenant.setCreatedAt(LocalDateTime.now());
-        existingTenant.setUpdatedAt(LocalDateTime.now());
+        existingTenant.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        existingTenant.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
 
         when(mockTenantRepository.findById(tenantId))
                 .thenReturn(Optional.empty())
@@ -480,8 +481,8 @@ class TenantDomainServicePropertyTest {
             tenant.setMaxStorageBytes(maxStorage);
             tenant.setMaxFileCount(maxFileCount);
             tenant.setMaxSingleFileSize(maxSingleFileSize);
-            tenant.setCreatedAt(LocalDateTime.now());
-            tenant.setUpdatedAt(LocalDateTime.now());
+            tenant.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+            tenant.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
             return tenant;
         });
     }
@@ -499,8 +500,8 @@ class TenantDomainServicePropertyTest {
             TenantUsage usage = new TenantUsage(tenantId);
             usage.setUsedStorageBytes(usedStorage);
             usage.setUsedFileCount(usedFileCount);
-            usage.setLastUploadAt(LocalDateTime.now().minusDays(1));
-            usage.setUpdatedAt(LocalDateTime.now());
+            usage.setLastUploadAt(OffsetDateTime.now(ZoneOffset.UTC).minusDays(1));
+            usage.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
             return usage;
         });
     }

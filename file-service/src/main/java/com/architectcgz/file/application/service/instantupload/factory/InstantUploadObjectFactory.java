@@ -7,7 +7,8 @@ import com.architectcgz.file.domain.model.StorageObject;
 import com.github.f4b6a3.uuid.UuidCreator;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 /**
  * 秒传对象工厂。
@@ -18,6 +19,7 @@ public class InstantUploadObjectFactory {
     public FileRecord createFileRecord(String appId, String userId,
                                        InstantUploadCheckRequest request,
                                        StorageObject storageObject) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return FileRecord.builder()
                 .id(UuidCreator.getTimeOrderedEpoch().toString())
                 .appId(appId)
@@ -30,8 +32,8 @@ public class InstantUploadObjectFactory {
                 .fileHash(request.getFileHash())
                 .hashAlgorithm("MD5")
                 .status(FileStatus.COMPLETED)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .createdAt(now)
+                .updatedAt(now)
                 .build();
     }
 }

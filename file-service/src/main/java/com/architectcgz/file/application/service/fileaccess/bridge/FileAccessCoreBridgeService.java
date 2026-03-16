@@ -21,7 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 /**
  * Delegates legacy file-access flows onto the new file-core access service.
@@ -100,7 +101,7 @@ public class FileAccessCoreBridgeService {
                         Duration.ofSeconds(expireSeconds)
                 ))
                 .permanent(false)
-                .expiresAt(LocalDateTime.now().plusSeconds(expireSeconds))
+                .expiresAt(OffsetDateTime.now(ZoneOffset.UTC).plusSeconds(expireSeconds))
                 .build();
     }
 

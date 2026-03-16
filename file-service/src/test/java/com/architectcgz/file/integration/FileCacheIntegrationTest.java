@@ -28,7 +28,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -132,7 +133,7 @@ class FileCacheIntegrationTest {
         // 清空 Redis
         redisTemplate.getConnectionFactory().getConnection().flushAll();
 
-        LocalDateTime now = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         StorageObject publicStorageObject = StorageObject.builder()
                 .id("storage-001")
                 .appId(APP_ID)
@@ -492,8 +493,8 @@ class FileCacheIntegrationTest {
                 .hashAlgorithm("MD5")
                 .status(FileStatus.COMPLETED)
                 .accessLevel(AccessLevel.PUBLIC)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .createdAt(OffsetDateTime.now(ZoneOffset.UTC))
+                .updatedAt(OffsetDateTime.now(ZoneOffset.UTC))
                 .build();
         StorageObject testStorageObject2 = StorageObject.builder()
                 .id("storage-003")
@@ -505,8 +506,8 @@ class FileCacheIntegrationTest {
                 .fileSize(1024L)
                 .contentType("image/jpeg")
                 .referenceCount(1)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .createdAt(OffsetDateTime.now(ZoneOffset.UTC))
+                .updatedAt(OffsetDateTime.now(ZoneOffset.UTC))
                 .build();
         storageObjectRepository.save(testStorageObject2);
         fileRecordRepository.save(testFile2);

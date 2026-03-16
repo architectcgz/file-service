@@ -3,7 +3,7 @@ package com.architectcgz.file.domain.model;
 import lombok.Builder;
 import lombok.Getter;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 上传文件领域模型
@@ -60,7 +60,7 @@ public class UploadFile {
     /**
      * 上传时间
      */
-    private final LocalDateTime uploadedAt;
+    private final OffsetDateTime uploadedAt;
     
     /**
      * 文件类型枚举

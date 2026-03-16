@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS file_records (
     hash_algorithm VARCHAR(20) DEFAULT 'MD5',
     access_level VARCHAR(20) DEFAULT 'public',
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_file_records_app_user ON file_records(app_id, user_id);
@@ -37,12 +37,12 @@ CREATE TABLE IF NOT EXISTS storage_objects (
     file_size BIGINT NOT NULL,
     content_type VARCHAR(100),
     reference_count INT NOT NULL DEFAULT 0,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_storage_objects_app_hash
-    ON storage_objects(app_id, file_hash, hash_algorithm);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_storage_objects_app_hash_bucket
+    ON storage_objects(app_id, file_hash, hash_algorithm, bucket_name);
 CREATE INDEX IF NOT EXISTS idx_storage_objects_ref_count ON storage_objects(reference_count);
 
 -- 上传会话表（file-core upload session）
@@ -61,10 +61,10 @@ CREATE TABLE IF NOT EXISTS upload_tasks (
     file_hash VARCHAR(128),
     hash_algorithm VARCHAR(20) DEFAULT 'MD5',
     status VARCHAR(20) NOT NULL DEFAULT 'uploading',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP,
-    expires_at TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_upload_tasks_app_user ON upload_tasks(app_id, user_id);
@@ -82,8 +82,8 @@ CREATE TABLE IF NOT EXISTS tenants (
     max_single_file_size BIGINT NOT NULL DEFAULT 104857600,
     allowed_file_types TEXT[],
     contact_email VARCHAR(255),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_tenant_status CHECK (status IN ('active', 'suspended', 'deleted'))
 );
 
@@ -95,8 +95,8 @@ CREATE TABLE IF NOT EXISTS tenant_usage (
     tenant_id VARCHAR(32) PRIMARY KEY,
     used_storage_bytes BIGINT NOT NULL DEFAULT 0,
     used_file_count INTEGER NOT NULL DEFAULT 0,
-    last_upload_at TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_upload_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_used_storage_bytes CHECK (used_storage_bytes >= 0),
     CONSTRAINT chk_used_file_count CHECK (used_file_count >= 0)
 );
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS admin_audit_logs (
     tenant_id VARCHAR(32),
     details JSONB,
     ip_address VARCHAR(45),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_admin ON admin_audit_logs(admin_user_id);

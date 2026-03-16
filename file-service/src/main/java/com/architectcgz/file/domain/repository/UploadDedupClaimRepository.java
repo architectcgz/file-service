@@ -1,6 +1,6 @@
 package com.architectcgz.file.domain.repository;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 上传去重占位仓储。
@@ -10,9 +10,9 @@ import java.time.LocalDateTime;
  */
 public interface UploadDedupClaimRepository {
 
-    boolean tryAcquireClaim(String appId, String fileHash, String bucketName, String ownerToken, LocalDateTime expiresAt);
+    boolean tryAcquireClaim(String appId, String fileHash, String bucketName, String ownerToken, OffsetDateTime expiresAt);
 
-    boolean renewClaim(String appId, String fileHash, String bucketName, String ownerToken, LocalDateTime expiresAt);
+    boolean renewClaim(String appId, String fileHash, String bucketName, String ownerToken, OffsetDateTime expiresAt);
 
     void releaseClaim(String appId, String fileHash, String bucketName, String ownerToken);
 }

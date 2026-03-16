@@ -7,7 +7,9 @@ import com.architectcgz.file.domain.model.FileStatus;
 import com.architectcgz.file.domain.repository.FileRecordRepository;
 import net.jqwik.api.*;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -542,28 +544,28 @@ class FileQueryFilterPropertyTest {
     }
 
     @Provide
-    Arbitrary<LocalDateTime> createdAtTimes() {
+    Arbitrary<OffsetDateTime> createdAtTimes() {
         return Arbitraries.longs()
                 .between(
-                        LocalDateTime.of(2024, 1, 1, 0, 0).toEpochSecond(java.time.ZoneOffset.UTC),
-                        LocalDateTime.of(2026, 12, 31, 23, 59).toEpochSecond(java.time.ZoneOffset.UTC)
+                        OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC).toEpochSecond(),
+                        OffsetDateTime.of(2026, 12, 31, 23, 59, 0, 0, ZoneOffset.UTC).toEpochSecond()
                 )
-                .map(seconds -> LocalDateTime.ofEpochSecond(seconds, 0, java.time.ZoneOffset.UTC));
+                .map(seconds -> Instant.ofEpochSecond(seconds).atOffset(ZoneOffset.UTC));
     }
 
     @Provide
     Arbitrary<TimeRange> timeRanges() {
         return Arbitraries.longs()
                 .between(
-                        LocalDateTime.of(2024, 1, 1, 0, 0).toEpochSecond(java.time.ZoneOffset.UTC),
-                        LocalDateTime.of(2026, 12, 31, 23, 59).toEpochSecond(java.time.ZoneOffset.UTC)
+                        OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC).toEpochSecond(),
+                        OffsetDateTime.of(2026, 12, 31, 23, 59, 0, 0, ZoneOffset.UTC).toEpochSecond()
                 )
                 .flatMap(startSeconds -> {
-                    LocalDateTime start = LocalDateTime.ofEpochSecond(startSeconds, 0, java.time.ZoneOffset.UTC);
+                    OffsetDateTime start = Instant.ofEpochSecond(startSeconds).atOffset(ZoneOffset.UTC);
                     return Arbitraries.longs()
                             .between(startSeconds, startSeconds + 365L * 24 * 3600) // up to 1 year later
                             .map(endSeconds -> {
-                                LocalDateTime end = LocalDateTime.ofEpochSecond(endSeconds, 0, java.time.ZoneOffset.UTC);
+                                OffsetDateTime end = Instant.ofEpochSecond(endSeconds).atOffset(ZoneOffset.UTC);
                                 return new TimeRange(start, end);
                             });
                 });
@@ -592,10 +594,10 @@ class FileQueryFilterPropertyTest {
     // ========== Helper Classes ==========
 
     private static class TimeRange {
-        final LocalDateTime start;
-        final LocalDateTime end;
+        final OffsetDateTime start;
+        final OffsetDateTime end;
 
-        TimeRange(LocalDateTime start, LocalDateTime end) {
+        TimeRange(OffsetDateTime start, OffsetDateTime end) {
             this.start = start;
             this.end = end;
         }

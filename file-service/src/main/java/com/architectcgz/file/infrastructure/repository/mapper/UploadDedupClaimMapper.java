@@ -4,7 +4,7 @@ import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 上传去重占位 Mapper。
@@ -16,7 +16,7 @@ public interface UploadDedupClaimMapper extends RuntimeMyBatisMapper {
             app_id, file_hash, bucket_name, owner_token, expires_at, created_at, updated_at
         ) VALUES (
             #{appId}, #{fileHash}, #{bucketName}, #{ownerToken},
-            #{expiresAt,typeHandler=com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler},
+            #{expiresAt},
             CURRENT_TIMESTAMP,
             CURRENT_TIMESTAMP
         )
@@ -30,11 +30,11 @@ public interface UploadDedupClaimMapper extends RuntimeMyBatisMapper {
                         @Param("fileHash") String fileHash,
                         @Param("bucketName") String bucketName,
                         @Param("ownerToken") String ownerToken,
-                        @Param("expiresAt") LocalDateTime expiresAt);
+                        @Param("expiresAt") OffsetDateTime expiresAt);
 
     @org.apache.ibatis.annotations.Update("""
         UPDATE upload_dedup_claims
-        SET expires_at = #{expiresAt,typeHandler=com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler},
+        SET expires_at = #{expiresAt},
             updated_at = CURRENT_TIMESTAMP
         WHERE app_id = #{appId}
           AND file_hash = #{fileHash}
@@ -45,7 +45,7 @@ public interface UploadDedupClaimMapper extends RuntimeMyBatisMapper {
                    @Param("fileHash") String fileHash,
                    @Param("bucketName") String bucketName,
                    @Param("ownerToken") String ownerToken,
-                   @Param("expiresAt") LocalDateTime expiresAt);
+                   @Param("expiresAt") OffsetDateTime expiresAt);
 
     @Delete("""
         DELETE FROM upload_dedup_claims

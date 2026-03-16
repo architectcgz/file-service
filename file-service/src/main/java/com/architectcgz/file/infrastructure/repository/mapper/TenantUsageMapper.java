@@ -19,10 +19,8 @@ public interface TenantUsageMapper extends RuntimeMyBatisMapper {
         @Result(property = "tenantId", column = "tenant_id"),
         @Result(property = "usedStorageBytes", column = "used_storage_bytes"),
         @Result(property = "usedFileCount", column = "used_file_count"),
-        @Result(property = "lastUploadAt", column = "last_upload_at", 
-                typeHandler = com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler.class),
-        @Result(property = "updatedAt", column = "updated_at",
-                typeHandler = com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler.class)
+        @Result(property = "lastUploadAt", column = "last_upload_at"),
+        @Result(property = "updatedAt", column = "updated_at")
     })
     TenantUsagePO findById(@Param("tenantId") String tenantId);
 
@@ -33,9 +31,9 @@ public interface TenantUsageMapper extends RuntimeMyBatisMapper {
         INSERT INTO tenant_usage (
             tenant_id, used_storage_bytes, used_file_count, last_upload_at, updated_at
         ) VALUES (
-            #{tenantId}, #{usedStorageBytes}, #{usedFileCount}, 
-            #{lastUploadAt,typeHandler=com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler}, 
-            #{updatedAt,typeHandler=com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler}
+            #{tenantId}, #{usedStorageBytes}, #{usedFileCount},
+            #{lastUploadAt},
+            #{updatedAt}
         )
     """)
     void insert(TenantUsagePO usage);
@@ -47,8 +45,8 @@ public interface TenantUsageMapper extends RuntimeMyBatisMapper {
         UPDATE tenant_usage
         SET used_storage_bytes = #{usedStorageBytes},
             used_file_count = #{usedFileCount},
-            last_upload_at = #{lastUploadAt,typeHandler=com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler},
-            updated_at = #{updatedAt,typeHandler=com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler}
+            last_upload_at = #{lastUploadAt},
+            updated_at = #{updatedAt}
         WHERE tenant_id = #{tenantId}
     """)
     void update(TenantUsagePO usage);

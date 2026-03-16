@@ -16,7 +16,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -180,7 +181,7 @@ class StatisticsAtomicityPropertyTest {
         usage.setUsedStorageBytes(usedStorageBytes);
         usage.setUsedFileCount(usedFileCount);
         usage.setLastUploadAt(null);
-        usage.setUpdatedAt(LocalDateTime.now());
+        usage.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         return usage;
     }
 

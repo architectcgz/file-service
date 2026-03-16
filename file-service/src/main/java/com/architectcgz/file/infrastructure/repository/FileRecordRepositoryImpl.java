@@ -13,7 +13,8 @@ import com.architectcgz.file.infrastructure.repository.po.FileRecordPO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -56,13 +57,13 @@ public class FileRecordRepositoryImpl implements FileRecordRepository {
     
     @Override
     public boolean updateStatus(String id, FileStatus status) {
-        int rows = fileRecordMapper.updateStatus(id, status.name(), LocalDateTime.now());
+        int rows = fileRecordMapper.updateStatus(id, status.name(), OffsetDateTime.now(ZoneOffset.UTC));
         return rows > 0;
     }
     
     @Override
     public boolean updateAccessLevel(String id, AccessLevel accessLevel) {
-        int rows = fileRecordMapper.updateAccessLevel(id, accessLevel.name().toLowerCase(), LocalDateTime.now());
+        int rows = fileRecordMapper.updateAccessLevel(id, accessLevel.name().toLowerCase(), OffsetDateTime.now(ZoneOffset.UTC));
         return rows > 0;
     }
 
@@ -74,7 +75,7 @@ public class FileRecordRepositoryImpl implements FileRecordRepository {
                 storageObjectId,
                 storagePath,
                 accessLevel.name().toLowerCase(),
-                LocalDateTime.now()
+                OffsetDateTime.now(ZoneOffset.UTC)
         );
         return rows > 0;
     }

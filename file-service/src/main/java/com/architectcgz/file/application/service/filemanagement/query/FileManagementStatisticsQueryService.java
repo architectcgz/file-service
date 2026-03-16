@@ -13,7 +13,8 @@ import com.architectcgz.file.domain.repository.TenantUsageRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,7 +49,7 @@ public class FileManagementStatisticsQueryService {
                 .privateFiles(aggregation.getPrivateFiles())
                 .filesByType(filesByType)
                 .storageByTenant(storageByTenant)
-                .statisticsTime(LocalDateTime.now())
+                .statisticsTime(OffsetDateTime.now(ZoneOffset.UTC))
                 .build();
     }
 

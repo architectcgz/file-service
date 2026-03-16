@@ -7,7 +7,8 @@ import com.architectcgz.file.domain.model.TenantStatus;
 import com.architectcgz.file.domain.model.TenantUsage;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 /**
  * 租户管理对象工厂。
@@ -25,8 +26,9 @@ public class TenantManagementObjectFactory {
         tenant.setMaxSingleFileSize(request.getMaxSingleFileSize());
         tenant.setAllowedFileTypes(request.getAllowedFileTypes());
         tenant.setContactEmail(request.getContactEmail());
-        tenant.setCreatedAt(LocalDateTime.now());
-        tenant.setUpdatedAt(LocalDateTime.now());
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        tenant.setCreatedAt(now);
+        tenant.setUpdatedAt(now);
         return tenant;
     }
 

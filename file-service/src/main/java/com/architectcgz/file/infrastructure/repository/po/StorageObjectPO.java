@@ -2,7 +2,7 @@ package com.architectcgz.file.infrastructure.repository.po;
 
 import lombok.Data;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 存储对象持久化对或
@@ -62,10 +62,10 @@ public class StorageObjectPO {
     /**
      * 创建时间
      */
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
     
     /**
      * 更新时间
      */
-    private LocalDateTime updatedAt;
+    private OffsetDateTime updatedAt;
 }

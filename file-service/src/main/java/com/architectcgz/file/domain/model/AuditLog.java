@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Map;
 
 /**
@@ -60,5 +60,5 @@ public class AuditLog {
     /**
      * Timestamp when the action was performed
      */
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 }

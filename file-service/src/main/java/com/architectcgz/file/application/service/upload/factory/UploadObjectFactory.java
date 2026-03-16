@@ -9,7 +9,8 @@ import com.architectcgz.file.interfaces.dto.UploadResult;
 import com.github.f4b6a3.uuid.UuidCreator;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 /**
  * 表单上传领域对象工厂。
@@ -27,6 +28,7 @@ public class UploadObjectFactory {
                                       String storageObjectId, String storagePath,
                                       String originalFilename, long fileSize,
                                       String contentType, String fileHash) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return FileRecord.builder()
                 .id(fileRecordId)
                 .appId(appId)
@@ -40,14 +42,15 @@ public class UploadObjectFactory {
                 .hashAlgorithm("MD5")
                 .accessLevel(DEFAULT_UPLOAD_ACCESS_LEVEL)
                 .status(FileStatus.COMPLETED)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .createdAt(now)
+                .updatedAt(now)
                 .build();
     }
 
     public StorageObject buildStorageObject(String appId, String storageObjectId, String fileHash,
                                             String storagePath, long fileSize, String contentType,
                                             String bucketName) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return StorageObject.builder()
                 .id(storageObjectId)
                 .appId(appId)
@@ -58,8 +61,8 @@ public class UploadObjectFactory {
                 .fileSize(fileSize)
                 .contentType(contentType)
                 .referenceCount(1)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .createdAt(now)
+                .updatedAt(now)
                 .build();
     }
 
@@ -78,7 +81,7 @@ public class UploadObjectFactory {
     }
 
     public String generateStoragePath(String appId, String userId, String type, String filename) {
-        LocalDateTime now = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return String.format("%s/%d/%02d/%02d/%s/%s/%s.%s",
                 appId,
                 now.getYear(),
@@ -91,7 +94,7 @@ public class UploadObjectFactory {
     }
 
     public String generateStoragePathWithExtension(String appId, String userId, String type, String extension) {
-        LocalDateTime now = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return String.format("%s/%d/%02d/%02d/%s/%s/%s.%s",
                 appId,
                 now.getYear(),

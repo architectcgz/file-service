@@ -21,7 +21,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -67,7 +68,7 @@ class PresignedControllerTest {
         PresignedUploadResponse response = PresignedUploadResponse.builder()
                 .presignedUrl("https://s3.example.com/upload")
                 .storagePath("test-app/2026/03/10/user-1/image.jpg")
-                .expiresAt(LocalDateTime.of(2026, 3, 10, 22, 0))
+                .expiresAt(OffsetDateTime.of(2026, 3, 10, 22, 0, 0, 0, ZoneOffset.UTC))
                 .method("PUT")
                 .headers(Map.of("Content-Type", "image/jpeg"))
                 .build();
@@ -100,7 +101,7 @@ class PresignedControllerTest {
                 .thenReturn(PresignedUploadResponse.builder()
                         .presignedUrl("https://s3.example.com/upload")
                         .storagePath("test-app/2026/03/10/context-user/image.jpg")
-                        .expiresAt(LocalDateTime.of(2026, 3, 10, 22, 0))
+                        .expiresAt(OffsetDateTime.of(2026, 3, 10, 22, 0, 0, 0, ZoneOffset.UTC))
                         .method("PUT")
                         .headers(Map.of())
                         .build());

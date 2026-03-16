@@ -2,7 +2,7 @@ package com.architectcgz.file.infrastructure.repository.po;
 
 import lombok.Data;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 租户持久化对象
@@ -17,6 +17,6 @@ public class TenantPO {
     private Long maxSingleFileSize;
     private String[] allowedFileTypes;
     private String contactEmail;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private OffsetDateTime createdAt;
+    private OffsetDateTime updatedAt;
 }

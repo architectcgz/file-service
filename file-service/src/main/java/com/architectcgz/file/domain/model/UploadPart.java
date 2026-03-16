@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 上传分片领域模型
@@ -45,7 +45,7 @@ public class UploadPart {
     /**
      * 上传时间
      */
-    private LocalDateTime uploadedAt;
+    private OffsetDateTime uploadedAt;
     
     /**
      * 验证分片编号是否有效

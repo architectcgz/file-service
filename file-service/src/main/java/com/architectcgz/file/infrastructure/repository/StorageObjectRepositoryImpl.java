@@ -7,7 +7,8 @@ import com.architectcgz.file.infrastructure.repository.po.StorageObjectPO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -50,13 +51,13 @@ public class StorageObjectRepositoryImpl implements StorageObjectRepository {
     
     @Override
     public boolean incrementReferenceCount(String id) {
-        int rows = storageObjectMapper.incrementReferenceCount(id, LocalDateTime.now());
+        int rows = storageObjectMapper.incrementReferenceCount(id, OffsetDateTime.now(ZoneOffset.UTC));
         return rows > 0;
     }
     
     @Override
     public boolean decrementReferenceCount(String id) {
-        int rows = storageObjectMapper.decrementReferenceCount(id, LocalDateTime.now());
+        int rows = storageObjectMapper.decrementReferenceCount(id, OffsetDateTime.now(ZoneOffset.UTC));
         return rows > 0;
     }
     

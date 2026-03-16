@@ -3,9 +3,9 @@ CREATE TABLE IF NOT EXISTS upload_dedup_claims (
     file_hash VARCHAR(128) NOT NULL,
     bucket_name VARCHAR(128) NOT NULL,
     owner_token VARCHAR(64) NOT NULL,
-    expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (app_id, file_hash, bucket_name)
 );
 

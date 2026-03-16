@@ -18,8 +18,8 @@ CREATE TABLE IF NOT EXISTS file_records (
     hash_algorithm VARCHAR(20) DEFAULT 'MD5',
     access_level VARCHAR(20) DEFAULT 'public',
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- file_records 表索引
@@ -40,13 +40,13 @@ CREATE TABLE IF NOT EXISTS storage_objects (
     file_size BIGINT NOT NULL,
     content_type VARCHAR(100),
     reference_count INT NOT NULL DEFAULT 0,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- storage_objects 表唯一索引（app_id + file_hash + hash_algorithm）
-CREATE UNIQUE INDEX IF NOT EXISTS idx_storage_objects_app_hash 
-    ON storage_objects(app_id, file_hash, hash_algorithm);
+-- storage_objects 表唯一索引（app_id + file_hash + hash_algorithm + bucket_name）
+CREATE UNIQUE INDEX IF NOT EXISTS idx_storage_objects_app_hash_bucket
+    ON storage_objects(app_id, file_hash, hash_algorithm, bucket_name);
 CREATE INDEX IF NOT EXISTS idx_storage_objects_ref_count ON storage_objects(reference_count);
 
 -- 上传去重占位表（缩小同 hash 上传串行区）
@@ -55,9 +55,9 @@ CREATE TABLE IF NOT EXISTS upload_dedup_claims (
     file_hash VARCHAR(128) NOT NULL,
     bucket_name VARCHAR(128) NOT NULL,
     owner_token VARCHAR(64) NOT NULL,
-    expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (app_id, file_hash, bucket_name)
 );
 
@@ -82,10 +82,10 @@ CREATE TABLE IF NOT EXISTS upload_tasks (
     file_hash VARCHAR(128),
     hash_algorithm VARCHAR(20) DEFAULT 'MD5',
     status VARCHAR(20) NOT NULL DEFAULT 'uploading',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP,
-    expires_at TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ
 );
 
 -- upload_tasks 表索引
@@ -104,8 +104,8 @@ CREATE TABLE IF NOT EXISTS tenants (
     max_single_file_size BIGINT NOT NULL DEFAULT 104857600,
     allowed_file_types TEXT[],
     contact_email VARCHAR(255),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_tenant_status CHECK (status IN ('active', 'suspended', 'deleted'))
 );
 
@@ -118,8 +118,8 @@ CREATE TABLE IF NOT EXISTS tenant_usage (
     tenant_id VARCHAR(32) PRIMARY KEY,
     used_storage_bytes BIGINT NOT NULL DEFAULT 0,
     used_file_count INTEGER NOT NULL DEFAULT 0,
-    last_upload_at TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_upload_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_used_storage_bytes CHECK (used_storage_bytes >= 0),
     CONSTRAINT chk_used_file_count CHECK (used_file_count >= 0)
 );
@@ -137,7 +137,7 @@ CREATE TABLE IF NOT EXISTS admin_audit_logs (
     tenant_id VARCHAR(32),
     details JSONB,
     ip_address VARCHAR(45),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- admin_audit_logs 表索引

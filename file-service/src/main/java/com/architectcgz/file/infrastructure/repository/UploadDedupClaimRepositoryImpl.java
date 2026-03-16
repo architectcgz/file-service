@@ -5,7 +5,7 @@ import com.architectcgz.file.infrastructure.repository.mapper.UploadDedupClaimMa
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 上传去重占位仓储实现。
@@ -17,12 +17,12 @@ public class UploadDedupClaimRepositoryImpl implements UploadDedupClaimRepositor
     private final UploadDedupClaimMapper uploadDedupClaimMapper;
 
     @Override
-    public boolean tryAcquireClaim(String appId, String fileHash, String bucketName, String ownerToken, LocalDateTime expiresAt) {
+    public boolean tryAcquireClaim(String appId, String fileHash, String bucketName, String ownerToken, OffsetDateTime expiresAt) {
         return uploadDedupClaimMapper.tryAcquireClaim(appId, fileHash, bucketName, ownerToken, expiresAt) > 0;
     }
 
     @Override
-    public boolean renewClaim(String appId, String fileHash, String bucketName, String ownerToken, LocalDateTime expiresAt) {
+    public boolean renewClaim(String appId, String fileHash, String bucketName, String ownerToken, OffsetDateTime expiresAt) {
         return uploadDedupClaimMapper.renewClaim(appId, fileHash, bucketName, ownerToken, expiresAt) > 0;
     }
 

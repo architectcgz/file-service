@@ -2,7 +2,8 @@ package com.architectcgz.file.domain.model;
 
 import lombok.Data;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 /**
@@ -18,8 +19,8 @@ public class Tenant {
     private Long maxSingleFileSize;
     private List<String> allowedFileTypes;
     private String contactEmail;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private OffsetDateTime createdAt;
+    private OffsetDateTime updatedAt;
 
     /**
      * 停用租户
@@ -29,7 +30,7 @@ public class Tenant {
             throw new IllegalStateException("Cannot suspend deleted tenant: " + tenantId);
         }
         this.status = TenantStatus.SUSPENDED;
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
 
     /**
@@ -40,7 +41,7 @@ public class Tenant {
             throw new IllegalStateException("Cannot activate deleted tenant: " + tenantId);
         }
         this.status = TenantStatus.ACTIVE;
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
 
     /**
@@ -48,6 +49,6 @@ public class Tenant {
      */
     public void markDeleted() {
         this.status = TenantStatus.DELETED;
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
 }

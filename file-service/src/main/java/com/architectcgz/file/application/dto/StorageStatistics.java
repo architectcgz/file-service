@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Map;
 
 /**
@@ -51,5 +51,5 @@ public class StorageStatistics {
     /**
      * 统计时间戳
      */
-    private LocalDateTime statisticsTime;
+    private OffsetDateTime statisticsTime;
 }

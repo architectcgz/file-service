@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 文件 URL 响应 DTO
@@ -39,5 +39,5 @@ public class FileUrlResponse {
      * URL 过期时间
      * 仅当 permanent = false 时有效
      */
-    private LocalDateTime expiresAt;
+    private OffsetDateTime expiresAt;
 }

@@ -25,7 +25,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.List;
 
@@ -90,8 +91,8 @@ class TenantAdminControllerTest {
         tenant.setMaxSingleFileSize(104857600L);
         tenant.setAllowedFileTypes(Arrays.asList("image/jpeg", "image/png"));
         tenant.setContactEmail("test@example.com");
-        tenant.setCreatedAt(LocalDateTime.now());
-        tenant.setUpdatedAt(LocalDateTime.now());
+        tenant.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        tenant.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         
         when(tenantManagementService.createTenant(any(CreateTenantRequest.class)))
                 .thenReturn(tenant);
@@ -125,8 +126,8 @@ class TenantAdminControllerTest {
         tenant1.setMaxStorageBytes(10737418240L);
         tenant1.setMaxFileCount(10000);
         tenant1.setMaxSingleFileSize(104857600L);
-        tenant1.setCreatedAt(LocalDateTime.now());
-        tenant1.setUpdatedAt(LocalDateTime.now());
+        tenant1.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        tenant1.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         
         Tenant tenant2 = new Tenant();
         tenant2.setTenantId("tenant-2");
@@ -135,8 +136,8 @@ class TenantAdminControllerTest {
         tenant2.setMaxStorageBytes(5368709120L);
         tenant2.setMaxFileCount(5000);
         tenant2.setMaxSingleFileSize(52428800L);
-        tenant2.setCreatedAt(LocalDateTime.now());
-        tenant2.setUpdatedAt(LocalDateTime.now());
+        tenant2.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        tenant2.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         
         List<Tenant> tenants = Arrays.asList(tenant1, tenant2);
         
@@ -189,11 +190,11 @@ class TenantAdminControllerTest {
         detail.setMaxSingleFileSize(104857600L);
         detail.setAllowedFileTypes(Arrays.asList("image/jpeg", "image/png"));
         detail.setContactEmail("test@example.com");
-        detail.setCreatedAt(LocalDateTime.now());
-        detail.setUpdatedAt(LocalDateTime.now());
+        detail.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        detail.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         detail.setUsedStorageBytes(5368709120L);
         detail.setUsedFileCount(500);
-        detail.setLastUploadAt(LocalDateTime.now());
+        detail.setLastUploadAt(OffsetDateTime.now(ZoneOffset.UTC));
         detail.setStorageUsagePercent(50.0);
         detail.setFileCountUsagePercent(5.0);
         
@@ -252,8 +253,8 @@ class TenantAdminControllerTest {
         updatedTenant.setMaxSingleFileSize(209715200L);
         updatedTenant.setAllowedFileTypes(Arrays.asList("image/jpeg", "image/png", "video/mp4"));
         updatedTenant.setContactEmail("updated@example.com");
-        updatedTenant.setCreatedAt(LocalDateTime.now().minusDays(1));
-        updatedTenant.setUpdatedAt(LocalDateTime.now());
+        updatedTenant.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC).minusDays(1));
+        updatedTenant.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         
         when(tenantManagementService.updateTenant(eq("test-tenant"), any(UpdateTenantRequest.class)))
                 .thenReturn(updatedTenant);

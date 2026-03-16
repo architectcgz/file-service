@@ -13,7 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,7 +79,7 @@ class UploadDedupCoordinatorServiceTest {
     void executeWithDedupClaim_shouldRunNewUploadAfterClaimAcquired() {
         when(storageObjectRepository.findByFileHashAndBucket("blog", "hash-001", "bucket-a"))
                 .thenReturn(Optional.empty(), Optional.empty());
-        when(uploadDedupClaimRepository.tryAcquireClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString(), any(LocalDateTime.class)))
+        when(uploadDedupClaimRepository.tryAcquireClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString(), any(OffsetDateTime.class)))
                 .thenReturn(true);
 
         String actual = uploadDedupCoordinatorService.executeWithDedupClaim(
@@ -113,9 +113,9 @@ class UploadDedupCoordinatorServiceTest {
 
         when(storageObjectRepository.findByFileHashAndBucket("blog", "hash-001", "bucket-a"))
                 .thenReturn(Optional.empty(), Optional.empty());
-        when(uploadDedupClaimRepository.tryAcquireClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString(), any(LocalDateTime.class)))
+        when(uploadDedupClaimRepository.tryAcquireClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString(), any(OffsetDateTime.class)))
                 .thenReturn(true);
-        when(uploadDedupClaimRepository.renewClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString(), any(LocalDateTime.class)))
+        when(uploadDedupClaimRepository.renewClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString(), any(OffsetDateTime.class)))
                 .thenReturn(true);
 
         String actual = uploadDedupCoordinatorService.executeWithDedupClaim(
@@ -135,7 +135,7 @@ class UploadDedupCoordinatorServiceTest {
 
         assertThat(actual).isEqualTo("new-upload");
         verify(uploadDedupClaimRepository, atLeastOnce())
-                .renewClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString(), any(LocalDateTime.class));
+                .renewClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString(), any(OffsetDateTime.class));
         verify(uploadDedupClaimRepository).releaseClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString());
         verify(uploadDedupNotificationService).publishCompleted(eq("blog"), eq("hash-001"), eq("bucket-a"));
     }
@@ -146,7 +146,7 @@ class UploadDedupCoordinatorServiceTest {
         StorageObject storageObject = StorageObject.builder().id("storage-002").build();
         when(storageObjectRepository.findByFileHashAndBucket("blog", "hash-001", "bucket-a"))
                 .thenReturn(Optional.empty(), Optional.empty(), Optional.of(storageObject));
-        when(uploadDedupClaimRepository.tryAcquireClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString(), any(LocalDateTime.class)))
+        when(uploadDedupClaimRepository.tryAcquireClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString(), any(OffsetDateTime.class)))
                 .thenReturn(false);
         when(uploadDedupNotificationService.awaitResult(eq("blog"), eq("hash-001"), eq("bucket-a"), any(Duration.class)))
                 .thenReturn(UploadDedupNotificationService.WaitResult.NOTIFIED);
@@ -169,7 +169,7 @@ class UploadDedupCoordinatorServiceTest {
     void executeWithDedupClaim_shouldTimeoutWhenClaimNeverResolves() {
         when(storageObjectRepository.findByFileHashAndBucket("blog", "hash-001", "bucket-a"))
                 .thenReturn(Optional.empty());
-        when(uploadDedupClaimRepository.tryAcquireClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString(), any(LocalDateTime.class)))
+        when(uploadDedupClaimRepository.tryAcquireClaim(eq("blog"), eq("hash-001"), eq("bucket-a"), anyString(), any(OffsetDateTime.class)))
                 .thenReturn(false);
         when(uploadDedupNotificationService.awaitResult(eq("blog"), eq("hash-001"), eq("bucket-a"), any(Duration.class)))
                 .thenReturn(UploadDedupNotificationService.WaitResult.TIMED_OUT);

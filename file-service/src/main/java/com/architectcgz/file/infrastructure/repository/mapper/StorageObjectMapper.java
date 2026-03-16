@@ -3,7 +3,7 @@ package com.architectcgz.file.infrastructure.repository.mapper;
 import com.architectcgz.file.infrastructure.repository.po.StorageObjectPO;
 import org.apache.ibatis.annotations.*;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -92,7 +92,7 @@ public interface StorageObjectMapper extends RuntimeMyBatisMapper {
             updated_at = #{updatedAt}
         WHERE id = #{id}
         """)
-    int incrementReferenceCount(@Param("id") String id, @Param("updatedAt") LocalDateTime updatedAt);
+    int incrementReferenceCount(@Param("id") String id, @Param("updatedAt") OffsetDateTime updatedAt);
     
     /**
      * 减少引用计数
@@ -103,7 +103,7 @@ public interface StorageObjectMapper extends RuntimeMyBatisMapper {
             updated_at = #{updatedAt}
         WHERE id = #{id} AND reference_count > 0
         """)
-    int decrementReferenceCount(@Param("id") String id, @Param("updatedAt") LocalDateTime updatedAt);
+    int decrementReferenceCount(@Param("id") String id, @Param("updatedAt") OffsetDateTime updatedAt);
     
     /**
      * 删除存储对象

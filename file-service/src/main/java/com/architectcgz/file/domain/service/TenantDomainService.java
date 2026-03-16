@@ -15,7 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 /**
  * 租户领域服务
@@ -126,8 +127,9 @@ public class TenantDomainService {
         tenant.setMaxStorageBytes(tenantProperties.getDefaultMaxStorageBytes());
         tenant.setMaxFileCount(tenantProperties.getDefaultMaxFileCount());
         tenant.setMaxSingleFileSize(tenantProperties.getDefaultMaxSingleFileSize());
-        tenant.setCreatedAt(LocalDateTime.now());
-        tenant.setUpdatedAt(LocalDateTime.now());
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        tenant.setCreatedAt(now);
+        tenant.setUpdatedAt(now);
 
         Tenant savedTenant = saveTenantIfAbsent(tenant);
         ensureTenantUsageExists(tenantId);

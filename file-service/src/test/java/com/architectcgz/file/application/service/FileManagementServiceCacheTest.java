@@ -20,7 +20,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -69,7 +70,7 @@ class FileManagementServiceCacheTest {
                 .storagePath("2026/02/11/user-123/test.jpg").fileSize(1024L)
                 .contentType("image/jpeg").fileHash("abc123").hashAlgorithm("MD5")
                 .status(FileStatus.COMPLETED).accessLevel(AccessLevel.PUBLIC)
-                .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now())
+                .createdAt(OffsetDateTime.now(ZoneOffset.UTC)).updatedAt(OffsetDateTime.now(ZoneOffset.UTC))
                 .build();
 
         testStorageObject = StorageObject.builder()
@@ -82,8 +83,8 @@ class FileManagementServiceCacheTest {
                 .fileSize(testFileRecord.getFileSize())
                 .contentType(testFileRecord.getContentType())
                 .referenceCount(1)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .createdAt(OffsetDateTime.now(ZoneOffset.UTC))
+                .updatedAt(OffsetDateTime.now(ZoneOffset.UTC))
                 .build();
     }
 
@@ -165,7 +166,7 @@ class FileManagementServiceCacheTest {
                 .storagePath("2026/02/11/user-123/test2.jpg").fileSize(2048L)
                 .contentType("image/jpeg").fileHash("def456").hashAlgorithm("MD5")
                 .status(FileStatus.COMPLETED).accessLevel(AccessLevel.PUBLIC)
-                .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now())
+                .createdAt(OffsetDateTime.now(ZoneOffset.UTC)).updatedAt(OffsetDateTime.now(ZoneOffset.UTC))
                 .build();
 
         when(fileRecordRepository.findById("file-001")).thenReturn(Optional.of(testFileRecord));
@@ -176,8 +177,8 @@ class FileManagementServiceCacheTest {
                 .storagePath(file2.getStoragePath())
                 .bucketName("public-bucket")
                 .referenceCount(1)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .createdAt(OffsetDateTime.now(ZoneOffset.UTC))
+                .updatedAt(OffsetDateTime.now(ZoneOffset.UTC))
                 .build();
         when(deleteTransactionHelper.findStorageObjectIfLastReference("storage-001")).thenReturn(Optional.of(testStorageObject));
         when(deleteTransactionHelper.findStorageObjectIfLastReference("storage-002")).thenReturn(Optional.of(file2StorageObject));

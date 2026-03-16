@@ -10,7 +10,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 /**
@@ -33,7 +34,7 @@ public class AuditLogRepositoryImpl implements AuditLogRepository {
         
         // Set created timestamp if not present
         if (auditLog.getCreatedAt() == null) {
-            auditLog.setCreatedAt(LocalDateTime.now());
+            auditLog.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         }
         
         // Convert to PO

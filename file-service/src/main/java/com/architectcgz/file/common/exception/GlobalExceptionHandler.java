@@ -3,6 +3,7 @@ package com.architectcgz.file.common.exception;
 import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.result.ApiResponse;
+import com.platform.fileservice.core.domain.exception.FileAssetNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -121,6 +122,17 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleFileNotFoundException(FileNotFoundException ex) {
         log.warn("File not found: {}", ex.getMessage());
         return ApiResponse.error(404, ex.getErrorCode(), ex.getMessage());
+    }
+
+    /**
+     * Handle file-core not found exceptions exposed by v1 facade controllers.
+     * Returns 404 Not Found instead of falling back to the generic 500 handler.
+     */
+    @ExceptionHandler(FileAssetNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleCoreFileNotFoundException(FileAssetNotFoundException ex) {
+        log.warn("Core file not found: {}", ex.getMessage());
+        return ApiResponse.error(404, FileServiceErrorCodes.FILE_NOT_FOUND, ex.getMessage());
     }
     
     /**

@@ -23,7 +23,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.*;
 
 import static org.mockito.ArgumentMatchers.*;
@@ -147,8 +148,8 @@ class FileAdminControllerTest {
         List<FileRecord> files = Arrays.asList(file1);
         PageResponse<FileRecord> pageResponse = PageResponse.of(files, 0, 20, 1);
         when(fileManagementService.listFiles(any(FileQuery.class))).thenReturn(pageResponse);
-        mockMvc.perform(get("/api/v1/admin/files").param("startTime", "2026-01-01T00:00:00")
-                        .param("endTime", "2026-12-31T23:59:59")
+        mockMvc.perform(get("/api/v1/admin/files").param("startTime", "2026-01-01T00:00:00Z")
+                        .param("endTime", "2026-12-31T23:59:59Z")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.content.length()").value(1));
@@ -393,7 +394,7 @@ class FileAdminControllerTest {
                 .totalFiles(180L).totalStorageBytes(8053063680L)
                 .publicFiles(120L).privateFiles(60L)
                 .filesByType(filesByType).storageByTenant(storageByTenant)
-                .statisticsTime(LocalDateTime.now()).build();
+                .statisticsTime(OffsetDateTime.now(ZoneOffset.UTC)).build();
         when(fileManagementService.getStorageStatistics()).thenReturn(statistics);
         mockMvc.perform(get("/api/v1/admin/files/statistics")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app"))
@@ -415,7 +416,7 @@ class FileAdminControllerTest {
         StorageStatistics statistics = StorageStatistics.builder()
                 .totalFiles(0L).totalStorageBytes(0L).publicFiles(0L).privateFiles(0L)
                 .filesByType(Collections.emptyMap()).storageByTenant(Collections.emptyMap())
-                .statisticsTime(LocalDateTime.now()).build();
+                .statisticsTime(OffsetDateTime.now(ZoneOffset.UTC)).build();
         when(fileManagementService.getStorageStatistics()).thenReturn(statistics);
         mockMvc.perform(get("/api/v1/admin/files/statistics")
                         .contentType(MediaType.APPLICATION_JSON).header("X-App-Id", "test-app"))
@@ -474,7 +475,7 @@ class FileAdminControllerTest {
                 .fileSize(1024L).contentType("text/plain")
                 .fileHash("hash-" + id).hashAlgorithm("MD5")
                 .status(FileStatus.COMPLETED).accessLevel(accessLevel)
-                .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now())
+                .createdAt(OffsetDateTime.now(ZoneOffset.UTC)).updatedAt(OffsetDateTime.now(ZoneOffset.UTC))
                 .build();
     }
 }

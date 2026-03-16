@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * Persistent object for audit log table
@@ -23,5 +23,5 @@ public class AuditLogPO {
     private String tenantId;
     private String details;  // JSON string
     private String ipAddress;
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 }

@@ -10,7 +10,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,7 +44,7 @@ class PresignedUploadUrlQueryServiceTest {
         PresignedUploadResponse response = PresignedUploadResponse.builder()
                 .presignedUrl("https://minio.example.com/presigned")
                 .storagePath("blog/2026/03/14/user-1/uploads/avatar.png")
-                .expiresAt(LocalDateTime.of(2026, 3, 14, 14, 30))
+                .expiresAt(OffsetDateTime.of(2026, 3, 14, 14, 30, 0, 0, ZoneOffset.UTC))
                 .method("PUT")
                 .headers(Map.of("Content-Type", "image/png"))
                 .build();

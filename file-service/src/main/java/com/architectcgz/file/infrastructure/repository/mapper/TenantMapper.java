@@ -28,10 +28,8 @@ public interface TenantMapper extends RuntimeMyBatisMapper {
         @Result(property = "allowedFileTypes", column = "allowed_file_types", 
                 typeHandler = com.architectcgz.file.infrastructure.config.StringArrayTypeHandler.class),
         @Result(property = "contactEmail", column = "contact_email"),
-        @Result(property = "createdAt", column = "created_at",
-                typeHandler = com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler.class),
-        @Result(property = "updatedAt", column = "updated_at",
-                typeHandler = com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler.class)
+        @Result(property = "createdAt", column = "created_at"),
+        @Result(property = "updatedAt", column = "updated_at")
     })
     TenantPO findById(@Param("tenantId") String tenantId);
 
@@ -57,9 +55,9 @@ public interface TenantMapper extends RuntimeMyBatisMapper {
         ) VALUES (
             #{tenantId}, #{tenantName}, #{status}, #{maxStorageBytes}, #{maxFileCount},
             #{maxSingleFileSize}, #{allowedFileTypes,typeHandler=com.architectcgz.file.infrastructure.config.StringArrayTypeHandler}, 
-            #{contactEmail}, 
-            #{createdAt,typeHandler=com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler}, 
-            #{updatedAt,typeHandler=com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler}
+            #{contactEmail},
+            #{createdAt},
+            #{updatedAt}
         )
     """)
     void insert(TenantPO tenant);
@@ -76,7 +74,7 @@ public interface TenantMapper extends RuntimeMyBatisMapper {
             max_single_file_size = #{maxSingleFileSize},
             allowed_file_types = #{allowedFileTypes,typeHandler=com.architectcgz.file.infrastructure.config.StringArrayTypeHandler},
             contact_email = #{contactEmail},
-            updated_at = #{updatedAt,typeHandler=com.architectcgz.file.infrastructure.config.LocalDateTimeTypeHandler}
+            updated_at = #{updatedAt}
         WHERE tenant_id = #{tenantId}
     """)
     void update(TenantPO tenant);
