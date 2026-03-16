@@ -5,16 +5,13 @@ import com.platform.fileservice.core.application.service.CleanupAppService;
 import com.platform.fileservice.core.domain.model.UploadSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
-import java.util.Collections;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * 上传任务清理定时任务
@@ -27,18 +24,10 @@ import java.util.UUID;
 public class UploadTaskCleanupScheduler {
 
     private static final String CLEANUP_LOCK_KEY = "file-service:cleanup:upload-sessions:lock";
-    private static final DefaultRedisScript<Long> RELEASE_LOCK_SCRIPT = new DefaultRedisScript<>(
-            "if redis.call('get', KEYS[1]) == ARGV[1] then " +
-                    "    return redis.call('del', KEYS[1]) " +
-                    "else " +
-                    "    return 0 " +
-                    "end",
-            Long.class
-    );
 
     private final CleanupAppService cleanupAppService;
     private final UploadSessionCleanupProperties uploadSessionCleanupProperties;
-    private final StringRedisTemplate stringRedisTemplate;
+    private final RedissonClient redissonClient;
     
     /**
      * 清理过期的上传任或
@@ -46,16 +35,14 @@ public class UploadTaskCleanupScheduler {
      */
     @Scheduled(cron = "${storage.multipart.cleanup-cron:0 0 * * * *}")
     public void cleanupExpiredTasks() {
-        String lockValue = UUID.randomUUID().toString();
-        Duration lockTimeout = Duration.ofSeconds(uploadSessionCleanupProperties.getLockTimeoutSeconds());
-        Boolean locked = stringRedisTemplate.opsForValue()
-                .setIfAbsent(CLEANUP_LOCK_KEY, lockValue, lockTimeout);
-        if (!Boolean.TRUE.equals(locked)) {
+        RLock lock = redissonClient.getLock(CLEANUP_LOCK_KEY);
+        boolean locked = lock.tryLock();
+        if (!locked) {
             log.info("其他实例正在执行过期上传会话清理，跳过本次调度");
             return;
         }
 
-        log.info("Starting cleanup of expired upload sessions");
+        log.info("Starting cleanup of expired upload sessions with watchdog lock: key={}", CLEANUP_LOCK_KEY);
 
         try {
             List<UploadSession> expiredSessions = cleanupAppService.findExpiredUploadSessions();
@@ -92,13 +79,12 @@ public class UploadTaskCleanupScheduler {
         } catch (Exception e) {
             log.error("Error during cleanup of expired upload sessions: {}", e.getMessage(), e);
         } finally {
-            Long released = stringRedisTemplate.execute(
-                    RELEASE_LOCK_SCRIPT,
-                    Collections.singletonList(CLEANUP_LOCK_KEY),
-                    lockValue
-            );
-            if (!Long.valueOf(1L).equals(released)) {
-                log.warn("上传会话清理锁释放失败，锁可能已被其他实例接管: key={}", CLEANUP_LOCK_KEY);
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            } else {
+                log.warn("上传会话清理锁已不再由当前线程持有: key={}, configuredTimeoutSeconds={}",
+                        CLEANUP_LOCK_KEY,
+                        uploadSessionCleanupProperties.getLockTimeoutSeconds());
             }
         }
     }

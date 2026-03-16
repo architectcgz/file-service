@@ -8,15 +8,17 @@ import com.platform.fileservice.core.domain.model.UploadSessionStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 
 import java.time.Instant;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -27,7 +29,15 @@ class UploadTaskCleanupSchedulerTest {
     @Mock
     private CleanupAppService cleanupAppService;
 
-    @InjectMocks
+    @Mock
+    private RedissonClient redissonClient;
+
+    @Mock
+    private RLock lock;
+
+    @Mock
+    private com.architectcgz.file.infrastructure.config.UploadSessionCleanupProperties uploadSessionCleanupProperties;
+
     private UploadTaskCleanupScheduler scheduler;
 
     private UploadSession expiredSession1;
@@ -35,6 +45,11 @@ class UploadTaskCleanupSchedulerTest {
 
     @BeforeEach
     void setUp() {
+        scheduler = new UploadTaskCleanupScheduler(cleanupAppService, uploadSessionCleanupProperties, redissonClient);
+        lenient().when(redissonClient.getLock("file-service:cleanup:upload-sessions:lock")).thenReturn(lock);
+        lenient().when(lock.tryLock()).thenReturn(true);
+        lenient().when(lock.isHeldByCurrentThread()).thenReturn(true);
+
         expiredSession1 = buildSession("session-1", "provider-1");
         expiredSession2 = buildSession("session-2", "provider-2");
     }
@@ -47,6 +62,17 @@ class UploadTaskCleanupSchedulerTest {
 
         verify(cleanupAppService).findExpiredUploadSessions();
         verify(cleanupAppService, never()).expireUploadSession(any());
+        verify(lock).unlock();
+    }
+
+    @Test
+    void testCleanupExpiredTasks_SkipsWhenLockHeldByOtherInstance() {
+        when(lock.tryLock()).thenReturn(false);
+
+        scheduler.cleanupExpiredTasks();
+
+        verify(cleanupAppService, never()).findExpiredUploadSessions();
+        verify(lock, never()).unlock();
     }
 
     @Test
@@ -60,6 +86,7 @@ class UploadTaskCleanupSchedulerTest {
         verify(cleanupAppService).findExpiredUploadSessions();
         verify(cleanupAppService).expireUploadSession(expiredSession1);
         verify(cleanupAppService).expireUploadSession(expiredSession2);
+        verify(lock).unlock();
     }
 
     @Test
@@ -74,6 +101,7 @@ class UploadTaskCleanupSchedulerTest {
 
         verify(cleanupAppService).expireUploadSession(expiredSession1);
         verify(cleanupAppService).expireUploadSession(expiredSession2);
+        verify(lock).unlock();
     }
 
     @Test
@@ -84,6 +112,7 @@ class UploadTaskCleanupSchedulerTest {
         scheduler.cleanupExpiredTasks();
 
         verify(cleanupAppService).expireUploadSession(expiredSession1);
+        verify(lock).unlock();
     }
 
     @Test
@@ -95,6 +124,7 @@ class UploadTaskCleanupSchedulerTest {
 
         verify(cleanupAppService).findExpiredUploadSessions();
         verify(cleanupAppService, never()).expireUploadSession(any());
+        verify(lock).unlock();
     }
 
     private UploadSession buildSession(String sessionId, String providerUploadId) {
