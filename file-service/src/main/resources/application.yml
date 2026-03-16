@@ -182,6 +182,18 @@ file:
       gateway-base-url: ${FILE_CORE_GATEWAY_BASE_URL:http://localhost:8090}
       ticket-ttl: ${FILE_CORE_ACCESS_TICKET_TTL:5m}
       signing-secret: ${FILE_CORE_ACCESS_SIGNING_SECRET:change-me-before-production}
+    storage:
+      s3:
+        endpoint: ${FILE_CORE_STORAGE_S3_ENDPOINT:${S3_ENDPOINT:http://localhost:9000}}
+        public-endpoint: ${FILE_CORE_STORAGE_S3_PUBLIC_ENDPOINT:${S3_PUBLIC_ENDPOINT:http://localhost:9000}}
+        access-key: ${FILE_CORE_STORAGE_S3_ACCESS_KEY:${S3_ACCESS_KEY:fileservice}}
+        secret-key: ${FILE_CORE_STORAGE_S3_SECRET_KEY:${S3_SECRET_KEY:fileservice123}}
+        bucket: ${FILE_CORE_STORAGE_S3_BUCKET:${S3_BUCKET:platform-files}}
+        public-bucket: ${FILE_CORE_STORAGE_S3_PUBLIC_BUCKET:${S3_PUBLIC_BUCKET:platform-files-public}}
+        private-bucket: ${FILE_CORE_STORAGE_S3_PRIVATE_BUCKET:${S3_PRIVATE_BUCKET:platform-files-private}}
+        region: ${FILE_CORE_STORAGE_S3_REGION:${S3_REGION:us-east-1}}
+        cdn-domain: ${FILE_CORE_STORAGE_S3_CDN_DOMAIN:${S3_CDN_DOMAIN:}}
+        path-style-access: ${FILE_CORE_STORAGE_S3_PATH_STYLE_ACCESS:${S3_PATH_STYLE_ACCESS:true}}
     upload:
       session-ttl: ${FILE_CORE_UPLOAD_SESSION_TTL:24h}
       part-url-ttl: ${FILE_CORE_UPLOAD_PART_URL_TTL:15m}

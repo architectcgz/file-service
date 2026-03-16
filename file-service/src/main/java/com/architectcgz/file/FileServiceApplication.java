@@ -18,7 +18,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  *
  * @author Blog Team
  */
-@SpringBootApplication(scanBasePackages = {"com.architectcgz.file", "com.platform.file"})
+@SpringBootApplication(scanBasePackages = {"com.architectcgz.file", "com.platform.fileservice.core.web"})
 @EnableScheduling
 @EnableConfigurationProperties({
         CacheProperties.class,
