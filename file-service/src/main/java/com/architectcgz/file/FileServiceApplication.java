@@ -3,6 +3,7 @@ package com.architectcgz.file;
 import com.architectcgz.file.infrastructure.config.AdminProperties;
 import com.architectcgz.file.infrastructure.config.CacheProperties;
 import com.architectcgz.file.infrastructure.config.CleanupProperties;
+import com.architectcgz.file.infrastructure.config.MultiInstanceDeploymentProperties;
 import com.architectcgz.file.infrastructure.config.UploadSessionCleanupProperties;
 import com.architectcgz.file.infrastructure.config.UploadSessionInitProperties;
 import org.springframework.boot.SpringApplication;
@@ -23,6 +24,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         CacheProperties.class,
         AdminProperties.class,
         CleanupProperties.class,
+        MultiInstanceDeploymentProperties.class,
         UploadSessionCleanupProperties.class,
         UploadSessionInitProperties.class
 })

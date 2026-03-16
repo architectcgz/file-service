@@ -261,6 +261,8 @@ logging:
 
 # 文件服务缓存配置
 file-service:
+  deployment:
+    multi-instance-enabled: ${FILE_SERVICE_MULTI_INSTANCE_ENABLED:false}
   cache:
     enabled: ${CACHE_ENABLED:true}
     url:
