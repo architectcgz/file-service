@@ -41,6 +41,9 @@ public class MultiInstanceDeploymentValidator implements InitializingBean {
         }
 
         String storageType = environment.getProperty("storage.type", DEFAULT_STORAGE_TYPE);
+        requireNonLoopbackJdbcUrl("spring.datasource.url", environment.getProperty("spring.datasource.url"));
+        requireNonLoopbackRedisAddress();
+
         if ("local".equalsIgnoreCase(storageType)) {
             fail("multi-instance deployment requires shared object storage; storage.type=local is not supported");
         }
@@ -71,6 +74,39 @@ public class MultiInstanceDeploymentValidator implements InitializingBean {
         requireNonLoopbackUrl("storage.s3.public-endpoint", s3Properties.getPublicEndpoint());
     }
 
+    private void requireNonLoopbackJdbcUrl(String propertyName, String propertyValue) {
+        if (!StringUtils.hasText(propertyValue)) {
+            fail("multi-instance deployment requires " + propertyName + " to be configured");
+        }
+
+        String normalized = propertyValue.startsWith("jdbc:") ? propertyValue.substring(5) : propertyValue;
+        URI uri = parseUri(propertyName, normalized);
+        String host = uri.getHost();
+        if (!StringUtils.hasText(host)) {
+            fail(propertyName + " must contain a valid JDBC URL with host");
+        }
+        requireNonLoopbackHost(propertyName, host);
+    }
+
+    private void requireNonLoopbackRedisAddress() {
+        String redisUrl = environment.getProperty("spring.data.redis.url");
+        if (StringUtils.hasText(redisUrl)) {
+            URI uri = parseUri("spring.data.redis.url", redisUrl);
+            String host = uri.getHost();
+            if (!StringUtils.hasText(host)) {
+                fail("spring.data.redis.url must contain a valid absolute URL");
+            }
+            requireNonLoopbackHost("spring.data.redis.url", host);
+            return;
+        }
+
+        String redisHost = environment.getProperty("spring.data.redis.host");
+        if (!StringUtils.hasText(redisHost)) {
+            fail("multi-instance deployment requires spring.data.redis.host or spring.data.redis.url to be configured");
+        }
+        requireNonLoopbackHost("spring.data.redis.host", redisHost);
+    }
+
     private void requireNonLoopbackUrl(String propertyName, String propertyValue) {
         if (!StringUtils.hasText(propertyValue)) {
             fail("multi-instance deployment requires " + propertyName + " to be configured");
@@ -82,6 +118,10 @@ public class MultiInstanceDeploymentValidator implements InitializingBean {
             fail(propertyName + " must contain a valid absolute URL");
         }
 
+        requireNonLoopbackHost(propertyName, host);
+    }
+
+    private void requireNonLoopbackHost(String propertyName, String host) {
         String normalizedHost = host.toLowerCase(Locale.ROOT);
         if (LOOPBACK_HOSTS.contains(normalizedHost)) {
             fail("multi-instance deployment requires " + propertyName + " to be externally reachable, but found loopback host: " + host);
