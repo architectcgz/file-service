@@ -499,6 +499,7 @@ class UploadAppServiceTest {
                 "blog/2026/03/14/user-001/uploads/session-001-demo.mp4",
                 "provider-001"
         )).thenReturn(authoritativeParts);
+        when(uploadSessionRepository.markCompleting("session-001")).thenReturn(true);
         when(blobObjectRepository.findByHash("blog", "hash-001", "private-bucket")).thenReturn(Optional.empty());
         when(blobObjectRepository.save(any(BlobObject.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(fileAssetRepository.save(any(FileAsset.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -524,6 +525,7 @@ class UploadAppServiceTest {
                 "provider-001",
                 authoritativeParts
         );
+        verify(uploadSessionRepository).markCompleting("session-001");
         verify(blobObjectRepository).save(any(BlobObject.class));
         verify(fileAssetRepository).save(any(FileAsset.class));
         verify(uploadSessionRepository).markCompleted(eq("session-001"), anyString());
@@ -542,6 +544,7 @@ class UploadAppServiceTest {
                 "public-bucket",
                 "blog/2026/03/14/user-001/uploads/session-ps-001-avatar.png"
         )).thenReturn(new StoredObjectMetadata(2048L, "image/png"));
+        when(uploadSessionRepository.markCompleting("session-ps-001")).thenReturn(true);
         when(blobObjectRepository.findByHash("blog", "hash-ps-001", "public-bucket")).thenReturn(Optional.empty());
         when(blobObjectRepository.save(any(BlobObject.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(fileAssetRepository.save(any(FileAsset.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -556,6 +559,7 @@ class UploadAppServiceTest {
 
         assertEquals("session-ps-001", uploadCompletion.uploadSessionId());
         assertEquals(UploadSessionStatus.COMPLETED, uploadCompletion.status());
+        verify(uploadSessionRepository).markCompleting("session-ps-001");
         verify(blobObjectRepository).save(any(BlobObject.class));
         verify(fileAssetRepository).save(any(FileAsset.class));
         verify(uploadSessionRepository).markCompleted(eq("session-ps-001"), anyString());
@@ -581,6 +585,7 @@ class UploadAppServiceTest {
                 "blog/2026/03/14/user-001/uploads/session-001-demo.mp4",
                 "provider-001"
         )).thenReturn(authoritativeParts);
+        when(uploadSessionRepository.markCompleting("session-001")).thenReturn(true);
         when(blobObjectRepository.findByHash("blog", "hash-001", "private-bucket"))
                 .thenReturn(Optional.of(new BlobObject(
                         "blob-001",
@@ -611,6 +616,45 @@ class UploadAppServiceTest {
         verify(blobObjectRepository).incrementReferenceCount("blob-001");
         verify(objectStoragePort).deleteObject("private-bucket", "blog/2026/03/14/user-001/uploads/session-001-demo.mp4");
         verify(blobObjectRepository, never()).save(any(BlobObject.class));
+    }
+
+    @Test
+    void shouldReturnExistingCompletionWhenMultipartSessionAlreadyCompleted() {
+        when(uploadSessionRepository.findById("session-001"))
+                .thenReturn(Optional.of(completedMultipartSession("session-001", "file-001")));
+
+        UploadCompletion uploadCompletion = uploadAppService.completeSession(
+                "blog",
+                "session-001",
+                "user-001",
+                "video/mp4",
+                List.of()
+        );
+
+        assertEquals("file-001", uploadCompletion.fileId());
+        verify(uploadSessionRepository, never()).markCompleting(anyString());
+        verify(objectStoragePort, never()).completeMultipartUpload(anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void shouldReturnExistingCompletionWhenAnotherInstanceIsFinishingMultipartSession() {
+        when(uploadSessionRepository.findById("session-001"))
+                .thenReturn(
+                        Optional.of(multipartSession("session-001", UploadSessionStatus.UPLOADING, FIXED_NOW.plusSeconds(60))),
+                        Optional.of(completedMultipartSession("session-001", "file-002"))
+                );
+        when(uploadSessionRepository.markCompleting("session-001")).thenReturn(false);
+
+        UploadCompletion uploadCompletion = uploadAppService.completeSession(
+                "blog",
+                "session-001",
+                "user-001",
+                "video/mp4",
+                List.of()
+        );
+
+        assertEquals("file-002", uploadCompletion.fileId());
+        verify(objectStoragePort, never()).completeMultipartUpload(anyString(), anyString(), anyString(), any());
     }
 
     @Test
@@ -715,6 +759,29 @@ class UploadAppServiceTest {
                 FIXED_NOW,
                 FIXED_NOW,
                 expiresAt
+        );
+    }
+
+    private UploadSession completedMultipartSession(String uploadSessionId, String fileId) {
+        return new UploadSession(
+                uploadSessionId,
+                "blog",
+                "user-001",
+                UploadMode.DIRECT,
+                AccessLevel.PRIVATE,
+                "demo.mp4",
+                "video/mp4",
+                11L * 1024 * 1024,
+                "hash-001",
+                "blog/2026/03/14/user-001/uploads/session-001-demo.mp4",
+                CHUNK_SIZE_BYTES,
+                3,
+                "provider-001",
+                fileId,
+                UploadSessionStatus.COMPLETED,
+                FIXED_NOW,
+                FIXED_NOW,
+                FIXED_NOW.plusSeconds(60)
         );
     }
 

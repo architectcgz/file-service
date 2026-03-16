@@ -6,6 +6,7 @@ import com.architectcgz.file.application.dto.DirectUploadInitResponse;
 import com.architectcgz.file.application.dto.DirectUploadPartUrlRequest;
 import com.architectcgz.file.application.dto.DirectUploadPartUrlResponse;
 import com.architectcgz.file.application.dto.DirectUploadProgressResponse;
+import com.architectcgz.file.application.service.uploadsession.UploadSessionInitCoordinatorService;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.constant.FileServiceErrorMessages;
@@ -42,13 +43,14 @@ import java.util.List;
 public class DirectUploadCoreBridgeService {
 
     private final UploadAppService uploadAppService;
+    private final UploadSessionInitCoordinatorService uploadSessionInitCoordinatorService;
     private final ObjectStoragePort objectStoragePort;
     private final AccessProperties accessProperties;
     private final MultipartProperties multipartProperties;
 
     public DirectUploadInitResponse initDirectUpload(String appId, DirectUploadInitRequest request, String userId) {
         try {
-            UploadSessionCreationResult creationResult = uploadAppService.createSession(
+            UploadSessionCreationResult creationResult = uploadSessionInitCoordinatorService.createSession(
                     appId,
                     userId,
                     UploadMode.DIRECT,
@@ -57,9 +59,9 @@ public class DirectUploadCoreBridgeService {
                     request.getContentType(),
                     request.getFileSize(),
                     request.getFileHash(),
-                    Duration.ofHours(multipartProperties.getTaskExpireHours()),
-                    multipartProperties.getChunkSize(),
-                    multipartProperties.getMaxParts()
+                Duration.ofHours(multipartProperties.getTaskExpireHours()),
+                multipartProperties.getChunkSize(),
+                multipartProperties.getMaxParts()
             );
             return toLegacyResponse(creationResult);
         } catch (UploadSessionInvalidRequestException ex) {

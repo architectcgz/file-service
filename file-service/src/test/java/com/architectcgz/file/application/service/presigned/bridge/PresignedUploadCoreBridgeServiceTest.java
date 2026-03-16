@@ -3,6 +3,7 @@ package com.architectcgz.file.application.service.presigned.bridge;
 import com.architectcgz.file.application.dto.ConfirmUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadRequest;
 import com.architectcgz.file.application.service.FileTypeValidator;
+import com.architectcgz.file.application.service.uploadsession.UploadSessionInitCoordinatorService;
 import com.architectcgz.file.application.service.presigned.storage.PresignedUploadStorageService;
 import com.architectcgz.file.application.service.presigned.validator.PresignedUploadAccessResolver;
 import com.architectcgz.file.common.constant.FileServiceErrorCodes;
@@ -54,6 +55,8 @@ class PresignedUploadCoreBridgeServiceTest {
     @Mock
     private UploadAppService uploadAppService;
     @Mock
+    private UploadSessionInitCoordinatorService uploadSessionInitCoordinatorService;
+    @Mock
     private UploadSessionRepository uploadSessionRepository;
     @Mock
     private BlobObjectRepository blobObjectRepository;
@@ -79,6 +82,7 @@ class PresignedUploadCoreBridgeServiceTest {
         multipartProperties.setMaxParts(10_000);
         bridgeService = new PresignedUploadCoreBridgeService(
                 uploadAppService,
+                uploadSessionInitCoordinatorService,
                 uploadSessionRepository,
                 blobObjectRepository,
                 fileAssetRepository,
@@ -101,7 +105,7 @@ class PresignedUploadCoreBridgeServiceTest {
         when(presignedUploadStorageService.resolveBucketName(com.architectcgz.file.domain.model.AccessLevel.PUBLIC))
                 .thenReturn("public-bucket");
         when(blobObjectRepository.findByHash("blog", "hash-public", "public-bucket")).thenReturn(Optional.empty());
-        when(uploadAppService.createSession(
+        when(uploadSessionInitCoordinatorService.createSession(
                 anyString(),
                 anyString(),
                 any(UploadMode.class),
@@ -194,6 +198,7 @@ class PresignedUploadCoreBridgeServiceTest {
         request.setAccessLevel("public");
         when(uploadSessionRepository.findActiveByHash("blog", "user-1", "hash-public"))
                 .thenReturn(Optional.empty());
+        when(uploadSessionRepository.findByOwner("blog", "user-1", 20)).thenReturn(java.util.List.of());
 
         assertThatThrownBy(() -> bridgeService.confirmUpload("blog", request, "user-1"))
                 .isInstanceOfSatisfying(BusinessException.class,

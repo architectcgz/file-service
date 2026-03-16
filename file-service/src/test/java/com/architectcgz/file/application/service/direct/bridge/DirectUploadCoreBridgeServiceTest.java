@@ -3,6 +3,7 @@ package com.architectcgz.file.application.service.direct.bridge;
 import com.architectcgz.file.application.dto.DirectUploadCompleteRequest;
 import com.architectcgz.file.application.dto.DirectUploadInitRequest;
 import com.architectcgz.file.application.dto.DirectUploadPartUrlRequest;
+import com.architectcgz.file.application.service.uploadsession.UploadSessionInitCoordinatorService;
 import com.architectcgz.file.common.exception.AccessDeniedException;
 import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.exception.BusinessException;
@@ -49,6 +50,8 @@ class DirectUploadCoreBridgeServiceTest {
     @Mock
     private UploadAppService uploadAppService;
     @Mock
+    private UploadSessionInitCoordinatorService uploadSessionInitCoordinatorService;
+    @Mock
     private ObjectStoragePort objectStoragePort;
     @Mock
     private AccessProperties accessProperties;
@@ -62,14 +65,20 @@ class DirectUploadCoreBridgeServiceTest {
         multipartProperties.setChunkSize(5 * 1024 * 1024);
         multipartProperties.setMaxParts(10_000);
         multipartProperties.setTaskExpireHours(24);
-        bridgeService = new DirectUploadCoreBridgeService(uploadAppService, objectStoragePort, accessProperties, multipartProperties);
+        bridgeService = new DirectUploadCoreBridgeService(
+                uploadAppService,
+                uploadSessionInitCoordinatorService,
+                objectStoragePort,
+                accessProperties,
+                multipartProperties
+        );
     }
 
     @Test
     @DisplayName("新建直传任务时应映射为 legacy init 响应")
     void initDirectUpload_shouldMapFreshSessionToLegacyResponse() {
         DirectUploadInitRequest request = buildRequest();
-        when(uploadAppService.createSession(
+        when(uploadSessionInitCoordinatorService.createSession(
                 anyString(),
                 anyString(),
                 any(UploadMode.class),
@@ -105,7 +114,7 @@ class DirectUploadCoreBridgeServiceTest {
     @DisplayName("断点续传时应携带已上传分片信息")
     void initDirectUpload_shouldMapResumedSessionToLegacyResponse() {
         DirectUploadInitRequest request = buildRequest();
-        when(uploadAppService.createSession(
+        when(uploadSessionInitCoordinatorService.createSession(
                 anyString(),
                 anyString(),
                 any(UploadMode.class),
@@ -142,7 +151,7 @@ class DirectUploadCoreBridgeServiceTest {
     @DisplayName("秒传命中时应返回文件ID和公开访问地址")
     void initDirectUpload_shouldMapInstantUploadToLegacyResponse() {
         DirectUploadInitRequest request = buildRequest();
-        when(uploadAppService.createSession(
+        when(uploadSessionInitCoordinatorService.createSession(
                 anyString(),
                 anyString(),
                 any(UploadMode.class),
@@ -197,7 +206,7 @@ class DirectUploadCoreBridgeServiceTest {
     @DisplayName("core 返回无效请求时应转换为 legacy BusinessException")
     void initDirectUpload_shouldTranslateInvalidRequest() {
         DirectUploadInitRequest request = buildRequest();
-        when(uploadAppService.createSession(
+        when(uploadSessionInitCoordinatorService.createSession(
                 anyString(),
                 anyString(),
                 any(UploadMode.class),

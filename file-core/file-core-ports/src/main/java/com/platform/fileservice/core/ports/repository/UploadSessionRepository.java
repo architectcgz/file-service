@@ -22,6 +22,8 @@ public interface UploadSessionRepository {
 
     List<UploadSession> findExpiredSessions(Instant before);
 
+    boolean markCompleting(String uploadSessionId);
+
     boolean markCompleted(String uploadSessionId, String fileId);
 
     boolean updateStatus(String uploadSessionId, UploadSessionStatus status);

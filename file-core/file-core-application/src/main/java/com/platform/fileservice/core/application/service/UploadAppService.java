@@ -51,6 +51,8 @@ public final class UploadAppService {
     private static final int MAX_FILENAME_LENGTH = 120;
     private static final String DEFAULT_HASH_ALGORITHM = "MD5";
     private static final String LEGACY_STORAGE_PROVIDER = "legacy-s3";
+    private static final Duration COMPLETION_WAIT_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration COMPLETION_POLL_INTERVAL = Duration.ofMillis(100);
 
     private final UploadSessionRepository uploadSessionRepository;
     private final BlobObjectRepository blobObjectRepository;
@@ -320,12 +322,22 @@ public final class UploadAppService {
                                             List<CompletedUploadPart> completedUploadParts) {
         UploadSession uploadSession = loadOwnedSession(tenantId, uploadSessionId, subjectId);
         ensureSupportsMultipart(uploadSession);
+        UploadCompletion existingCompletion = existingCompletion(uploadSession);
+        if (existingCompletion != null) {
+            return existingCompletion;
+        }
         if (isExpired(uploadSession)) {
             throw new UploadSessionInvalidRequestException("upload session expired: " + uploadSessionId);
         }
+        if (uploadSession.status() == UploadSessionStatus.COMPLETING) {
+            return waitForCompletion(uploadSessionId);
+        }
         if (uploadSession.status() != UploadSessionStatus.UPLOADING
-                && uploadSession.status() != UploadSessionStatus.COMPLETING) {
+                && uploadSession.status() != UploadSessionStatus.INITIATED) {
             throw new UploadSessionInvalidRequestException("upload session is not ready to complete: " + uploadSession.status());
+        }
+        if (!uploadSessionRepository.markCompleting(uploadSessionId)) {
+            return waitForCompletion(uploadSessionId);
         }
 
         List<UploadedPart> authoritativeParts = loadUploadedParts(uploadSession);
@@ -378,16 +390,25 @@ public final class UploadAppService {
                                                  String subjectId,
                                                  String contentType) {
         UploadSession uploadSession = loadOwnedSession(tenantId, uploadSessionId, subjectId);
+        UploadCompletion existingCompletion = existingCompletion(uploadSession);
+        if (existingCompletion != null) {
+            return existingCompletion;
+        }
         if (!requiresSingleObjectUpload(uploadSession.uploadMode())) {
             throw new UploadSessionInvalidRequestException("upload mode does not support single upload completion: " + uploadSession.uploadMode());
         }
         if (isExpired(uploadSession)) {
             throw new UploadSessionInvalidRequestException("upload session expired: " + uploadSessionId);
         }
+        if (uploadSession.status() == UploadSessionStatus.COMPLETING) {
+            return waitForCompletion(uploadSessionId);
+        }
         if (uploadSession.status() != UploadSessionStatus.INITIATED
-                && uploadSession.status() != UploadSessionStatus.UPLOADING
-                && uploadSession.status() != UploadSessionStatus.COMPLETING) {
+                && uploadSession.status() != UploadSessionStatus.UPLOADING) {
             throw new UploadSessionInvalidRequestException("upload session is not ready to complete: " + uploadSession.status());
+        }
+        if (!uploadSessionRepository.markCompleting(uploadSessionId)) {
+            return waitForCompletion(uploadSessionId);
         }
 
         String bucketName = objectStoragePort.resolveBucketName(uploadSession.targetAccessLevel());
@@ -759,6 +780,62 @@ public final class UploadAppService {
             objectStoragePort.deleteObject(bucketName, objectKey);
         } catch (RuntimeException ignored) {
             // 合并已完成后的清理由后台对账/GC 兜底。
+        }
+    }
+
+    private UploadCompletion existingCompletion(UploadSession uploadSession) {
+        if (uploadSession.status() != UploadSessionStatus.COMPLETED) {
+            return null;
+        }
+        if (uploadSession.fileId() == null || uploadSession.fileId().isBlank()) {
+            throw new UploadSessionMutationException(
+                    "completed upload session is missing fileId: " + uploadSession.uploadSessionId()
+            );
+        }
+        return new UploadCompletion(
+                uploadSession.uploadSessionId(),
+                uploadSession.fileId(),
+                UploadSessionStatus.COMPLETED
+        );
+    }
+
+    private UploadCompletion waitForCompletion(String uploadSessionId) {
+        long deadlineNanos = System.nanoTime() + COMPLETION_WAIT_TIMEOUT.toNanos();
+        while (System.nanoTime() <= deadlineNanos) {
+            UploadSession latestSession = uploadSessionRepository.findById(uploadSessionId)
+                    .orElseThrow(() -> new UploadSessionMutationException(
+                            "upload session disappeared while waiting for completion: " + uploadSessionId
+                    ));
+            UploadCompletion existingCompletion = existingCompletion(latestSession);
+            if (existingCompletion != null) {
+                return existingCompletion;
+            }
+            if (latestSession.status() == UploadSessionStatus.ABORTED
+                    || latestSession.status() == UploadSessionStatus.EXPIRED
+                    || latestSession.status() == UploadSessionStatus.FAILED) {
+                throw new UploadSessionInvalidRequestException(
+                        "upload session is not ready to complete: " + latestSession.status()
+                );
+            }
+            if (latestSession.status() != UploadSessionStatus.COMPLETING) {
+                throw new UploadSessionMutationException(
+                        "upload session completion ownership lost: " + uploadSessionId + ", status=" + latestSession.status()
+                );
+            }
+            sleepCompletionPollInterval(uploadSessionId);
+        }
+        throw new UploadSessionMutationException("timed out waiting for upload session completion: " + uploadSessionId);
+    }
+
+    private void sleepCompletionPollInterval(String uploadSessionId) {
+        try {
+            Thread.sleep(COMPLETION_POLL_INTERVAL.toMillis());
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new UploadSessionMutationException(
+                    "interrupted while waiting for upload session completion: " + uploadSessionId,
+                    ex
+            );
         }
     }
 

@@ -3,6 +3,7 @@ package com.architectcgz.file.application.service.multipart.bridge;
 import com.architectcgz.file.application.dto.InitUploadRequest;
 import com.architectcgz.file.application.dto.UploadProgressResponse;
 import com.architectcgz.file.application.service.FileTypeValidator;
+import com.architectcgz.file.application.service.uploadsession.UploadSessionInitCoordinatorService;
 import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.AccessDeniedException;
@@ -55,6 +56,8 @@ class MultipartUploadCoreBridgeServiceTest {
     @Mock
     private UploadAppService uploadAppService;
     @Mock
+    private UploadSessionInitCoordinatorService uploadSessionInitCoordinatorService;
+    @Mock
     private FileTypeValidator fileTypeValidator;
     @Mock
     private TenantDomainService tenantDomainService;
@@ -69,6 +72,7 @@ class MultipartUploadCoreBridgeServiceTest {
         multipartProperties.setMaxParts(10);
         multipartUploadCoreBridgeService = new MultipartUploadCoreBridgeService(
                 uploadAppService,
+                uploadSessionInitCoordinatorService,
                 fileTypeValidator,
                 tenantDomainService,
                 multipartProperties
@@ -79,9 +83,9 @@ class MultipartUploadCoreBridgeServiceTest {
     @DisplayName("初始化分片上传时应完成 legacy 校验并映射新建任务")
     void initUpload_shouldValidateAndMapFreshSession() {
         InitUploadRequest request = buildInitRequest();
-        doNothing().when(tenantDomainService).checkQuota("blog", 2048L);
+        when(tenantDomainService.validateUploadPrerequisites("blog", 2048L)).thenReturn(null);
         doNothing().when(fileTypeValidator).validateFile("archive.zip", "application/zip", 2048L);
-        when(uploadAppService.createSession(
+        when(uploadSessionInitCoordinatorService.createSession(
                 anyString(),
                 anyString(),
                 any(UploadMode.class),
@@ -107,9 +111,9 @@ class MultipartUploadCoreBridgeServiceTest {
         assertThat(response.getChunkSize()).isEqualTo(1024);
         assertThat(response.getTotalParts()).isEqualTo(2);
         assertThat(response.getCompletedParts()).isEmpty();
-        verify(tenantDomainService).checkQuota("blog", 2048L);
+        verify(tenantDomainService).validateUploadPrerequisites("blog", 2048L);
         verify(fileTypeValidator).validateFile("archive.zip", "application/zip", 2048L);
-        verify(uploadAppService).createSession(
+        verify(uploadSessionInitCoordinatorService).createSession(
                 "blog",
                 "user-123",
                 UploadMode.DIRECT,
@@ -128,7 +132,7 @@ class MultipartUploadCoreBridgeServiceTest {
     @DisplayName("初始化分片上传续传时应返回已完成分片")
     void initUpload_shouldMapResumedSession() {
         InitUploadRequest request = buildInitRequest();
-        when(uploadAppService.createSession(
+        when(uploadSessionInitCoordinatorService.createSession(
                 anyString(),
                 anyString(),
                 any(UploadMode.class),
@@ -314,7 +318,7 @@ class MultipartUploadCoreBridgeServiceTest {
         assertThat(tasks).extracting(UploadTask::getId).containsExactly("task-001", "task-002", "task-003");
         assertThat(tasks).extracting(UploadTask::getStatus)
                 .containsExactly(UploadTaskStatus.UPLOADING, UploadTaskStatus.COMPLETED, UploadTaskStatus.EXPIRED);
-        assertThat(tasks.get(0).getCreatedAt()).isEqualTo(LocalDateTime.ofInstant(now, ZoneOffset.UTC));
+        assertThat(tasks.get(0).getCreatedAt()).isEqualTo(now.atOffset(ZoneOffset.UTC));
         assertThat(tasks.get(0).getStoragePath()).isEqualTo("blog/2026/03/14/user-123/files/archive.zip");
     }
 

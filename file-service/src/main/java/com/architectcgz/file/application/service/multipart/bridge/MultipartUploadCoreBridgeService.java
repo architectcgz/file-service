@@ -4,6 +4,7 @@ import com.architectcgz.file.application.dto.InitUploadRequest;
 import com.architectcgz.file.application.dto.InitUploadResponse;
 import com.architectcgz.file.application.dto.UploadProgressResponse;
 import com.architectcgz.file.application.service.FileTypeValidator;
+import com.architectcgz.file.application.service.uploadsession.UploadSessionInitCoordinatorService;
 import com.architectcgz.file.common.constant.FileServiceErrorCodes;
 import com.architectcgz.file.common.constant.FileServiceErrorMessages;
 import com.architectcgz.file.common.exception.AccessDeniedException;
@@ -27,7 +28,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 
@@ -41,6 +42,7 @@ public class MultipartUploadCoreBridgeService {
     private static final int TASK_LIST_LIMIT = 100;
 
     private final UploadAppService uploadAppService;
+    private final UploadSessionInitCoordinatorService uploadSessionInitCoordinatorService;
     private final FileTypeValidator fileTypeValidator;
     private final TenantDomainService tenantDomainService;
     private final MultipartProperties multipartProperties;
@@ -49,7 +51,7 @@ public class MultipartUploadCoreBridgeService {
         tenantDomainService.validateUploadPrerequisites(appId, request.getFileSize());
         fileTypeValidator.validateFile(request.getFileName(), request.getContentType(), request.getFileSize());
 
-        UploadSessionCreationResult creationResult = uploadAppService.createSession(
+        UploadSessionCreationResult creationResult = uploadSessionInitCoordinatorService.createSession(
                 appId,
                 userId,
                 UploadMode.DIRECT,
@@ -162,9 +164,9 @@ public class MultipartUploadCoreBridgeService {
                 .totalParts(uploadSession.totalParts())
                 .chunkSize(uploadSession.chunkSizeBytes())
                 .status(toLegacyStatus(uploadSession))
-                .createdAt(toLocalDateTime(uploadSession.createdAt()))
-                .updatedAt(toLocalDateTime(uploadSession.updatedAt()))
-                .expiresAt(toLocalDateTime(uploadSession.expiresAt()))
+                .createdAt(toOffsetDateTime(uploadSession.createdAt()))
+                .updatedAt(toOffsetDateTime(uploadSession.updatedAt()))
+                .expiresAt(toOffsetDateTime(uploadSession.expiresAt()))
                 .build();
     }
 
@@ -177,8 +179,8 @@ public class MultipartUploadCoreBridgeService {
         };
     }
 
-    private LocalDateTime toLocalDateTime(java.time.Instant instant) {
-        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+    private OffsetDateTime toOffsetDateTime(java.time.Instant instant) {
+        return instant == null ? null : instant.atOffset(ZoneOffset.UTC);
     }
 
     private BusinessException translateInvalidRequest(UploadSessionInvalidRequestException ex) {

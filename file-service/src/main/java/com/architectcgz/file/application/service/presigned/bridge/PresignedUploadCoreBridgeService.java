@@ -4,6 +4,7 @@ import com.architectcgz.file.application.dto.ConfirmUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadRequest;
 import com.architectcgz.file.application.dto.PresignedUploadResponse;
 import com.architectcgz.file.application.service.FileTypeValidator;
+import com.architectcgz.file.application.service.uploadsession.UploadSessionInitCoordinatorService;
 import com.architectcgz.file.application.service.presigned.storage.PresignedUploadStorageService;
 import com.architectcgz.file.application.service.presigned.validator.PresignedUploadAccessResolver;
 import com.architectcgz.file.common.constant.FileServiceErrorCodes;
@@ -24,6 +25,7 @@ import com.platform.fileservice.core.domain.model.UploadCompletion;
 import com.platform.fileservice.core.domain.model.UploadMode;
 import com.platform.fileservice.core.domain.model.UploadSession;
 import com.platform.fileservice.core.domain.model.UploadSessionCreationResult;
+import com.platform.fileservice.core.domain.model.UploadSessionStatus;
 import com.platform.fileservice.core.ports.repository.BlobObjectRepository;
 import com.platform.fileservice.core.ports.repository.FileAssetRepository;
 import com.platform.fileservice.core.ports.repository.UploadSessionRepository;
@@ -31,7 +33,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -43,6 +46,7 @@ import java.util.Map;
 public class PresignedUploadCoreBridgeService {
 
     private final UploadAppService uploadAppService;
+    private final UploadSessionInitCoordinatorService uploadSessionInitCoordinatorService;
     private final UploadSessionRepository uploadSessionRepository;
     private final BlobObjectRepository blobObjectRepository;
     private final FileAssetRepository fileAssetRepository;
@@ -70,7 +74,7 @@ public class PresignedUploadCoreBridgeService {
                     });
         }
 
-        UploadSessionCreationResult creationResult = uploadAppService.createSession(
+        UploadSessionCreationResult creationResult = uploadSessionInitCoordinatorService.createSession(
                 appId,
                 userId,
                 UploadMode.PRESIGNED_SINGLE,
@@ -95,7 +99,7 @@ public class PresignedUploadCoreBridgeService {
         return PresignedUploadResponse.builder()
                 .presignedUrl(grant.uploadUrl())
                 .storagePath(creationResult.uploadSession().objectKey())
-                .expiresAt(LocalDateTime.now().plusSeconds(grant.expiresInSeconds()))
+                .expiresAt(OffsetDateTime.now(ZoneOffset.UTC).plusSeconds(grant.expiresInSeconds()))
                 .method("PUT")
                 .headers(headers)
                 .build();
@@ -106,6 +110,12 @@ public class PresignedUploadCoreBridgeService {
         AccessLevel accessLevel = toCoreAccessLevel(legacyAccessLevel);
 
         UploadSession uploadSession = uploadSessionRepository.findActiveByHash(appId, userId, request.getFileHash())
+                .or(() -> uploadSessionRepository.findByOwner(appId, userId, 20).stream()
+                        .filter(session -> session.status() == UploadSessionStatus.COMPLETED)
+                        .filter(session -> session.uploadMode() == UploadMode.PRESIGNED_SINGLE)
+                        .filter(session -> request.getFileHash().equals(session.fileHash()))
+                        .filter(session -> request.getStoragePath().equals(session.objectKey()))
+                        .findFirst())
                 .filter(session -> session.uploadMode() == UploadMode.PRESIGNED_SINGLE)
                 .filter(session -> session.targetAccessLevel() == accessLevel)
                 .filter(session -> request.getStoragePath().equals(session.objectKey()))

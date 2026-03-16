@@ -81,6 +81,13 @@ public final class PostgresUploadSessionRepository implements UploadSessionRepos
               AND status NOT IN ('completed', 'aborted', 'expired', 'failed')
             """;
 
+    private static final String MARK_COMPLETING_SQL = """
+            UPDATE upload_tasks
+            SET status = 'completing', updated_at = ?
+            WHERE id = ?
+              AND status IN ('initiated', 'uploading')
+            """;
+
     private static final String COMPLETE_SQL = """
             UPDATE upload_tasks
             SET status = 'completed', file_id = ?, updated_at = ?
@@ -159,6 +166,16 @@ public final class PostgresUploadSessionRepository implements UploadSessionRepos
                 ownerId,
                 limit
         );
+    }
+
+    @Override
+    public boolean markCompleting(String uploadSessionId) {
+        int rows = jdbcTemplate.update(
+                MARK_COMPLETING_SQL,
+                Timestamp.from(Instant.now()),
+                uploadSessionId
+        );
+        return rows == 1;
     }
 
     @Override
