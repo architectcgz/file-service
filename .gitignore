@@ -5,7 +5,7 @@ build/
 *.jar
 *.war
 
-# IDE
+# IDE and Editor
 .idea/
 .claude/
 *.iml
@@ -13,10 +13,15 @@ build/
 .settings/
 .project
 .classpath
+.vs/
+*.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+*.bak
 
 # Logs
 *.log
@@ -25,10 +30,45 @@ logs/
 # Temp
 *.tmp
 *.swp
+.temp
 .jqwik-database
+.env.local
+.env.*.local
+
+# Environment-specific configuration files
+backend/appsettings.Development.json
+backend/appsettings.Production.json
+
+# Deploy environment files
+deploy/.env
+deploy/**/.env
+
+# .NET Build artifacts
+**/bin/
+**/obj/
+**/out/
+*.user
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+
+# Node.js
+**/node_modules/
+**/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.pnpm-debug.log*
 
 # Docs
 /docs/
 
 # Runtime test upload outputs
 /file-service/test-uploads/*/[0-9][0-9][0-9][0-9]/
+
+# Upload/Data directories (if needed)
+**/uploads/
+**/data/storage/

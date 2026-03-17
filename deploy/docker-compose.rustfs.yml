@@ -1,0 +1,140 @@
+version: '3.8'
+
+services:
+  # 文件服务前端 (OpenResty + Nginx)
+  file-service-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: file-service-frontend
+    ports:
+      - "80:80"   # HTTP端口
+      - "443:443" # HTTPS端口
+    networks:
+      - file-service-network
+      - fs-network
+    depends_on:
+      file-service:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    environment:
+      # RustFS 相关环境变量（用于 Lua 脚本）
+      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-minioadmin}
+      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-minioadmin}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - RUSTFS_REGION=${RUSTFS_REGION:-us-east-1}
+    volumes:
+      # 日志文件映射到宿主机，方便查看调试日志
+      - ./logs/nginx:/var/log/nginx
+      # Let's Encrypt 证书目录（只读）
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # Certbot webroot 目录（用于证书验证和续期）
+      - /var/www/certbot:/var/www/certbot:ro
+      # Nginx 配置文件（使用 volume 挂载可实现热更新，无需重建镜像）
+      - ./nginx.rustfs.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+      # 前端构建产物（从项目根目录的 frontend/dist 目录挂载）
+      - ../frontend/dist:/usr/local/openresty/nginx/html:ro
+
+  # 文件服务后端 API
+  file-service:
+    build:
+      context: ..
+      dockerfile: backend/deploy/Dockerfile
+    container_name: file-service
+    env_file:
+      - .env
+    networks:
+      - file-service-network
+      - rustfs-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - HTTP_PORTS=5003
+      
+      # 数据库连接字符串
+      - DB_HOST=${FILE_SERVICE_DB_HOST:-host.docker.internal}
+      - DB_PORT=${FILE_SERVICE_DB_PORT:-5432}
+      - DB_NAME=${FILE_SERVICE_DB_NAME:-file_service}
+      - DB_USER=${FILE_SERVICE_DB_USER:-postgres}
+      - ConnectionStrings__PostgresSql=Host=${FILE_SERVICE_DB_HOST:-host.docker.internal};Port=${FILE_SERVICE_DB_PORT:-5432};Database=${FILE_SERVICE_DB_NAME:-file_service};Username=${FILE_SERVICE_DB_USER:-postgres};Password=${FILE_SERVICE_DB_PASSWORD};Pooling=true;TimeZone=UTC
+      
+      # 数据库连接池配置
+      - Database__MinPoolSize=${FILE_SERVICE_DATABASE_MIN_POOL_SIZE:-5}
+      - Database__MaxPoolSize=${FILE_SERVICE_DATABASE_MAX_POOL_SIZE:-50}
+      - Database__ConnectionTimeout=${DATABASE_CONNECTION_TIMEOUT:-30}
+      - Database__CommandTimeout=${DATABASE_COMMAND_TIMEOUT:-60}
+      - Database__Pooling=${DATABASE_POOLING:-true}
+      - Database__ConnectionIdleLifetime=${DATABASE_CONNECTION_IDLE_LIFETIME:-300}
+      - Database__ConnectionPruningInterval=${DATABASE_CONNECTION_PRUNING_INTERVAL:-10}
+      - Database__Multiplexing=${DATABASE_MULTIPLEXING:-false}
+      - Database__MaxAutoPrepare=${DATABASE_MAX_AUTO_PREPARE:-20}
+      - Database__TcpKeepAlive=${DATABASE_TCP_KEEP_ALIVE:-true}
+      - Database__TcpKeepAliveTime=${DATABASE_TCP_KEEP_ALIVE_TIME:-600}
+      - Database__TcpKeepAliveInterval=${DATABASE_TCP_KEEP_ALIVE_INTERVAL:-60}
+      
+      # RustFS 配置
+      - RustFSConfig__AccessKey=${RUSTFS_ACCESS_KEY}
+      - RustFSConfig__SecretKey=${RUSTFS_SECRET_KEY}
+      - RustFSConfig__Endpoint=${RUSTFS_ENDPOINT}
+      - RustFSConfig__Region=${RUSTFS_REGION:-us-east-1}
+      - RustFSConfig__UseHttps=${RUSTFS_USE_HTTPS:-true}
+      - RustFSConfig__ForcePathStyle=${RUSTFS_FORCE_PATH_STYLE:-true}
+      - RustFSConfig__Bucket=${RUSTFS_BUCKET:-blog-files}
+      - RustFSConfig__ImageFolder=${RUSTFS_IMAGE_FOLDER:-images}
+      - RustFSConfig__DocumentFolder=${RUSTFS_DOCUMENT_FOLDER:-documents}
+      - RustFSConfig__VideoFolder=${RUSTFS_VIDEO_FOLDER:-videos}
+      - RustFSConfig__AudioFolder=${RUSTFS_AUDIO_FOLDER:-audios}
+      - RustFSConfig__ArchiveFolder=${RUSTFS_ARCHIVE_FOLDER:-archives}
+      - RustFSConfig__ProxyPath=${RUSTFS_PROXY_PATH}
+      
+      # 文件服务安全配置
+      - FileServiceSecurity__SharedSecret=${FILE_SERVICE_SHARED_SECRET}
+      - FileServiceSecurity__EnableSharedSecretValidation=${FILE_SERVICE_ENABLE_SHARED_SECRET_VALIDATION:-true}
+      - FileServiceSecurity__AllowedIpAddresses=${FILE_SERVICE_ALLOWED_IP_ADDRESSES:-}
+      - FileServiceSecurity__AdminApiKey=${FILE_SERVICE_ADMIN_API_KEY}
+      - FileServiceSecurity__EnableAdminApiKeyValidation=${FILE_SERVICE_ENABLE_ADMIN_API_KEY_VALIDATION:-true}
+      - FileServiceSecurity__AdminUsername=${FILE_SERVICE_ADMIN_USERNAME:-admin}
+      - FileServiceSecurity__AdminPassword=${FILE_SERVICE_ADMIN_PASSWORD}
+      - FileServiceSecurity__AdminSessionTimeoutMinutes=${FILE_SERVICE_ADMIN_SESSION_TIMEOUT_MINUTES:-30}
+      
+      # 实例标识
+      - INSTANCE_ID=${INSTANCE_ID_FILE_SERVICE:-4}
+      - INSTANCE_NAME=${INSTANCE_NAME_FILE_SERVICE:-file-service-1}
+      
+    ports:
+      - "5003:5003"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    volumes:
+      # 日志持久化
+      - ./logs/file-service:/app/logs
+
+# 网络配置
+networks:
+  file-service-network:
+    name: file-service-network
+    driver: bridge
+  fs-network:
+    name: fs-network
+    external: true
+

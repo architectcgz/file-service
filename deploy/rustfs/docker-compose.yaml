@@ -1,0 +1,81 @@
+services:
+  # RustFS 存储服务
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: rustfs
+    # 移除端口映射，只通过 docker 内部网络访问（通过 nginx 反向代理）
+    # ports:
+    #   - "9000:9000"
+    volumes:
+      - ./data:/data
+      - ./config:/etc/rustfs
+    environment:
+      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-rustfsadmin}
+      - RUSTFS_CONSOLE_ENABLE=true
+      - RUSTFS_ADDRESS=:9000
+      - RUSTFS_VOLUMES=/data
+    restart: unless-stopped
+    networks:
+      - fs-network
+      - rustfs-net
+    healthcheck:
+      # RustFS 健康检查：检查进程是否运行
+      # 如果健康检查持续失败，可以临时注释掉 depends_on 中的 condition
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep rustfs || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # RustFS 文件代理 Nginx
+  rustfs-nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: rustfs-nginx
+    ports:
+      # 不暴露 80/443，由 file-service-frontend 代理文件访问
+      # - "80:80"   # HTTP端口
+      # - "443:443" # HTTPS端口
+      - "9000:9000" # RustFS 管理界面 HTTPS 端口
+    networks:
+      - fs-network
+      - rustfs-net
+    depends_on:
+      rustfs:
+        condition: service_healthy
+      # 如果健康检查持续失败，可以临时改为：
+      # condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    environment:
+      # RustFS 相关环境变量（用于 Lua 脚本）
+      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-rustfsadmin}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - RUSTFS_REGION=${RUSTFS_REGION:-us-east-1}
+    volumes:
+      # 日志文件映射到宿主机，方便查看调试日志
+      - ./logs/nginx:/var/log/nginx
+      # Let's Encrypt 证书目录（只读）
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # Certbot webroot 目录（用于证书验证和续期）
+      - /var/www/certbot:/var/www/certbot:ro
+      # Nginx 配置文件（使用 volume 挂载可实现热更新，无需重建镜像）
+      - ./nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+
+networks:
+  fs-network:
+    name: fs-network
+    driver: bridge
+  # 确保与 file-service 的网络名称一致
+  rustfs-net:
+    name: rustfs-net
+    driver: bridge
+    external: false
